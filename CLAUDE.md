@@ -51,21 +51,19 @@ Two kinds of change are not covered by that and need more:
   though only Hebrew ships, so adding a language stays a content decision.
 - Tailwind v4 via `@tailwindcss/vite`; no `tailwind.config.js`.
 
+## Where this lives
+`C:\Users\nitza\Dev\FlashPlay` — a plain folder, deliberately **not** inside the
+OneDrive-synced Career Vault. It was briefly scaffolded in the vault on
+2026-09-04 and moved out the same day; see the vault's
+`08_DECISIONS/Working Setup - Code & Vault Stay Separate.md` for what that cost
+and why. Do not move it back. The vault keeps only the career-facing note at
+`04_PROJECTS/FlashPlay/FlashPlay.md`; one session can read both paths at once,
+so there is no reason to co-locate them.
+
 ## Known pitfalls
-- **This repo lives inside the OneDrive-synced Career_Vault**, at
-  `04_PROJECTS/FlashPlay/app/`, by explicit decision (see the vault's
-  `08_DECISIONS/Working Setup - Code & Vault Stay Separate.md`). Consequences:
-  - `.git` is a *file*, not a directory — the real git dir is at
-    `C:\Users\nitza\Dev\FlashPlay-git`, deliberately outside OneDrive, because
-    git lock files in a synced folder corrupted this vault once before. Do not
-    "fix" the `.git` file. Cloning or moving the repo means re-pointing it.
-  - The vault's own `.gitignore` excludes `04_PROJECTS/FlashPlay/app/`, so the
-    two git histories stay separate.
-  - `node_modules` **does** sync to OneDrive (13,388 files, 272 MB as of
-    2026-09-04). A directory junction was tried as a mitigation and **npm
-    destroys it on every `npm install`** — verified twice. There is no working
-    mitigation short of moving the repo out of OneDrive.
 - `import.meta.url` is not a `file:` URL under Vitest — reading a project file
   from a test needs `resolve(process.cwd(), ...)`, not `new URL(...)`.
 - `tsconfig.app.json` needs `"node"` and `"vitest/globals"` in `types`, or
   `npm run build` fails on the test files.
+- Firebase must be a **separate project** from the live `Imposter Game` one, or
+  test sessions hit real users.
