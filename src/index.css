@@ -1,0 +1,7 @@
+@import 'tailwindcss';
+
+/* Hebrew-first product. The document is RTL; English identifiers and numbers
+   are handled by the browser's bidi algorithm inside otherwise-Hebrew text. */
+html {
+  font-family: system-ui, 'Segoe UI', Arial, sans-serif;
+}
