@@ -29,6 +29,13 @@ scenario. **Not a loop until it comes back clean** — a reviewer asked again al
 produces something, so an unbounded loop closes on a tired reviewer rather than on
 clean work.
 
+**The review also checks that the milestone's lessons were captured**, and where.
+This is the half a hook cannot do: a `Stop` hook enforces that the question gets
+answered, but only another reader can judge whether the answer is real or a
+sentence written to clear a gate. Ask the reviewer specifically: does each
+recorded lesson name a concrete failure and what to do differently, or is it a
+restatement of what happened?
+
 **Severity bar: only a "serious" finding holds the gate.** A routine one goes to
 BACKLOG.md and work continues. Without the bar, a routine housekeeping item stops a
 milestone exactly as hard as a real bug.
