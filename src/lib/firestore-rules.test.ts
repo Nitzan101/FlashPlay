@@ -4,9 +4,14 @@
  * These are not ordinary unit tests. The client reads Firestore directly, so
  * `firestore.rules` is the only thing standing between a curious player and
  * the answer to the game they are playing. Every assertion here is a claim
- * about what an attacker cannot do, and each one must be able to fail: the
- * rules file was checked by deleting each rule in turn and confirming the
- * matching test went red.
+ * about what an attacker cannot do, and each one must be able to fail.
+ *
+ * Mutation coverage, stated precisely because overstating it is exactly the
+ * error this technique exists to prevent: three guards have been deleted and
+ * the matching assertions watched to go red - the item-author reveal guard
+ * (reddens 2), the vote reveal guard (1), and the owner check on the private
+ * store (2). That is 5 of these assertions. The other 15 have not been
+ * mutation-checked.
  *
  * Requires the emulator. Run with `npm run test:rules`, which starts it.
  */
