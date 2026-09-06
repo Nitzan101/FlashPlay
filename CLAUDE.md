@@ -7,18 +7,27 @@ group's WhatsApp chat. Its differentiator is personalisation around the real
 named people present, plus accumulated memory of that specific group. Hebrew
 content, RTL, no install.
 
-Concept, architecture and milestones live in the plan document at
-`C:\Users\nitza\.claude\plans\flickering-sleeping-adleman.md` (Hebrew). It is to
-be rewritten here as `docs/DESIGN.md` in English, not translated. Read it before
-making design decisions — most of them are already settled there with reasoning.
+Concept, architecture, reasoning and build plan live in `docs/`, in English:
 
-Current milestone: **1 — skeleton, separate Firebase project, redirect auth.**
-Firebase project `flashplay-50bde` created 2026-09-06, separate from the live
-`imposter-12401` project. Redirect sign-in works end to end on desktop.
+- `docs/DESIGN.md` - the product and architecture.
+- `docs/DECISIONS.md` - why each choice was made, including findings from building.
+- `docs/MILESTONES.md` - the nine milestones and what each gate tests.
+- `docs/BACKLOG.md` - what was deferred and why.
 
-**The app's canonical URL is `https://flashplay-50bde.firebaseapp.com`** —
-this is the link to share, and it is not interchangeable with the
-`.web.app` one. See Known pitfalls.
+**Read `docs/DESIGN.md` before making design decisions** - most are already settled
+there with reasoning, and re-deciding them wastes time and produces drift.
+
+The original Hebrew planning document under `~/.claude/plans/` is **frozen and
+superseded**. It is kept only as an archive of the planning phase; where it and
+`docs/` disagree, `docs/` wins.
+
+Milestone status lives in `docs/MILESTONES.md` - that is its only home; do not
+restate it here. Short version: milestone 1 is done, milestone 2 (data model,
+then security rules) is next.
+
+**The app's canonical URL is `https://flashplay-50bde.firebaseapp.com`** - this is
+the link to share, and it is not interchangeable with the `.web.app` one. See
+Known pitfalls.
 
 ## Commands
 All verified by execution on 2026-09-04.
@@ -117,44 +126,15 @@ so there is no reason to co-locate them.
   and compare the asset hash against `dist/index.html`, or you will
   "confirm" a deploy that has not landed.
 
-## Open items — milestone 1
-- [x] **Enable the Google sign-in provider** in the `flashplay-50bde` Firebase
-      console. Done and verified 2026-09-06: clicked the real sign-in button
-      and traced the navigation — `localhost` → `flashplay-50bde.firebaseapp.com`
-      (Firebase's auth handler) → `accounts.google.com` (Google's real sign-in
-      page). No more `auth/configuration-not-found`. Stopped there deliberately
-      rather than entering Nitzan's Google password.
-- [x] **Redirect sign-in works end to end.** Verified 2026-09-06 on desktop
-      Chrome: signed in with Google and the app showed the signed-in greeting
-      with the account's real name. The fix was serving the app from
-      `flashplay-50bde.firebaseapp.com` - see pitfalls above.
-- [x] **Sign-in works on a real phone.** Confirmed by Nitzan 2026-09-06 on
-      the canonical URL. Deployed and live.
-- [x] **WhatsApp in-app browser, on iOS.** Confirmed 2026-09-06: the link
-      opened from a WhatsApp chat and sign-in completed normally.
-- [x] **Identity across browsers on the same phone (iOS).** Confirmed
-      2026-09-06: signing in through WhatsApp's browser and then opening the
-      same URL in **Safari** keeps the same signed-in user. Opening it in
-      **Chrome** shows a signed-out app - expected, since a different browser
-      app is a different storage jar, and true of any web app.
+## Open questions carried into the next milestone
+Full context in `docs/BACKLOG.md`; these two are here because they change what
+gets built next.
 
-      This is better than DESIGN assumed. The plan flagged "someone who opens
-      from WhatsApp and later from their real browser becomes a different
-      player" as a real risk; on iOS it does not happen, because WhatsApp
-      opens links in a Safari-backed view that shares Safari's storage rather
-      than in an isolated WebView. **That explanation is inference from the
-      observed behaviour, not something verified directly.**
-
-## Open items — platform, beyond milestone 1
-- [ ] **Nothing has been tested on Android.** WhatsApp on Android has
-      historically used its own in-app WebView rather than a Chrome-backed
-      view, and Google actively refuses OAuth sign-in from embedded WebViews.
-      So Android may behave completely differently from the iOS result above -
-      both for whether sign-in works at all inside WhatsApp, and for whether
-      identity survives moving to Chrome.
-
-      **Severity is lower than it first looks:** only the *host* signs in with
-      Google. Guests join with a name and never touch OAuth, so an Android
-      guest is unaffected either way. The exposure is an Android host - which
-      does not block the first target (Nitzan hosts, on iOS) but does matter
-      before anyone else can host.
+- **Android is untested.** WhatsApp there has historically used an isolated
+  WebView and Google refuses OAuth from embedded WebViews, so sign-in may behave
+  differently from the confirmed iOS result. Only a *host* signs in, so an Android
+  guest is unaffected - this blocks other people hosting, not the first family
+  session.
+- **Listener fan-out is only realistic at the target itself.** Milestones 3 and 6
+  run on three to five devices, so eleven-device behaviour is first exercised at
+  the family session unless a browser-profile check is done in milestone 6.
