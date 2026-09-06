@@ -135,9 +135,39 @@ so there is no reason to co-locate them.
   and compare the asset hash against `dist/index.html`, or you will
   "confirm" a deploy that has not landed.
 
-## Open questions carried into the next milestone
+## Starting milestone 3 cold
+
+Everything needed is in `docs/`; this is the short version of what a fresh
+session must not rediscover.
+
+**Read first:** `docs/MILESTONES.md` (status and what each gate tests), then
+`docs/DESIGN.md` for anything about the product. `docs/DECISIONS.md` says why,
+including the security decisions milestone 3 has to build on.
+
+**Three constraints milestone 3 inherits from the rules, all of them load-bearing:**
+
+- **The room code is the session's document id.** Listing the sessions
+  collection is denied, so nothing can resolve a typed code through a query.
+  Joining is `getDoc(sessions/{code})` and nothing else.
+- **Sessions cannot be deleted, and phase only moves forward** (`lobby` →
+  `playing` → `finished`). Both are security guards, not conveniences - see
+  DECISIONS.md before relaxing either.
+- **A player joins by creating `players/{their own uid}`.** That write is what
+  makes `isPlayer` true and unlocks the roster; the roster is deliberately
+  unreadable before it. Guests get a uid from anonymous sign-in, which is
+  enabled and verified live.
+
+**The first thing to decide in milestone 3** is the room-code lifecycle: codes
+are currently never released and any signed-in client can squat an unused one.
+BACKLOG.md has the finding and the likely shape of the answer.
+
+**Anything touching `firestore.rules`** must run `npm run test:rules`, and a new
+guard is not proven until it has been deleted and its assertion watched to go
+red. The test file header records exactly which guards have had that done.
+
+## Open questions carried into later milestones
 Full context in `docs/BACKLOG.md`; these two are here because they change what
-gets built next.
+gets built.
 
 - **Android is untested.** WhatsApp there has historically used an isolated
   WebView and Google refuses OAuth from embedded WebViews, so sign-in may behave
