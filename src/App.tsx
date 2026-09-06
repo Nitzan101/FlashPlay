@@ -24,7 +24,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => void signOutUser()}
-            className="rounded-md border border-neutral-300 px-4 py-2"
+            className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2"
           >
             {t('signOut')}
           </button>
@@ -33,7 +33,7 @@ export default function App() {
         <button
           type="button"
           onClick={() => void signInWithGoogle()}
-          className="rounded-md bg-blue-600 px-4 py-2 text-white"
+          className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white"
         >
           {t('signInWithGoogle')}
         </button>

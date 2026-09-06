@@ -91,6 +91,21 @@ so there is no reason to co-locate them.
   a wrong-project or wrong-config error. Confirmed 2026-09-06 against
   `flashplay-50bde`: the redirect reached Firebase's real backend (config was
   correct) and failed only on this.
+- **`VITE_FIREBASE_AUTH_DOMAIN` should be the Hosting domain
+  (`flashplay-50bde.web.app`), not the default `flashplay-50bde.firebaseapp.com`
+  from the copied SDK snippet.** Real-device test on 2026-09-06 (WhatsApp
+  in-app browser on a phone): sign-in completed on Google's side, then landed
+  back on the app's own sign-in screen instead of the signed-in state -
+  redirect result silently lost. Hypothesis, not confirmed by inspecting logs
+  directly (no devtools access on that browser): the app origin
+  (`*.web.app`) and the auth handler origin (`*.firebaseapp.com`) are
+  different, and cross-origin storage is exactly what mobile in-app browsers
+  increasingly partition or block. Firebase Hosting serves the auth handler
+  under the Hosting domain too when Hosting is enabled for the app (it was),
+  so pointing `authDomain` at `flashplay-50bde.web.app` keeps everything
+  same-origin. Applied and redeployed 2026-09-06; **not yet re-confirmed on a
+  real device** - if the same symptom recurs, this hypothesis was wrong and
+  needs a different fix, not a retry of the same one.
 
 ## Open items — milestone 1
 - [x] **Enable the Google sign-in provider** in the `flashplay-50bde` Firebase
@@ -99,6 +114,11 @@ so there is no reason to co-locate them.
       (Firebase's auth handler) → `accounts.google.com` (Google's real sign-in
       page). No more `auth/configuration-not-found`. Stopped there deliberately
       rather than entering Nitzan's Google password.
+- [ ] **Re-test redirect sign-in on a real phone via WhatsApp**, after the
+      `authDomain` fix above. First attempt (2026-09-06, before the fix) failed:
+      Google accepted the sign-in, then the app landed back on its own sign-in
+      screen instead of showing the signed-in state. Redeployed with the fix;
+      not yet re-confirmed.
 - [ ] Deploy to Firebase Hosting and validate the actual milestone-1 gate: open
       the hosted link from a real phone via a link shared into WhatsApp, sign
       in, and observe what happens to identity if the same person later opens
