@@ -130,13 +130,31 @@ so there is no reason to co-locate them.
       `flashplay-50bde.firebaseapp.com` - see pitfalls above.
 - [x] **Sign-in works on a real phone.** Confirmed by Nitzan 2026-09-06 on
       the canonical URL. Deployed and live.
-- [ ] **Confirm it was WhatsApp's in-app browser specifically**, not just
-      the phone's normal browser. The two behave differently and only the
-      in-app one is on the product's real path (the join link is pasted into
-      a WhatsApp group), so this is not yet the milestone-1 gate met in full.
-- [ ] **Identity across browsers on the same phone.** Open the same link from
-      WhatsApp, then open it again in the phone's own Chrome. Same signed-in
-      user, or a fresh guest? The in-app browser has its own storage, so the
-      likely answer is "a different person", which the session model has to
-      handle rather than be surprised by. Flagged in DESIGN as a real risk;
-      still unanswered.
+- [x] **WhatsApp in-app browser, on iOS.** Confirmed 2026-09-06: the link
+      opened from a WhatsApp chat and sign-in completed normally.
+- [x] **Identity across browsers on the same phone (iOS).** Confirmed
+      2026-09-06: signing in through WhatsApp's browser and then opening the
+      same URL in **Safari** keeps the same signed-in user. Opening it in
+      **Chrome** shows a signed-out app - expected, since a different browser
+      app is a different storage jar, and true of any web app.
+
+      This is better than DESIGN assumed. The plan flagged "someone who opens
+      from WhatsApp and later from their real browser becomes a different
+      player" as a real risk; on iOS it does not happen, because WhatsApp
+      opens links in a Safari-backed view that shares Safari's storage rather
+      than in an isolated WebView. **That explanation is inference from the
+      observed behaviour, not something verified directly.**
+
+## Open items — platform, beyond milestone 1
+- [ ] **Nothing has been tested on Android.** WhatsApp on Android has
+      historically used its own in-app WebView rather than a Chrome-backed
+      view, and Google actively refuses OAuth sign-in from embedded WebViews.
+      So Android may behave completely differently from the iOS result above -
+      both for whether sign-in works at all inside WhatsApp, and for whether
+      identity survives moving to Chrome.
+
+      **Severity is lower than it first looks:** only the *host* signs in with
+      Google. Guests join with a name and never touch OAuth, so an Android
+      guest is unaffected either way. The exposure is an Android host - which
+      does not block the first target (Nitzan hosts, on iOS) but does matter
+      before anyone else can host.
