@@ -93,13 +93,15 @@ so there is no reason to co-locate them.
   correct) and failed only on this.
 
 ## Open items — milestone 1
-- [ ] **Enable the Google sign-in provider** in the `flashplay-50bde` Firebase
-      console: Authentication → Sign-in method → Google → Enable → set a
-      support email → Save. Blocks the redirect flow end-to-end; confirmed
-      blocking it as of 2026-09-06 (see pitfall above).
+- [x] **Enable the Google sign-in provider** in the `flashplay-50bde` Firebase
+      console. Done and verified 2026-09-06: clicked the real sign-in button
+      and traced the navigation — `localhost` → `flashplay-50bde.firebaseapp.com`
+      (Firebase's auth handler) → `accounts.google.com` (Google's real sign-in
+      page). No more `auth/configuration-not-found`. Stopped there deliberately
+      rather than entering Nitzan's Google password.
 - [ ] Deploy to Firebase Hosting and validate the actual milestone-1 gate: open
       the hosted link from a real phone via a link shared into WhatsApp, sign
       in, and observe what happens to identity if the same person later opens
       the link in the phone's real browser instead of WhatsApp's in-app one.
       Nothing here has been run on a real device yet — everything above is
-      laptop/emulator evidence only.
+      laptop/browser-automation evidence only.
