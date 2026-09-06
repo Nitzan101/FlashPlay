@@ -128,13 +128,15 @@ so there is no reason to co-locate them.
       Chrome: signed in with Google and the app showed the signed-in greeting
       with the account's real name. The fix was serving the app from
       `flashplay-50bde.firebaseapp.com` - see pitfalls above.
-- [ ] **Re-test on a real phone via WhatsApp**, using the canonical URL
-      `https://flashplay-50bde.firebaseapp.com`. The earlier phone test used
-      the broken `.web.app` domain, so it proved nothing about the in-app
-      browser specifically - that question is still open.
-- [ ] Deploy to Firebase Hosting and validate the actual milestone-1 gate: open
-      the hosted link from a real phone via a link shared into WhatsApp, sign
-      in, and observe what happens to identity if the same person later opens
-      the link in the phone's real browser instead of WhatsApp's in-app one.
-      Nothing here has been run on a real device yet — everything above is
-      laptop/browser-automation evidence only.
+- [x] **Sign-in works on a real phone.** Confirmed by Nitzan 2026-09-06 on
+      the canonical URL. Deployed and live.
+- [ ] **Confirm it was WhatsApp's in-app browser specifically**, not just
+      the phone's normal browser. The two behave differently and only the
+      in-app one is on the product's real path (the join link is pasted into
+      a WhatsApp group), so this is not yet the milestone-1 gate met in full.
+- [ ] **Identity across browsers on the same phone.** Open the same link from
+      WhatsApp, then open it again in the phone's own Chrome. Same signed-in
+      user, or a fresh guest? The in-app browser has its own storage, so the
+      likely answer is "a different person", which the session model has to
+      handle rather than be surprised by. Flagged in DESIGN as a real risk;
+      still unanswered.
