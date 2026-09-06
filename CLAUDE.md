@@ -14,9 +14,11 @@ making design decisions — most of them are already settled there with reasonin
 
 Current milestone: **1 — skeleton, separate Firebase project, redirect auth.**
 Firebase project `flashplay-50bde` created 2026-09-06, separate from the live
-`imposter-12401` project. Redirect sign-in code is written and verified to
-reach that real project (see Known pitfalls) but is blocked on enabling the
-Google provider in the console — see the open item there.
+`imposter-12401` project. Redirect sign-in works end to end on desktop.
+
+**The app's canonical URL is `https://flashplay-50bde.firebaseapp.com`** —
+this is the link to share, and it is not interchangeable with the
+`.web.app` one. See Known pitfalls.
 
 ## Commands
 All verified by execution on 2026-09-04.
@@ -48,6 +50,8 @@ Two kinds of change are not covered by that and need more:
   `firebaseApp` and `auth`. Throws on load if a var is missing.
 - `src/lib/auth.ts` — `signInWithGoogle` (redirect, not popup — see comment),
   `signOutUser`, and the `useAuthUser()` hook (`{ user, loading, redirectError }`).
+- `src/lib/canonicalHost.ts` — bounces the `.web.app` twin to the auth domain.
+  Read its comment before touching anything about domains.
 - `src/test/setup.ts` — Vitest setup (jest-dom matchers).
 - `index.html` — declares `lang="he" dir="rtl"`.
 
@@ -91,21 +95,27 @@ so there is no reason to co-locate them.
   a wrong-project or wrong-config error. Confirmed 2026-09-06 against
   `flashplay-50bde`: the redirect reached Firebase's real backend (config was
   correct) and failed only on this.
-- **`VITE_FIREBASE_AUTH_DOMAIN` should be the Hosting domain
-  (`flashplay-50bde.web.app`), not the default `flashplay-50bde.firebaseapp.com`
-  from the copied SDK snippet.** Real-device test on 2026-09-06 (WhatsApp
-  in-app browser on a phone): sign-in completed on Google's side, then landed
-  back on the app's own sign-in screen instead of the signed-in state -
-  redirect result silently lost. Hypothesis, not confirmed by inspecting logs
-  directly (no devtools access on that browser): the app origin
-  (`*.web.app`) and the auth handler origin (`*.firebaseapp.com`) are
-  different, and cross-origin storage is exactly what mobile in-app browsers
-  increasingly partition or block. Firebase Hosting serves the auth handler
-  under the Hosting domain too when Hosting is enabled for the app (it was),
-  so pointing `authDomain` at `flashplay-50bde.web.app` keeps everything
-  same-origin. Applied and redeployed 2026-09-06; **not yet re-confirmed on a
-  real device** - if the same symptom recurs, this hypothesis was wrong and
-  needs a different fix, not a retry of the same one.
+- **The app must be served from `flashplay-50bde.firebaseapp.com`, not the
+  `flashplay-50bde.web.app` twin.** Firebase gives one Hosting site two
+  domains; only `firebaseapp.com` is the `authDomain` and the OAuth redirect
+  URI registered with Google. Served from `.web.app`, redirect sign-in
+  **fails silently**: Google accepts the login, the browser comes back, and
+  the app is still signed out with no error in the console and nothing in
+  `getRedirectResult` - Chrome's third-party storage partitioning drops the
+  handoff between the two origins. Root-caused 2026-09-06 after two wrong
+  guesses; `src/lib/canonicalHost.ts` now redirects the `.web.app` twin to
+  the canonical host so a link shared from the wrong domain still works.
+- **Do not "fix" that by pointing `VITE_FIREBASE_AUTH_DOMAIN` at
+  `.web.app`.** Tried on 2026-09-06; Google rejects it outright with
+  `Error 400: redirect_uri_mismatch`, because only
+  `https://flashplay-50bde.firebaseapp.com/__/auth/handler` is registered as
+  an authorised redirect URI. The direction that works is moving the *app*
+  to the auth domain, not the auth domain to the app.
+- **Firebase Hosting caches `index.html` at the CDN edge**, so a `curl`
+  straight after `firebase deploy` can still return the previous build.
+  Verify a deploy with a cache-buster (`curl ".../?nocache=$(date +%s)"`)
+  and compare the asset hash against `dist/index.html`, or you will
+  "confirm" a deploy that has not landed.
 
 ## Open items — milestone 1
 - [x] **Enable the Google sign-in provider** in the `flashplay-50bde` Firebase
@@ -114,11 +124,14 @@ so there is no reason to co-locate them.
       (Firebase's auth handler) → `accounts.google.com` (Google's real sign-in
       page). No more `auth/configuration-not-found`. Stopped there deliberately
       rather than entering Nitzan's Google password.
-- [ ] **Re-test redirect sign-in on a real phone via WhatsApp**, after the
-      `authDomain` fix above. First attempt (2026-09-06, before the fix) failed:
-      Google accepted the sign-in, then the app landed back on its own sign-in
-      screen instead of showing the signed-in state. Redeployed with the fix;
-      not yet re-confirmed.
+- [x] **Redirect sign-in works end to end.** Verified 2026-09-06 on desktop
+      Chrome: signed in with Google and the app showed the signed-in greeting
+      with the account's real name. The fix was serving the app from
+      `flashplay-50bde.firebaseapp.com` - see pitfalls above.
+- [ ] **Re-test on a real phone via WhatsApp**, using the canonical URL
+      `https://flashplay-50bde.firebaseapp.com`. The earlier phone test used
+      the broken `.web.app` domain, so it proved nothing about the in-app
+      browser specifically - that question is still open.
 - [ ] Deploy to Firebase Hosting and validate the actual milestone-1 gate: open
       the hosted link from a real phone via a link shared into WhatsApp, sign
       in, and observe what happens to identity if the same person later opens

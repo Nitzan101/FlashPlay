@@ -32,5 +32,13 @@ function readConfig(): FirebaseOptions {
   return required as FirebaseOptions
 }
 
-export const firebaseApp = initializeApp(readConfig())
+const config = readConfig()
+
+/**
+ * The origin the app must be served from - see canonicalHost.ts for why
+ * being served from the `.web.app` twin instead silently breaks sign-in.
+ */
+export const authDomain = config.authDomain as string
+
+export const firebaseApp = initializeApp(config)
 export const auth = getAuth(firebaseApp)
