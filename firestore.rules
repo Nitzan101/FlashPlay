@@ -16,6 +16,14 @@ rules_version = '2';
 // It applies to who wrote an item, and to how everyone voted. Anywhere else
 // that needs to hide something until a moment arrives should reuse it rather
 // than invent a second mechanism.
+//
+// `get` vs `read`/`list`: written deliberately throughout this file rather
+// than left to accident. `read` grants both a single-document `get` and a
+// collection `list`; a condition that never mentions the document/collection
+// wildcard grants `list` too, even when only `get` was intended - that gap is
+// what let every gathering on the project be enumerated in the first
+// milestone-2 review. Every rule below is `get` unless a comment says
+// listing is actually needed.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -76,10 +84,15 @@ service cloud.firestore {
     // --- the live gathering -------------------------------------------------
 
     match /sessions/{sessionId} {
-      // Anyone signed in can read a session document: this is what lets a phone
-      // that just opened the link discover the gathering and join it. It holds
-      // no secrets - scores and phase are public to the room anyway.
-      allow read: if isSignedIn();
+      // `get`, not `read`. Granting `list` here let anyone enumerate every
+      // gathering on the project - room codes, hosts, scores - with no join
+      // link at all (found in the milestone-2 review). A client must already
+      // know the sessionId to read one; there is no query-based lookup by
+      // room code. See DECISIONS.md, "Findings from building (milestone 2 -
+      // reopened)": the room code is the document id, precisely so that
+      // opening a room is always a `get` by a known id and `list` is never
+      // needed for it.
+      allow get: if isSignedIn();
 
       // Only the host drives the gathering forward.
       allow create: if isSignedIn() && request.resource.data.hostUid == request.auth.uid;
@@ -89,8 +102,15 @@ service cloud.firestore {
       // --- players ---
       // Document id is the player's uid, so a player structurally cannot write
       // someone else's presence or rename them.
+      //
+      // Read requires `isPlayer`, not just `isSignedIn`: the roster holds real
+      // names, and the milestone-2 review read a full family's names without
+      // ever joining. Joining itself only needs `isSignedIn` (create, below),
+      // so this does not block a first-time join - you create your own player
+      // doc, which is what makes `isPlayer` become true, and only then can you
+      // read the roster.
       match /players/{playerId} {
-        allow read: if isSignedIn();
+        allow read: if isPlayer(sessionId);
         allow create: if isSignedIn() && playerId == request.auth.uid;
         allow update: if isUser(playerId) || isHost(sessionId);
         allow delete: if isUser(playerId) || isHost(sessionId);
@@ -103,26 +123,66 @@ service cloud.firestore {
       }
 
       // --- harvested items: PUBLIC, text only ---
-      // Deliberately contains no author. See itemAuthors below.
+      //
+      // Deliberately contains no author - see itemAuthors below, which an item
+      // can only be created after claiming.
+      //
+      // `revealed` can only ever flip false -> true, and only the host can do
+      // it. This is what closes the milestone-2 review's S1: previously a
+      // player could delete-then-recreate an item with `revealed: true` set
+      // directly, which opened its itemAuthors document as a side effect.
+      // Deletion is removed entirely rather than restricted, per "prefer
+      // removing a failure mode to tuning it" - there is no legitimate reason
+      // to delete an item mid-gathering, and every value of a delete rule here
+      // was wrong.
       match /items/{itemId} {
         allow read: if isPlayer(sessionId);
-        allow create: if isPlayer(sessionId);
-        // Only the host flips `revealed`, and that flip is what opens the
-        // author document for reading.
-        allow update, delete: if isHost(sessionId);
+
+        // An item may only be created by the player who has already claimed
+        // authorship of this exact id in itemAuthors. See itemAuthors below
+        // for why that claim cannot be raced or observed in advance - this is
+        // what closes S4 (authorship could otherwise be stolen between the
+        // two writes).
+        allow create: if isPlayer(sessionId)
+          && request.resource.data.revealed == false
+          && get(/databases/$(database)/documents/sessions/$(sessionId)/itemAuthors/$(itemId))
+               .data.authorPlayerId == request.auth.uid;
+
+        allow update: if isHost(sessionId)
+          && request.resource.data.revealed == true
+          && resource.data.revealed == false;
+
+        allow delete: if false;
       }
 
-      // --- who wrote each item: PRIVATE until that item is revealed ---
+      // --- who wrote each item ---
       //
       // This is the rule the first game depends on entirely. If it is wrong,
       // "Who said that" is not a guessing game.
+      //
+      // Readable two ways: any player, once the item is revealed - the normal
+      // path, during play. Or the host alone, once the gathering has
+      // finished - this is how the items that were never revealed get
+      // attributed when they are written as facts (DESIGN.md, "Who said
+      // that": unrevealed items are "kept as facts for future gatherings",
+      // and every fact is attributed to its author in storage). Without this
+      // second path an unrevealed item's author would be unreadable by
+      // anyone, forever, including the host - there is no server to make an
+      // exception from. `get` only in both cases: a reader already knows
+      // which itemId they want, either because it was just revealed to them
+      // or because the host is iterating ids already listed from `items`.
       match /itemAuthors/{itemId} {
-        allow read: if isPlayer(sessionId) && itemRevealed(sessionId, itemId);
+        allow get: if (isPlayer(sessionId) && itemRevealed(sessionId, itemId))
+          || (isHost(sessionId) && session(sessionId).phase == 'finished');
 
-        // Written once, by the author, naming themselves. Never updatable -
-        // otherwise a player could rewrite history after the reveal.
+        // Written first, before the matching item exists - see items above.
+        // A `create` rule only ever fires once per document id (the doc must
+        // not already exist), and this collection can never be listed, so
+        // there is no way to discover or race a claim in advance.
         allow create: if isPlayer(sessionId)
           && request.resource.data.authorPlayerId == request.auth.uid;
+        // Never updatable - otherwise a player could rewrite history after
+        // the reveal.
         allow update: if false;
         allow delete: if isHost(sessionId);
       }
@@ -132,24 +192,34 @@ service cloud.firestore {
         allow read: if isPlayer(sessionId);
         allow write: if isHost(sessionId);
 
-        // --- votes: PRIVATE until the round is revealed ---
+        // --- votes ---
         //
-        // The same shape as itemAuthors, for the same reason: seeing the votes
-        // as they land would turn the round into a poll where everyone follows
+        // Same shape as itemAuthors, for the same reason: seeing the votes as
+        // they land would turn the round into a poll where everyone follows
         // the first vote.
         //
         // Document id is the voting player's uid, so double voting is
         // structurally impossible rather than merely checked.
+        //
+        // Unlike itemAuthors, `read` (not `get`) is deliberate here: once a
+        // round is revealed, players are expected to see the full breakdown
+        // of who voted for whom, which needs `list`.
         match /votes/{playerId} {
           allow read: if isPlayer(sessionId) && roundRevealed(sessionId, roundId);
 
           // A player may always read back their own vote - they need to see
           // what they picked while the round is still open.
-          allow get: if isUser(playerId);
+          allow get: if isUser(playerId) && isPlayer(sessionId);
 
-          allow create: if isUser(playerId) && isPlayer(sessionId);
-          // A vote may be changed while voting is open, and never after.
-          allow update: if isUser(playerId) && !roundRevealed(sessionId, roundId);
+          // Both create and update require the round still open. Create had
+          // no such guard before the milestone-2 review (S3): a player who
+          // never voted has no document yet, so their write after the reveal
+          // was a create, not an update, and the existing update guard never
+          // saw it.
+          allow create: if isUser(playerId) && isPlayer(sessionId)
+            && !roundRevealed(sessionId, roundId);
+          allow update: if isUser(playerId) && isPlayer(sessionId)
+            && !roundRevealed(sessionId, roundId);
           allow delete: if isHost(sessionId);
         }
       }

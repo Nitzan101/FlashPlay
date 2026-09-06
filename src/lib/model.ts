@@ -65,7 +65,16 @@ export interface FactDoc {
 export type SessionPhase = 'lobby' | 'playing' | 'finished'
 
 export interface SessionDoc {
-  /** The short code that joins a phone to this gathering. */
+  /**
+   * The short code that joins a phone to this gathering.
+   *
+   * **This is also the session's document id.** Listing the sessions
+   * collection is denied by the rules - it would let anyone enumerate every
+   * gathering on the project without a join link - so a room can only ever be
+   * opened by fetching a document whose id you already know. Resolving a room
+   * code through a query is therefore not possible by design, and the code is
+   * the id instead.
+   */
   roomCode: string
   hostUid: string
   /** Null at a first gathering, before the group has been saved. */
@@ -131,6 +140,22 @@ export interface ItemDoc {
 export interface ItemAuthorDoc {
   authorPlayerId: string
 }
+
+/**
+ * **Write order matters, and the rules enforce it: the author claim comes
+ * first.**
+ *
+ * To submit an item, generate one id and write `itemAuthors/{id}` naming
+ * yourself, *then* write `items/{id}`. An item cannot be created unless a
+ * matching author claim already exists and belongs to the caller.
+ *
+ * The reason is a hole the milestone-2 review demonstrated: with the item
+ * written first, its id became publicly visible in a listable collection while
+ * its authorship was still unclaimed, and any other player could claim it.
+ * Claims are unlistable and first-write-wins, so a claim made before the item
+ * exists cannot be observed or raced. Do both writes in one batch.
+ */
+export const ITEM_WRITE_ORDER = 'itemAuthors before items' as const
 
 export type RoundPhase = 'preview' | 'voting' | 'revealed'
 

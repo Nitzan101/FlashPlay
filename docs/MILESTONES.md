@@ -90,61 +90,58 @@ choosing them.
 
 ## Status
 
-- **Milestone 2 — REOPENED.** The gate's independent review found four serious
-  holes, each demonstrated by an executed assertion rather than by reading. The
-  data model, the fact-store half of the gate, and the model/rules path
-  agreement all hold up; the round-play rules do not. See below.
+- **Milestone 2 — done (reopened once, then closed).** Data model, security
+  rules, and 38 emulator assertions. The gate's independent review found four
+  demonstrated holes in the first version; all four are fixed, each fix
+  mutation-checked, and the review's design consequence (R1) settled. Firestore
+  is in `me-west1` (Tel Aviv). Rules deployed.
 - **Milestone 1 — done.** Repo, build, tests, lint, a separate Firebase project, and
   Google redirect sign-in working end to end on desktop and on a real phone from
   WhatsApp on iOS. Live at `https://flashplay-50bde.firebaseapp.com`.
-- **Milestone 0 — not started.**
-- **Milestone 3 — blocked**, on milestone 2 and on enabling anonymous sign-in in
-  the Firebase console (verified disabled: `ADMIN_ONLY_OPERATION`).
+- **Milestone 0 — not started.** Blocks milestone 4, not 3.
+- **Milestone 3 — next.** Room, joining, presence, player identity, member list.
+  Anonymous sign-in is enabled and verified live, so guests can authenticate.
 
-### Milestone 2 — open defects
+### How milestone 2 was closed
 
-**S1. The reveal guard reads a document the attacker may write.** `itemRevealed()`
-gates on `items/{id}.revealed`, but any player may `create` an `items` document
-with no field validation, and the host's skip button *deletes* one. So: list the
-item ids, wait for a skip, re-create that id with `revealed: true`, and read the
-author of an item that was never revealed. Proven end to end. The general form is
-worse than the exploit: **the lock's key is a document the people being locked out
-can write.**
+The four holes and how each was fixed — the shape of the fix matters more than
+the fix, because the same shape is what the next milestone should reuse:
 
-**S2. Every gathering is enumerable without the link.** `allow read: if isSignedIn()`
-on `/sessions/{sessionId}` never mentions the wildcard, so it grants `list` as well
-as `get` — `getDocs(collection('sessions'))` returns every session's room code,
-host and scores. DESIGN deliberately treats the join link as a bearer token, so
-joining *with* the code is intended; needing no code at all is not. The fix is to
-deny `list` on sessions, not to add another membership helper.
+**S1, the reveal guard could be forced open.** The guard read `items/{id}.revealed`,
+a document players could create and the host could delete: delete, re-create with
+the flag set, and the author document opened. Fixed by removing item deletion
+entirely rather than restricting it — no legitimate flow needs it — and by
+forbidding `revealed` at creation, so the flag can only ever be flipped
+false→true by the host.
 
-**S3. A vote can be cast after the reveal, once the answer is public.** `update` is
-guarded by `!roundRevealed(...)`; `create` has no phase guard. A player who
-abstained has no document, so their post-reveal write is a create. Proven: read the
-now-public votes, then cast the correct answer for two points.
+**S2, every gathering was enumerable.** `allow read` on a session granted `list`
+as well as `get`, because the condition never mentioned the wildcard. Now `get`
+only. **This forced a real design decision: the room code is the session's
+document id**, since a room can only be opened by fetching an id you already
+know and there is no query-based lookup. The player roster was tightened the
+same way — it holds real names and required only being signed in.
 
-**S4. Authorship can be stolen.** `itemAuthors` create checks that you name
-*yourself*, never that the item is *yours*. Between a player's two writes (item,
-then author) anyone can claim it — and `update: if false` then locks the real
-author out permanently. The two-write gap on a phone network is the disconnection
-case DESIGN already calls out.
+**S3, a vote could be cast after the reveal.** `update` was phase-guarded and
+`create` was not; a player who abstained has no document, so their post-reveal
+write was a create. Both are guarded now.
 
-**R1 (design consequence, not a leak).** An unrevealed item's author is unreadable
-by every client forever, host included — there is no server. DESIGN says the ~12
-unrevealed items are kept as facts, attributed to their author. **Milestone 7
-cannot write those facts under these rules**, so this must be settled as part of
-fixing the above, while rules changes are still cheap.
+**S4, authorship could be stolen.** The rule checked that you named *yourself*,
+never that the item was *yours*. Fixed by inverting the write order: the author
+claim is written first, and an item cannot be created unless a matching claim
+already exists and belongs to the caller. Claims are unlistable and
+first-write-wins, so there is nothing to observe or race. **This is a client
+contract as much as a rule** — see `ITEM_WRITE_ORDER` in `src/lib/model.ts`.
 
-**R2–R7 (routine):** the trailing catch-all `match` is a no-op (Firestore is
-default-deny); an anonymous user can currently open a gathering as host, though
-DESIGN requires a registered one; `items` create validates no fields, lengths or
-counts; `PlayerDoc.hasDevice` describes a document the rules forbid the host from
-creating; votes' `get`/`update` check the player id but not session membership.
+**R1, unrevealed items could never be attributed.** Design keeps the items that
+never got a round as facts attributed to their author, but nothing could read
+those authors — there is no server to make an exception from. The host, and only
+the host, can now read them once the gathering's phase is `finished`.
 
-### What the test suite missed, and why
+### What the first suite missed, and what changed because of it
 
-**Not one `list` or query assertion in the twenty.** S1 and S2 are both invisible
-to `getDoc` and only appear through `getDocs`. Whole rules had no coverage at all:
-the `games` block, `players` create/update/delete, `items` create/update/delete,
-`sessions` create, and — where S3 hides — votes `create`, since the only vote test
-exercised the `update` path.
+Not one of the original twenty assertions was a `list` or a query, and two of the
+four holes were invisible to `getDoc`. The suite is now 38 assertions and every
+rule that grants a read has an explicit list assertion beside it, including the
+ones that are *supposed* to deny listing. Seven guards were mutation-checked
+individually — the exact coverage is stated in the test file header rather than
+claimed wholesale.

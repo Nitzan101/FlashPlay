@@ -291,3 +291,46 @@ corrected to `me-west1` (Tel Aviv) while the database was still empty; after any
 real data exists this becomes a migration rather than a one-minute fix. **The
 general lesson: a deploy command that finds missing infrastructure may create it
 with defaults nobody chose. Check what exists before deploying into it.**
+
+## Decisions forced by the milestone-2 security review
+
+These are not bug fixes; they are design commitments the fixes made necessary,
+and later milestones have to build on them.
+
+**The room code is the session's document id.** Listing the sessions collection
+is denied, because granting it let anyone enumerate every gathering on the
+project - room codes, hosts, scores - with no join link at all. That leaves only
+`get` by a known id, so there is no query that can turn a typed room code into a
+session. Making the code the id removes the need for one. Consequence for
+milestone 3: room codes must be generated collision-safe at creation, because a
+collision is now an id collision rather than a duplicate field.
+
+**The author claim is written before the item, and the rules enforce it.** With
+the item written first, its id appeared in a listable collection while its
+authorship was still unclaimed, and any other player could claim it - not as a
+microsecond race but for as long as the real author had not got round to it.
+Inverting the order closes it structurally: claims are unlistable and
+first-write-wins, so a claim made before the item exists cannot be observed or
+raced. Client code must write both in one batch, claim first. See
+`ITEM_WRITE_ORDER` in `src/lib/model.ts`.
+
+**Item documents are never deleted.** The host's skip button was assumed to
+delete an item; it does not need to, and deletion is what opened the reveal
+guard. Skipping is the host declining to create a round for that item, which is
+a client-side decision requiring no write at all. Items are therefore immutable
+after creation except for the one-way `revealed` flip.
+
+**The host can read unrevealed authorship once the gathering is finished.** This
+is a deliberate second path through a rule that otherwise has one condition, and
+it is worth naming as such because "a rule with an exception has a second path"
+is elsewhere in this file as a warning. The justification: DESIGN keeps the items
+that never got a round as facts *attributed to their author*, there is no server
+to do that attribution, and the alternative is data that no participant can ever
+read. It is host-only and post-gathering, so it cannot help a player during play,
+and it is `get`-only, so it cannot be used to sweep the collection.
+
+**A guard must not read state its subjects can write.** The generalisation of S1,
+recorded here because it is the one most likely to recur: the reveal guard read a
+flag from a document the locked-out players were allowed to create. Whenever a
+rule's condition depends on stored state, the question is who can write that
+state.

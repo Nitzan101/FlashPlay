@@ -6,12 +6,28 @@
  * the answer to the game they are playing. Every assertion here is a claim
  * about what an attacker cannot do, and each one must be able to fail.
  *
- * Mutation coverage, stated precisely because overstating it is exactly the
- * error this technique exists to prevent: three guards have been deleted and
- * the matching assertions watched to go red - the item-author reveal guard
- * (reddens 2), the vote reveal guard (1), and the owner check on the private
- * store (2). That is 5 of these assertions. The other 15 have not been
- * mutation-checked.
+ * An independent review of the first version of these rules found four
+ * demonstrated holes that every assertion here was green through. The lesson
+ * is recorded where it belongs, but the operative part for anyone editing this
+ * file: **not one of the original twenty assertions was a `list` or a query**,
+ * and two of the four holes were only ever visible through `getDocs`. If you
+ * add a rule, add a list assertion for it too.
+ *
+ * Mutation coverage, stated exactly rather than claimed wholesale, because
+ * overstating it is the error this technique exists to prevent. Seven guards
+ * have been deleted one at a time and the matching assertions watched to go
+ * red, then restored:
+ *
+ *   items create `revealed == false`            -> 1 assertion
+ *   items `allow delete: if false`              -> 1
+ *   sessions `get` (vs `read`, which lists)     -> 1
+ *   players read `isPlayer` (vs `isSignedIn`)   -> 1
+ *   votes create `!roundRevealed`               -> 1
+ *   items create author-claim check             -> 2
+ *   itemAuthors host-after-finished clause      -> 1
+ *
+ * That is 8 of these 38 assertions, covering every guard added in response to
+ * the milestone-2 review. The remaining 30 have not been mutation-checked.
  *
  * Requires the emulator. Run with `npm run test:rules`, which starts it.
  */
@@ -21,7 +37,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -256,5 +272,199 @@ describe('path helpers', () => {
     )
     expect(paths.groupFacts(HOST, 'group1')).toBe(`users/${HOST}/groups/group1/facts`)
     expect(paths.item(SESSION, ITEM)).toBe(`sessions/${SESSION}/items/${ITEM}`)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Regression tests for the four holes the milestone-2 review demonstrated.
+// Each names the finding it guards, so that deleting the guard and watching
+// the right test go red is a two-second exercise rather than a hunt.
+// ---------------------------------------------------------------------------
+
+describe('S1 - the reveal guard cannot be forced open', () => {
+  it('refuses an item created with revealed already true', async () => {
+    // The exploit was: host skips (deletes) an item, a player re-creates that
+    // same id with revealed:true, and the itemAuthors document opens as a side
+    // effect. Creation can no longer set the flag at all.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/forged`), {
+        authorPlayerId: PLAYER,
+      })
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/items/forged`), {
+        gameId: 'game1',
+        text: 'forged',
+        promptId: 'p1',
+        revealed: true,
+        createdAt: 0,
+      }),
+    )
+  })
+
+  it('allows the same creation with revealed false', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/fresh`), {
+        authorPlayerId: PLAYER,
+      })
+    })
+    await assertSucceeds(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/items/fresh`), {
+        gameId: 'game1',
+        text: 'mine',
+        promptId: 'p1',
+        revealed: false,
+        createdAt: 0,
+      }),
+    )
+  })
+
+  it('lets nobody delete an item, host included', async () => {
+    // Deletion is what created the re-creation window. Removed rather than
+    // restricted: no legitimate flow needs it, and the skip button never did.
+    await assertFails(deleteDoc(doc(asHost(), `sessions/${SESSION}/items/${ITEM}`)))
+    await assertFails(deleteDoc(doc(asPlayer(), `sessions/${SESSION}/items/${ITEM}`)))
+  })
+
+  it('lets only the host flip revealed, and only one way', async () => {
+    await assertFails(
+      updateDoc(doc(asPlayer(), `sessions/${SESSION}/items/${ITEM}`), { revealed: true }),
+    )
+    await assertSucceeds(
+      updateDoc(doc(asHost(), `sessions/${SESSION}/items/${ITEM}`), { revealed: true }),
+    )
+    // ...and cannot be un-revealed afterwards.
+    await assertFails(
+      updateDoc(doc(asHost(), `sessions/${SESSION}/items/${ITEM}`), { revealed: false }),
+    )
+  })
+})
+
+describe('S2 - gatherings cannot be enumerated', () => {
+  it('refuses to list the sessions collection', async () => {
+    // This is the assertion whose absence hid the hole: every original test
+    // used getDoc, and the leak was only ever visible through getDocs.
+    await assertFails(getDocs(collection(asOutsider(), 'sessions')))
+    await assertFails(getDocs(collection(asPlayer(), 'sessions')))
+  })
+
+  it('still allows fetching one session by a known id, so a link can be opened', async () => {
+    await assertSucceeds(getDoc(doc(asOutsider(), `sessions/${SESSION}`)))
+  })
+
+  it('refuses the player roster to someone who has not joined', async () => {
+    // The roster holds real names. Reading it required only being signed in.
+    await assertFails(getDocs(collection(asOutsider(), `sessions/${SESSION}/players`)))
+    await assertFails(getDoc(doc(asOutsider(), `sessions/${SESSION}/players/${PLAYER}`)))
+  })
+
+  it('allows the roster to someone who has joined', async () => {
+    await assertSucceeds(getDocs(collection(asPlayer(), `sessions/${SESSION}/players`)))
+  })
+})
+
+describe('S3 - a vote cannot be cast after the answer is public', () => {
+  it('refuses a vote created after the round is revealed', async () => {
+    // The original suite only exercised update, using a player who already
+    // had a vote document. A player who abstained has none, so their write
+    // after the reveal is a create - which had no phase guard at all.
+    await reveal('round')
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/rounds/${ROUND}/votes/${PLAYER}`), {
+        votedForPlayerId: HOST,
+        castAt: 0,
+      }),
+    )
+  })
+
+  it('allows a vote created while the round is still open', async () => {
+    await assertSucceeds(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/rounds/${ROUND}/votes/${PLAYER}`), {
+        votedForPlayerId: HOST,
+        castAt: 0,
+      }),
+    )
+  })
+
+  it('still allows listing the breakdown once revealed, which scoring needs', async () => {
+    await reveal('round')
+    await assertSucceeds(
+      getDocs(collection(asPlayer(), `sessions/${SESSION}/rounds/${ROUND}/votes`)),
+    )
+  })
+})
+
+describe('S4 - authorship cannot be stolen', () => {
+  it('refuses an item whose author claim belongs to someone else', async () => {
+    // Previously: the host submits an item, and before the host writes its
+    // author document a player claims it. Now the item cannot exist until its
+    // author claim does, and only its claimant can create it.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/hostitem`), {
+        authorPlayerId: HOST,
+      })
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/items/hostitem`), {
+        gameId: 'game1',
+        text: 'stolen',
+        promptId: 'p1',
+        revealed: false,
+        createdAt: 0,
+      }),
+    )
+  })
+
+  it('refuses an item with no author claim at all', async () => {
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/items/unclaimed`), {
+        gameId: 'game1',
+        text: 'orphan',
+        promptId: 'p1',
+        revealed: false,
+        createdAt: 0,
+      }),
+    )
+  })
+
+  it('refuses to overwrite an existing author claim', async () => {
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/itemAuthors/${ITEM}`), {
+        authorPlayerId: PLAYER,
+      }),
+    )
+  })
+})
+
+describe('R1 - unrevealed items can still become attributed facts', () => {
+  it('lets the host read an unrevealed author once the gathering has finished', async () => {
+    // Without this the ~12 items that never got a round would be unattributable
+    // by anyone, forever - there is no server to make an exception from, and
+    // DESIGN keeps them as facts attributed to their author.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}`), { phase: 'finished' })
+    })
+    await assertSucceeds(getDoc(doc(asHost(), `sessions/${SESSION}/itemAuthors/${ITEM}`)))
+  })
+
+  it('does not extend that to players', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}`), { phase: 'finished' })
+    })
+    await assertFails(getDoc(doc(asPlayer(), `sessions/${SESSION}/itemAuthors/${ITEM}`)))
+  })
+
+  it('does not open it to the host before the gathering finishes', async () => {
+    await assertFails(getDoc(doc(asHost(), `sessions/${SESSION}/itemAuthors/${ITEM}`)))
+  })
+
+  it('never allows listing the author collection, in any state', async () => {
+    // Deliberate, not incidental: a reader always already knows which itemId
+    // they want. Asserted so it stays deliberate.
+    await assertFails(getDocs(collection(asPlayer(), `sessions/${SESSION}/itemAuthors`)))
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}`), { phase: 'finished' })
+    })
+    await assertFails(getDocs(collection(asHost(), `sessions/${SESSION}/itemAuthors`)))
   })
 })
