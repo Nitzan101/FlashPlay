@@ -12,6 +12,11 @@ export const resources = {
     translation: {
       appName: 'FlashPlay',
       tagline: 'משחקים שנבנים מהאנשים שבחדר',
+      loading: 'טוען...',
+      signInWithGoogle: 'התחברות עם Google',
+      signOut: 'התנתקות',
+      greeting: 'שלום, {{name}}',
+      signInError: 'ההתחברות נכשלה. נסה שוב.',
     },
   },
 } as const
