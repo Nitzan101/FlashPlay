@@ -90,8 +90,8 @@ choosing them.
 
 ## Status
 
-- **Milestone 2 — done (reopened once, then closed).** Data model, security
-  rules, and 38 emulator assertions. The gate's independent review found four
+- **Milestone 2 — done (reviewed twice, reopened twice).** Data model, security
+  rules, and 48 emulator assertions. The gate's independent review found four
   demonstrated holes in the first version; all four are fixed, each fix
   mutation-checked, and the review's design consequence (R1) settled. Firestore
   is in `me-west1` (Tel Aviv). Rules deployed.
@@ -137,11 +137,45 @@ never got a round as facts attributed to their author, but nothing could read
 those authors — there is no server to make an exception from. The host, and only
 the host, can now read them once the gathering's phase is `finished`.
 
+### The second review, and what the fixes themselves broke
+
+Re-reviewing after fixing was not ceremony. Every one of the four repairs
+removed or narrowed a permission, and tightening rules is how a product gets
+locked out of its own database — so the second pass asked the opposite question:
+not what an attacker can still reach, but what no longer works. It confirmed all
+four originals closed, and found three more:
+
+**Two of them were created by the fixes.** R1 let the host read authorship once
+the gathering is `finished`, and nothing stopped the host setting `finished`,
+reading the answer key, and setting it back — the host is a scoring player, and
+DESIGN says their screen never contains the answer. Fixed by making the phase
+monotonic: peeking now costs the gathering. And denying session *listing* made
+the room code the document id, which meant a deleted session's id could be
+re-created by anyone — inheriting the previous gathering's roster, items and
+claims, because Firestore does not delete subcollections. Fixed by denying
+session deletion outright.
+
+**One was a documented instruction that could not work.** `ITEM_WRITE_ORDER`
+said to write the claim and the item in one batch. Rules `get()` cannot see a
+batch's own pending writes, so that batch is always rejected — verified against
+the emulator. The contract now says two sequential writes, and says why, and
+says to use a fresh id on retry, because an orphan claim can never be completed.
+
+Everything else the review raised belongs to milestones that do not exist yet -
+room-code lifecycle, unguessable item ids, where a skip gets recorded, the host
+preview being defeated by a devtools list. All are in BACKLOG.md with the
+finding intact.
+
 ### What the first suite missed, and what changed because of it
 
 Not one of the original twenty assertions was a `list` or a query, and two of the
-four holes were invisible to `getDoc`. The suite is now 38 assertions and every
-rule that grants a read has an explicit list assertion beside it, including the
-ones that are *supposed* to deny listing. Seven guards were mutation-checked
-individually — the exact coverage is stated in the test file header rather than
-claimed wholesale.
+four holes were invisible to `getDoc`. The suite is now 48 assertions, and
+eleven guards have been mutation-checked individually — deleted one at a time,
+the matching assertion watched to go red, then restored.
+
+Worth recording that the first repair of this gap was itself overstated: the
+claim "every rule granting a read has a list assertion beside it" was written
+when `games`, `rounds`, `items`, the private store and the pre-reveal vote list
+had none. The second review caught it. **State coverage by pointing at
+assertions, never by describing them** — the exact figures now live in the test
+file header.

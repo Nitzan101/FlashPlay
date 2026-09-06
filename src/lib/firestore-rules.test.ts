@@ -13,6 +13,12 @@
  * and two of the four holes were only ever visible through `getDocs`. If you
  * add a rule, add a list assertion for it too.
  *
+ * A second review then found that the first round of fixes had itself created
+ * two new holes, and that the claim "every rule granting a read has a list
+ * assertion beside it" was not true when written - `games`, `rounds`, `items`,
+ * the private store and the pre-reveal vote list all had none. They do now.
+ * State coverage by pointing at assertions, never by describing them.
+ *
  * Mutation coverage, stated exactly rather than claimed wholesale, because
  * overstating it is the error this technique exists to prevent. Seven guards
  * have been deleted one at a time and the matching assertions watched to go
@@ -25,9 +31,13 @@
  *   votes create `!roundRevealed`               -> 1
  *   items create author-claim check             -> 2
  *   itemAuthors host-after-finished clause      -> 1
+ *   sessions phase monotonicity                 -> 1
+ *   sessions `allow delete: if false`           -> 1
+ *   itemAuthors claim-before-item existence     -> 1
+ *   sessions hostUid immutability               -> 1
  *
- * That is 8 of these 38 assertions, covering every guard added in response to
- * the milestone-2 review. The remaining 30 have not been mutation-checked.
+ * That is 12 of these 48 assertions - every guard added in response to either
+ * review. The remaining 36 have not been mutation-checked.
  *
  * Requires the emulator. Run with `npm run test:rules`, which starts it.
  */
@@ -466,5 +476,100 @@ describe('R1 - unrevealed items can still become attributed facts', () => {
       await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}`), { phase: 'finished' })
     })
     await assertFails(getDocs(collection(asHost(), `sessions/${SESSION}/itemAuthors`)))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Regression tests for what the FIRST round of fixes broke or newly exposed.
+// The re-review asked the opposite question - not what an attacker can still
+// reach, but what the tightening cost - and these are its findings.
+// ---------------------------------------------------------------------------
+
+describe('F1 - the host cannot peek at the answer key mid-game', () => {
+  it('refuses to move a gathering backwards out of finished', async () => {
+    // The exploit: phase -> finished, read every author, phase -> playing.
+    // The host is a scoring player, and DESIGN says their screen never
+    // contains the answer. Ending the gathering to peek now ends it for real.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}`), { phase: 'finished' })
+    })
+    await assertFails(
+      updateDoc(doc(asHost(), `sessions/${SESSION}`), { phase: 'playing' }),
+    )
+    await assertFails(
+      updateDoc(doc(asHost(), `sessions/${SESSION}`), { phase: 'lobby' }),
+    )
+  })
+
+  it('still allows moving forward', async () => {
+    await assertSucceeds(
+      updateDoc(doc(asHost(), `sessions/${SESSION}`), { phase: 'finished' }),
+    )
+  })
+
+  it('refuses to hand the gathering to a different host', async () => {
+    await assertFails(
+      updateDoc(doc(asHost(), `sessions/${SESSION}`), { hostUid: PLAYER }),
+    )
+  })
+})
+
+describe('F2 - a session id cannot be recycled', () => {
+  it('refuses to delete a session, so its subcollections can never be inherited', async () => {
+    // Deleting a Firestore document leaves its subcollections behind. With the
+    // room code as the document id, a freed id would let the next creator
+    // inherit the previous gathering's roster, items and author claims.
+    await assertFails(deleteDoc(doc(asHost(), `sessions/${SESSION}`)))
+  })
+})
+
+describe('F4 - authorship cannot be rewritten by deleting the claim', () => {
+  it('refuses a claim on an item that already exists', async () => {
+    // Delete-then-create is an update by another route: the host may delete a
+    // claim, and without this a player could then claim an already-revealed
+    // item as their own.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await deleteDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/${ITEM}`))
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/itemAuthors/${ITEM}`), {
+        authorPlayerId: PLAYER,
+      }),
+    )
+  })
+
+  it('still allows a claim for an item that does not exist yet', async () => {
+    await assertSucceeds(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/itemAuthors/brandnew`), {
+        authorPlayerId: PLAYER,
+      }),
+    )
+  })
+})
+
+describe('F8 - the list gaps the coverage claim had papered over', () => {
+  it('keeps rounds and games readable to players and closed to outsiders', async () => {
+    await assertSucceeds(getDocs(collection(asPlayer(), `sessions/${SESSION}/rounds`)))
+    await assertSucceeds(getDocs(collection(asPlayer(), `sessions/${SESSION}/games`)))
+    await assertFails(getDocs(collection(asOutsider(), `sessions/${SESSION}/rounds`)))
+    await assertFails(getDocs(collection(asOutsider(), `sessions/${SESSION}/games`)))
+  })
+
+  it('keeps items listable by players and closed to outsiders', async () => {
+    await assertSucceeds(getDocs(collection(asPlayer(), `sessions/${SESSION}/items`)))
+    await assertFails(getDocs(collection(asOutsider(), `sessions/${SESSION}/items`)))
+  })
+
+  it('refuses to list votes before the round is revealed', async () => {
+    // The list form of this milestone's headline hidden-data claim, which the
+    // previous suite tested only as a single-document read.
+    await assertFails(
+      getDocs(collection(asPlayer(), `sessions/${SESSION}/rounds/${ROUND}/votes`)),
+    )
+  })
+
+  it("refuses another user's private store to a list as well as a get", async () => {
+    await assertFails(getDocs(collection(asPlayer(), `users/${HOST}/contacts`)))
+    await assertFails(getDocs(collection(asPlayer(), `users/${HOST}/groups`)))
   })
 })

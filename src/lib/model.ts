@@ -153,9 +153,21 @@ export interface ItemAuthorDoc {
  * written first, its id became publicly visible in a listable collection while
  * its authorship was still unclaimed, and any other player could claim it.
  * Claims are unlistable and first-write-wins, so a claim made before the item
- * exists cannot be observed or raced. Do both writes in one batch.
+ * exists cannot be observed or raced.
+ *
+ * **Two sequential writes, not a batch.** Firestore's `get()` in security
+ * rules does not see a batch's own pending writes, so an item-create inside
+ * the same batch as its claim is evaluated against a claim that does not yet
+ * exist and is rejected. Verified against the emulator.
+ *
+ * **Ids must be unguessable, and a retry must use a fresh one.** Both are
+ * security requirements created by this ordering, not conveniences. A
+ * predictable id lets another player pre-claim it and permanently block that
+ * submission (claims cannot be updated, and only the host can delete one). And
+ * a client that dies between the two writes leaves an orphan claim: retrying
+ * with the same id can never succeed, so generate a new one.
  */
-export const ITEM_WRITE_ORDER = 'itemAuthors before items' as const
+export const ITEM_WRITE_ORDER = 'itemAuthors before items, sequential, fresh id per attempt' as const
 
 export type RoundPhase = 'preview' | 'voting' | 'revealed'
 

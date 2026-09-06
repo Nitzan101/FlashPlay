@@ -55,6 +55,17 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/sessions/$(sessionId)/players/$(request.auth.uid));
     }
 
+    // A gathering only ever moves forward. Without this the host could set
+    // phase to 'finished', read the answer key through the rule below, and set
+    // it back - and the host is a scoring player. Ending the gathering to peek
+    // now costs the gathering.
+    function phaseRank(phase) {
+      return phase == 'lobby' ? 0
+        : phase == 'playing' ? 1
+        : phase == 'finished' ? 2
+        : -1;
+    }
+
     function itemRevealed(sessionId, itemId) {
       return get(/databases/$(database)/documents/sessions/$(sessionId)/items/$(itemId))
         .data.revealed == true;
@@ -96,8 +107,22 @@ service cloud.firestore {
 
       // Only the host drives the gathering forward.
       allow create: if isSignedIn() && request.resource.data.hostUid == request.auth.uid;
-      allow update: if isHost(sessionId);
-      allow delete: if isHost(sessionId);
+
+      // Phase never goes backwards, and the host never changes. The first
+      // guard is what stops the host peeking at authorship mid-game (they
+      // would have to end the gathering to do it); the second stops a host
+      // locking themselves out of their own room by mistake.
+      allow update: if isHost(sessionId)
+        && phaseRank(request.resource.data.phase) >= phaseRank(resource.data.phase)
+        && request.resource.data.hostUid == resource.data.hostUid;
+
+      // Deleting a session does NOT delete its subcollections - the players,
+      // items and author claims survive. With the room code as the document
+      // id, a deleted id could then be re-created by anyone, who would inherit
+      // the previous gathering's roster and answers. Deletion is therefore
+      // denied outright; expiry is an operational concern, not a client one.
+      // See DECISIONS.md - the room-code lifecycle is milestone-3 work.
+      allow delete: if false;
 
       // --- players ---
       // Document id is the player's uid, so a player structurally cannot write
@@ -179,8 +204,13 @@ service cloud.firestore {
         // A `create` rule only ever fires once per document id (the doc must
         // not already exist), and this collection can never be listed, so
         // there is no way to discover or race a claim in advance.
+        // The claim must precede its item, which is also what stops a claim
+        // being rewritten: the host may delete a claim, and without this
+        // condition delete-then-create would be an update by another route,
+        // letting a player take authorship of an already-revealed item.
         allow create: if isPlayer(sessionId)
-          && request.resource.data.authorPlayerId == request.auth.uid;
+          && request.resource.data.authorPlayerId == request.auth.uid
+          && !exists(/databases/$(database)/documents/sessions/$(sessionId)/items/$(itemId));
         // Never updatable - otherwise a player could rewrite history after
         // the reveal.
         allow update: if false;

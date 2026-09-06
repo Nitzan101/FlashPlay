@@ -91,3 +91,54 @@ version — the submission pipeline with a moderation interface is planned later
 consciously as an engineering showpiece rather than a growth engine. A native app.
 Remote play where participants are not in the same room, since the entire value
 depends on physical presence. A browsable catalogue of all games.
+
+---
+
+## Deferred from the milestone-2 security re-review
+
+Found by an independent review of the *fixes*, and deliberately not fixed in
+milestone 2 because each belongs to a milestone that has not been built yet.
+Recorded with the finding intact so none of them is rediscovered from scratch.
+
+**Room-code lifecycle and squatting — milestone 3.** The room code is now the
+session's document id (forced by denying collection listing), and session
+deletion is denied (a deleted id would let the next creator inherit the previous
+gathering's subcollections). Two consequences neither of those fixes addressed:
+codes are never released, and any signed-in client can create a session on any
+unused code, permanently denying it to a real host. **This wants deciding when
+joining is built:** most likely a long random session id with the short code as
+a separate `get`-only lookup document, plus a code-expiry story. `SessionDoc.expiresAt`
+currently has no enforcement behind it at all.
+
+**Item ids must be unguessable — milestone 4.** The claim-before-item ordering
+that closed authorship theft made this a security requirement rather than a
+convenience: a predictable id lets another player pre-claim it and permanently
+block that submission, since claims cannot be updated and only the host can
+delete one. Written next to `ITEM_WRITE_ORDER` in `src/lib/model.ts`; repeated
+here because it is the kind of requirement that gets optimised away by someone
+who thinks sequential ids read better.
+
+**Orphan claims are unbounded — milestone 4.** A claim can be created for an id
+that never becomes an item, with arbitrary fields and no size or count limit.
+Harmless to correctness, unbounded in storage. Wants a field shape check and a
+per-player cap when the harvest is built.
+
+**Skip has nowhere to be recorded — milestone 5.** Item deletion was removed
+(it was what opened the reveal guard), and `revealed` only flips one way, so a
+skipped item is now byte-identical to one that simply never got a round.
+**This matters at milestone 7:** unrevealed items are kept as facts for future
+gatherings, so on the current model the offensive item the host skipped is
+retained, attributed, and resurfaced at the next gathering — exactly what the
+skip button exists to prevent. Needs either a `skipped` field on the item or a
+skip record on the round.
+
+**The host preview is already defeated — milestone 5.** Players may list `items`
+from the moment of submission and read `rounds` during the `preview` phase, so a
+player with devtools sees the item under preview before the host reads it out.
+DESIGN: "if everyone sees the item at the same time he does, the button is
+worthless." Pre-existing rather than caused by the fixes, and squarely on
+milestone 5's gate, which tests exactly this device.
+
+**`PlayerDoc.uid` can lie — routine.** The rules check the document id against
+the caller's uid but never the `uid` *field*. Harmless while client code keys
+off the document id, a trap the day it keys off the field.
