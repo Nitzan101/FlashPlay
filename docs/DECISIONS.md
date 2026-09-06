@@ -256,3 +256,38 @@ EventFlow. Not finally settled.
 
 **Formats and games beyond the first version.** The first target is closed. After
 it, the fifteen approved games in an order determined by what the testing teaches.
+
+---
+
+## Findings from building (milestone 2)
+
+**Guests sign in anonymously.** DESIGN says a guest enters with a name only and
+is never blocked. That is about friction, not about identity: security rules
+need a subject to authorise against, so every player - guests included - gets a
+Firebase anonymous uid. It costs the guest nothing (no screen, no decision) and
+it is what makes every other rule in the file enforceable. A player document's
+id *is* that uid, which makes "write someone else's vote" and "rename another
+player" structurally impossible rather than merely checked.
+
+**The host's fact store is not readable by people in their own gathering.**
+Contacts, groups and facts live under `users/{uid}` and stay there. A gathering
+copies in only the items actually in play. The join link is a bearer token that
+can be forwarded out of the WhatsApp group, so "is in the room" cannot be
+allowed to mean "can read this family's accumulated memory".
+
+**Item author documents are unreadable even by their own author before the
+reveal.** The author already knows who they are, so allowing it buys nothing -
+and a rule carrying an "unless it is yours" exception has a second path through
+it, which is where a leak eventually appears. One condition, no exceptions.
+
+**A vote's document id is the voting player's uid.** Double voting is then
+impossible by construction rather than by a check that could be forgotten.
+
+**Firestore's location is chosen permanently, and `firebase deploy` will choose
+it for you.** Deploying rules to a project with no database silently created
+one in `nam5` (United States) - for an app whose users are all in one room in
+Israel, with real-time listeners firing on every vote. Caught immediately and
+corrected to `me-west1` (Tel Aviv) while the database was still empty; after any
+real data exists this becomes a migration rather than a one-minute fix. **The
+general lesson: a deploy command that finds missing infrastructure may create it
+with defaults nobody chose. Check what exists before deploying into it.**

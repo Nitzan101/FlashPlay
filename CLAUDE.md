@@ -35,12 +35,21 @@ All verified by execution on 2026-09-04.
 - Build: `npm run build` (runs `tsc -b` then `vite build`)
 - Run: `npm run dev`
 - Test: `npm test` (Vitest, single run) / `npm run test:watch`
+- Security rules test: `npm run test:rules` - starts the Firestore emulator and
+  runs the rules suite against it. Needs Java (present: OpenJDK 21). Excluded
+  from `npm test` so the everyday loop stays fast and emulator-free.
+- Deploy rules: `npm run deploy:rules`
+- Deploy app: `npm run build` then `firebase deploy --only hosting --project flashplay-50bde`
 - Lint: `npm run lint` (oxlint)
 
 ## How we verify a change here
 `npm run build && npm test` is the default evidence, and a change to behaviour
 needs a test that demonstrably fails without it — flip the thing under test and
 watch the test go red before claiming it guards anything.
+
+`npm run test:rules` is required on top of that for anything touching
+`firestore.rules` or the data model, and a rules change is only proven when the
+rule has been deleted and the matching assertion watched to go red.
 
 Two kinds of change are not covered by that and need more:
 - **Anything touching anonymity, ownership or read access** — the client reads

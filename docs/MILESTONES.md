@@ -83,9 +83,10 @@ choosing them.
 
 ## Status
 
+- **Milestone 2 (data model + security rules) - done.** Model in `src/lib/model.ts`, rules in `firestore.rules`, 20 emulator assertions in `src/lib/firestore-rules.test.ts`, each verified to fail when its rule is removed. Firestore lives in `me-west1` (Tel Aviv).
 - **Milestone 1 — done.** Repo, build, tests, lint, a separate Firebase project, and
   Google redirect sign-in working end to end on desktop and on a real phone from
   WhatsApp on iOS. Live at `https://flashplay-50bde.firebaseapp.com`. Findings and
   the open Android question are in DECISIONS.md and CLAUDE.md.
 - **Milestone 0 — not started.**
-- **Milestone 2 — next.**
+- **Milestone 3 — next.** Room, joining, presence, player identity, member list.

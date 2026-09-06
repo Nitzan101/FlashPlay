@@ -1,0 +1,164 @@
+rules_version = '2';
+
+// FlashPlay security rules.
+//
+// This app is serverless: the client reads Firestore directly, so these rules
+// are the only enforcement boundary that exists. Nothing here is a convenience
+// or a second line of defence - if a rule is wrong, the game is broken and a
+// player with devtools open can read the answer.
+//
+// One shape covers the two things that must stay hidden, because they are the
+// same problem (DESIGN.md, "One pattern for the security rules"):
+//
+//     writes permitted to the owner only,
+//     reads permitted only after the phase has passed.
+//
+// It applies to who wrote an item, and to how everyone voted. Anywhere else
+// that needs to hide something until a moment arrives should reuse it rather
+// than invent a second mechanism.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- helpers ------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function session(sessionId) {
+      return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
+    }
+
+    function isHost(sessionId) {
+      return isSignedIn() && session(sessionId).hostUid == request.auth.uid;
+    }
+
+    // Membership is "you have a player document in this gathering". Holding the
+    // link is not enough on its own: the link is a bearer token that can be
+    // forwarded out of the group, so joining has to leave a trace that the
+    // rules can check.
+    function isPlayer(sessionId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/sessions/$(sessionId)/players/$(request.auth.uid));
+    }
+
+    function itemRevealed(sessionId, itemId) {
+      return get(/databases/$(database)/documents/sessions/$(sessionId)/items/$(itemId))
+        .data.revealed == true;
+    }
+
+    function roundRevealed(sessionId, roundId) {
+      return get(/databases/$(database)/documents/sessions/$(sessionId)/rounds/$(roundId))
+        .data.phase == 'revealed';
+    }
+
+    // --- the host's private store -------------------------------------------
+    //
+    // Contacts, groups and the accumulated facts belong to the user who owns
+    // them and are readable by nobody else - explicitly including people who
+    // are in that user's gathering right now. A gathering copies in only the
+    // items actually in play; without this line a guest could read a family's
+    // entire accumulated memory (DESIGN.md, "The link is a bearer token").
+
+    match /users/{uid} {
+      allow read, write: if isUser(uid);
+
+      match /{document=**} {
+        allow read, write: if isUser(uid);
+      }
+    }
+
+    // --- the live gathering -------------------------------------------------
+
+    match /sessions/{sessionId} {
+      // Anyone signed in can read a session document: this is what lets a phone
+      // that just opened the link discover the gathering and join it. It holds
+      // no secrets - scores and phase are public to the room anyway.
+      allow read: if isSignedIn();
+
+      // Only the host drives the gathering forward.
+      allow create: if isSignedIn() && request.resource.data.hostUid == request.auth.uid;
+      allow update: if isHost(sessionId);
+      allow delete: if isHost(sessionId);
+
+      // --- players ---
+      // Document id is the player's uid, so a player structurally cannot write
+      // someone else's presence or rename them.
+      match /players/{playerId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && playerId == request.auth.uid;
+        allow update: if isUser(playerId) || isHost(sessionId);
+        allow delete: if isUser(playerId) || isHost(sessionId);
+      }
+
+      // --- games ---
+      match /games/{gameId} {
+        allow read: if isPlayer(sessionId);
+        allow write: if isHost(sessionId);
+      }
+
+      // --- harvested items: PUBLIC, text only ---
+      // Deliberately contains no author. See itemAuthors below.
+      match /items/{itemId} {
+        allow read: if isPlayer(sessionId);
+        allow create: if isPlayer(sessionId);
+        // Only the host flips `revealed`, and that flip is what opens the
+        // author document for reading.
+        allow update, delete: if isHost(sessionId);
+      }
+
+      // --- who wrote each item: PRIVATE until that item is revealed ---
+      //
+      // This is the rule the first game depends on entirely. If it is wrong,
+      // "Who said that" is not a guessing game.
+      match /itemAuthors/{itemId} {
+        allow read: if isPlayer(sessionId) && itemRevealed(sessionId, itemId);
+
+        // Written once, by the author, naming themselves. Never updatable -
+        // otherwise a player could rewrite history after the reveal.
+        allow create: if isPlayer(sessionId)
+          && request.resource.data.authorPlayerId == request.auth.uid;
+        allow update: if false;
+        allow delete: if isHost(sessionId);
+      }
+
+      // --- rounds ---
+      match /rounds/{roundId} {
+        allow read: if isPlayer(sessionId);
+        allow write: if isHost(sessionId);
+
+        // --- votes: PRIVATE until the round is revealed ---
+        //
+        // The same shape as itemAuthors, for the same reason: seeing the votes
+        // as they land would turn the round into a poll where everyone follows
+        // the first vote.
+        //
+        // Document id is the voting player's uid, so double voting is
+        // structurally impossible rather than merely checked.
+        match /votes/{playerId} {
+          allow read: if isPlayer(sessionId) && roundRevealed(sessionId, roundId);
+
+          // A player may always read back their own vote - they need to see
+          // what they picked while the round is still open.
+          allow get: if isUser(playerId);
+
+          allow create: if isUser(playerId) && isPlayer(sessionId);
+          // A vote may be changed while voting is open, and never after.
+          allow update: if isUser(playerId) && !roundRevealed(sessionId, roundId);
+          allow delete: if isHost(sessionId);
+        }
+      }
+    }
+
+    // Anything not matched above is denied. Stated explicitly so that adding a
+    // collection without adding rules fails loudly instead of silently.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
