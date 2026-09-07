@@ -297,13 +297,14 @@ with defaults nobody chose. Check what exists before deploying into it.**
 These are not bug fixes; they are design commitments the fixes made necessary,
 and later milestones have to build on them.
 
-**The room code is the session's document id.** Listing the sessions collection
-is denied, because granting it let anyone enumerate every gathering on the
-project - room codes, hosts, scores - with no join link at all. That leaves only
-`get` by a known id, so there is no query that can turn a typed room code into a
-session. Making the code the id removes the need for one. Consequence for
-milestone 3: room codes must be generated collision-safe at creation, because a
-collision is now an id collision rather than a duplicate field.
+**The room code was the session's document id, until milestone 3.** Listing the
+sessions collection is denied, because granting it let anyone enumerate every
+gathering on the project - room codes, hosts, scores - with no join link at
+all. That leaves only `get` by a known id, so there is no query that can turn a
+typed room code into a session. Making the code the id removed the need for
+one. **Superseded below** - the "decisions made in milestone 3" section
+explains why this could not stay, and what replaced it. The `get`-only
+constraint itself did not change; only what a client resolves by `get` did.
 
 **The author claim is written before the item, and the rules enforce it.** With
 the item written first, its id appeared in a listable collection while its
@@ -334,3 +335,164 @@ recorded here because it is the one most likely to recur: the reveal guard read 
 flag from a document the locked-out players were allowed to create. Whenever a
 rule's condition depends on stored state, the question is who can write that
 state.
+
+## Decisions made in milestone 3
+
+**The room code stopped being the session's document id.** Making the code the
+id (above) closed enumeration, but it meant a code could never be released -
+BACKLOG's "Room-code lifecycle and squatting" recorded the consequence: any
+signed-in client could open a session on any unused code, permanently denying
+it to a real host, and an abandoned gathering held its code forever since
+sessions cannot be deleted. Fixing this required decoupling two things that
+milestone 2 had fused: the address of a gathering's data, and the human-facing
+code that finds it.
+
+The session id is now `crypto.randomUUID()` - unguessable, so nothing is lost
+by it never appearing in a listable collection. The code lives in its own
+`roomCodes/{code}` document (`RoomCodeDoc` in `src/lib/model.ts`), `get`-only
+for the same enumeration reason as sessions, mapping the code to the session id
+it currently points at. Its `create` is bounded on both ends by
+`ROOM_CODE_WINDOW_MS` (12 hours: generous headroom over a 10-40 minute
+gathering, chosen because there is nothing to calibrate against yet - not a
+measurement) so a code cannot be reserved indefinitely, and its `update` is how
+an expired code returns to circulation: Firestore evaluates any write to an
+existing document id as `update` regardless of which client call produced it,
+so reclaiming is a plain overwrite once `resource.data.expiresAt` has passed.
+No Cloud Function needed - the emulator suite proved this by deleting the
+`resource.data.expiresAt < request.time.toMillis()` clause and watching the
+"refuses to overwrite a code that has not expired yet" assertion go red.
+
+**The session document itself is still never deleted**, and that is now
+actually safe rather than merely enforced: an unguessable id cannot be
+re-targeted by anyone, so a reclaimed code's old session just becomes
+unreachable garbage, not a re-creation risk. Real deletion (freeing the
+storage, not just the code) would need something to walk and delete every
+subcollection, which is a server this app deliberately does not have -
+recorded in BACKLOG if that cost is ever worth paying.
+
+**Opening a gathering now requires a registered host, enforced in rules.**
+DESIGN always said "a registered host (Google, one tap) is required to open a
+gathering," but nothing before milestone 3 checked it server-side - a guest's
+anonymous token could create a session like anyone else. `isRegistered()`
+reads `request.auth.token.firebase.sign_in_provider`, the standard Firebase
+Auth claim every real Firebase Auth token carries - `'anonymous'` for a guest,
+a real provider id (`'google.com'`) for a host. Mutation-checked: neutering
+the function to `isSignedIn()` turned two assertions red (a guest opening a
+session, a guest claiming a room code).
+
+### An independent review of the first version, and what it found
+
+The same discipline as milestone 2: re-reviewing the fix is not ceremony.
+
+**A room-code claim was never checked against the session it claimed to point
+at.** The first version of the `roomCodes` rules bounded `expiresAt` and
+required `isRegistered()`, but nothing verified that `sessionId` and `hostUid`
+in the write actually corresponded to a real session the caller hosts - a
+client could name any sessionId and any hostUid it liked. This was structural,
+not an oversight in the condition: at the time the code was claimed, the
+session didn't exist yet for the rule to `get()`. Fixed by reordering
+`createRoom` (`src/lib/room.ts`) to create the session first, then claim the
+code, then patch the session's display-only `roomCode` field once the code is
+known - which gives both the `create` and `update` rules something real to
+check: `get(sessions/$(sessionId)).data.hostUid == request.auth.uid`.
+Mutation-checked: removing that clause from `create` turned red both "refuses
+to claim a code for a session hosted by someone else" and "...that does not
+exist."
+
+### The first live run: three bugs, one shape
+
+Three separate failures on the first real use, each fixed with a test that
+fails without the fix. They are worth reading together, because the reason all
+three survived a green suite is the same reason, and it generalises:
+
+**Every one of them hid behind a test double that could not produce the real
+failure.** The emulator cannot skew a clock - its client and server are one
+machine. A mocked `resolveRoomCode` returned success to an unauthenticated
+caller, which real rules never do. A mocked `getDoc` answered "document does
+not exist" where real rules answer "permission denied" - and the client
+branched on which answer it got. In each case the double did not merely miss
+the bug; it **manufactured a state the real system cannot produce, and the
+test then certified that state as correct.**
+
+The rule that follows: whenever correctness depends on an enforcement boundary
+outside the code - security rules, a real clock, a real server - at least one
+test must run against the real boundary. Where the boundary genuinely cannot
+be reproduced, encode the hostile input in the data instead, which is how the
+clock-skew fix is tested without owning a second clock.
+
+**Bug 2: the guest read before it had an identity.** Anonymous sign-in ran
+when the guest submitted their name, but the join screen reads the room code
+before that - and every rule, including `roomCodes`, requires `isSignedIn()`.
+Sign-in now happens the moment a join link is opened, before any read.
+
+**Bug 3: membership was a question the guest was forbidden to ask.** The
+client checked "have I already joined?" by reading its own player document.
+`players` is `allow read: if isPlayer(sessionId)`, and `isPlayer` is only true
+once that document exists - so a first-time guest is denied by the very rule
+that protects the roster from outsiders. This is the milestone-2 protection
+working exactly as designed, with client code walking straight into it.
+Membership is now answered from `localStorage`, which also removes a network
+round trip from the join path - the path the two-minute promise is measured
+against.
+
+### Bug 1: a 200ms clock broke everything
+
+Every automated check was green — 67 emulator assertions, three
+mutation-checked guards, an independent review — and the very first click of
+"open a room" against real Firestore failed, deterministically, every time.
+
+**Cause: the room-code rule compared a client-computed timestamp against
+server time with zero margin.** The ceiling was `expiresAt <=
+request.time.toMillis() + ROOM_CODE_WINDOW_MS`, evaluated on Firestore's
+clock, while the client sent `Date.now() + ROOM_CODE_WINDOW_MS` from its own.
+That inequality holds only if the client is not ahead of the server *at all*.
+The laptop ran roughly 200ms fast, so every claim was denied — all eight
+retries, every attempt, forever.
+
+**Why nothing caught it.** The emulator runs client and server on one machine
+with one clock, so the client's timestamp is never ahead of the server's.
+**This class of bug is invisible to the emulator by construction**, which is
+worth stating plainly: a green rules suite says nothing about any rule whose
+truth depends on the relationship between two clocks. Session creation kept
+working throughout, because its rule contains no timestamp comparison — which
+made the failure look like it was in the newly-added `get()` cross-check, the
+one clause that was entirely innocent.
+
+**Two process failures made it worse than it needed to be**, and both are
+recorded in CLAUDE.md as pitfalls because both will recur:
+
+*The diagnosis was blocked by our own error handling.* The claim-retry loop
+and the UI handler each swallowed the Firebase error, so the browser console
+was completely empty during a total failure. Nothing could be learned without
+first shipping instrumentation. Errors are now reported with the failing step
+and the Firebase error code, and surfaced in the UI — a phone has no console,
+so an error that does not say what failed cannot be diagnosed at all.
+
+*A measurement at the wrong resolution actively misled.* The clock was checked
+early and reported "skew = 0" — but that check compared against an HTTP `Date`
+header, which has one-second resolution, against an effect of 200ms. The
+correct hypothesis was dismissed on that evidence and the investigation went
+looking at the `get()` clause instead. Sub-second offset needs round-trip
+bracketing, which then bounded the skew to +101..+302ms and settled it
+immediately. **A measurement can only rule out effects larger than its own
+resolution.**
+
+**The fix** is `ROOM_CODE_CLOCK_SKEW_MARGIN_MS` (30 minutes): the client asks
+for less than the ceiling, so the ceiling still bounds squatting at 12 hours
+while any realistically-synced device passes. The emulator *can* prove this
+even though it cannot reproduce the cause — by computing `expiresAt` the way a
+fast client would, from a simulated clock. Two assertions do exactly that: one
+confirms the un-margined write is denied (the outage), one confirms the
+margined write succeeds (the fix). Removing the skew from the model entirely
+is in BACKLOG.
+
+**The "registered host" tests were passing for the wrong reason.** The
+emulator's default mock token (`authenticatedContext(uid)` with no
+`tokenOptions`) omits the `firebase.sign_in_provider` claim entirely, rather
+than setting it to a real provider id. Since `isRegistered()` only checks for
+the *absence of the anonymous value*, every "registered host" assertion in the
+suite was passing on a token shaped like nothing a real Firebase sign-in ever
+produces - it proved isRegistered() doesn't reject an absent claim, not that
+it accepts a real one. Both `firestore-rules.test.ts` and `room.test.ts` now
+give their host contexts an explicit `{firebase: {sign_in_provider:
+'google.com'}}` claim, matching what Google sign-in actually issues.

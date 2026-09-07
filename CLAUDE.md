@@ -63,11 +63,19 @@ Two kinds of change are not covered by that and need more:
 ## Structure
 - `src/main.tsx` — entry; mounts App, imports i18n and Tailwind.
 - `src/i18n.ts` — i18next setup. Hebrew is the only shipped locale.
-- `src/App.tsx` — app shell: sign-in button, loading state, signed-in greeting.
+- `src/App.tsx` — app shell and the room flow's state machine: host sign-in and
+  room creation, guest join-by-link, resuming a stored session on refresh.
+- `src/Lobby.tsx` — the live member list + room code, shown once in a room.
 - `src/lib/firebase.ts` — reads config from `VITE_FIREBASE_*` env vars, exports
-  `firebaseApp` and `auth`. Throws on load if a var is missing.
+  `firebaseApp`, `auth` and `db`. Throws on load if a var is missing.
 - `src/lib/auth.ts` — `signInWithGoogle` (redirect, not popup — see comment),
-  `signOutUser`, and the `useAuthUser()` hook (`{ user, loading, redirectError }`).
+  `signOutUser`, `signInAsGuest` (anonymous), and the `useAuthUser()` hook
+  (`{ user, loading, redirectError }`).
+- `src/lib/model.ts` — the Firestore data model: types and `paths` helpers.
+  Single source of truth for document shapes; `firestore.rules` mirrors it by
+  hand and the two are kept in step by the emulator tests.
+- `src/lib/room.ts` — room creation, joining, presence: `createRoom`,
+  `resolveRoomCode`, `joinRoom`, `useRoster`, `usePresenceHeartbeat`.
 - `src/lib/canonicalHost.ts` — bounces the `.web.app` twin to the auth domain.
   Read its comment before touching anything about domains.
 - `src/test/setup.ts` — Vitest setup (jest-dom matchers).
@@ -131,39 +139,145 @@ so there is no reason to co-locate them.
   to the auth domain, not the auth domain to the app.
 - **Firebase Hosting caches `index.html` at the CDN edge**, so a `curl`
   straight after `firebase deploy` can still return the previous build.
-  Verify a deploy with a cache-buster (`curl ".../?nocache=$(date +%s)"`)
-  and compare the asset hash against `dist/index.html`, or you will
-  "confirm" a deploy that has not landed.
+  Compare the asset hash against `dist/index.html`, or you will "confirm" a
+  deploy that has not landed.
+- **The query-string cache-buster does not work on Firebase Hosting, and
+  fails in the dangerous direction.** `curl ".../?nocache=$(date +%s)"` — the
+  method this file recommended until 2026-09-07 — returned the *previous*
+  build's hash minutes after a deploy that had in fact landed: the CDN keys
+  on path and ignores the query string. That is a false negative, which is
+  worse than no check, because it sends you redeploying after a phantom.
+  What actually works is the request header:
+  `curl -s -H 'Cache-Control: no-cache' https://flashplay-50bde.firebaseapp.com/`
+  — confirm `X-Cache: MISS` in `curl -I` output, then compare hashes. Best
+  evidence of all is grepping the served bundle for a string only the new
+  code contains (e.g. `roomCodes` for milestone 3), since a matching hash
+  proves delivery but not content.
+- **A test double that cannot produce the real failure is not evidence — it
+  invents impossible states and certifies them.** Three separate live bugs on
+  2026-09-07, all of which the suite was green through, all the same shape:
+  the emulator could not produce clock skew (one machine, one clock); a mocked
+  `resolveRoomCode` returned success to an *unauthenticated* caller, which
+  real rules never do; a mocked `getDoc` answered "document does not exist"
+  where real rules answer "permission denied" — an answer that changed which
+  branch the client took. **Whenever correctness depends on an enforcement
+  boundary outside the code (security rules, a real clock, a real server),
+  at least one test must run against the real boundary.** Where the boundary
+  genuinely cannot be reproduced, encode the hostile input in the *data*
+  instead — that is how the clock-skew fix is tested without a second clock.
+- **A guest cannot read its own player document before joining, by design.**
+  `players` is `allow read: if isPlayer(sessionId)`, and `isPlayer` is only
+  true once that document exists — so "have I already joined?" is a question a
+  first-time guest is structurally forbidden to ask Firestore. Every live
+  first-time join failed on exactly this. Membership on the client is answered
+  from `localStorage` (`flashplay.session`), never by probing Firestore. Any
+  future rejoin/resume code will hit this again; `room.test.ts` pins it down
+  with an `assertFails` against real rules.
+- **Never make a client-computed timestamp satisfy an exact-boundary
+  comparison against server time.** The room-code rule's ceiling was
+  `expiresAt <= request.time.toMillis() + WINDOW` (server clock) while the
+  client sent `Date.now() + WINDOW` (its own clock). That passes only if the
+  client is not ahead by even a millisecond. On 2026-09-07 this laptop ran
+  **~200ms fast** and *every* room-code claim was denied, deterministically,
+  in production — while all 67 emulator assertions stayed green, because the
+  emulator's client and server are one machine with one clock. **This class
+  of bug is invisible to the emulator by construction.** The fix is
+  `ROOM_CODE_CLOCK_SKEW_MARGIN_MS`: the client asks for less than the
+  ceiling. The principled fix, if this recurs elsewhere, is to keep expiry
+  entirely in server time — write `createdAt` with `serverTimestamp()`,
+  assert `request.resource.data.createdAt == request.time` in the rule, and
+  derive expiry from it, so no client clock enters the comparison at all
+  (recorded in BACKLOG.md).
+- **A measurement at the wrong resolution is worse than no measurement.**
+  The above was diagnosed, then *wrongly dismissed*, because the first clock
+  check compared `date` against an HTTP `Date` header — one-second
+  resolution, which reported "skew=0" for a 200ms error and sent the
+  investigation chasing an innocent `get()` clause instead. Sub-second offset
+  needs round-trip bracketing (record local time either side of a request;
+  the server's second-granularity timestamp then bounds the offset from both
+  ends). **Before believing a measurement rules something out, check its
+  resolution is finer than the effect being ruled out.**
+- **A `catch {}` that swallows a Firestore error makes a live failure
+  undiagnosable.** The same outage produced a totally empty browser console,
+  because both the claim-retry loop and the UI handler discarded the error.
+  Every catch in `src/lib/room.ts` and `src/App.tsx` now reports the failing
+  step and the Firebase error code, and the UI shows the technical detail
+  under the friendly message — on a phone there is no console to open, so an
+  error that does not say what failed cannot be diagnosed at all.
+- **`@firebase/rules-unit-testing`'s `.firestore()` return type is not
+  structurally assignable to the modular `Firestore` type**, even though it's
+  runtime-interchangeable with modular SDK functions like `doc()`/`getDoc()`.
+  A client-library function typed with `firestore: Firestore` (the pattern
+  `src/lib/room.ts` uses so its logic can run against the emulator) rejects it
+  at compile time with "missing `type`, `toJSON`". Fix at the test-helper
+  boundary: `testEnv.authenticatedContext(uid).firestore() as unknown as
+  Firestore`. Found while writing `room.test.ts` on 2026-09-07.
+- **Mocking global `Math.random` to control which room code gets generated
+  does not work once Firestore calls are involved** — the Firestore SDK
+  itself calls `Math.random()` internally (connection setup, backoff jitter)
+  before your own code's call, consuming the mocked sequence unpredictably.
+  Inject a pluggable generator function instead (`nextCode` parameter on
+  `createRoom`/`claimRoomCode`) rather than mocking the global.
+- **`testEnv.authenticatedContext(uid)` with no `tokenOptions` omits the
+  `firebase.sign_in_provider` claim entirely** rather than defaulting to a
+  realistic value. A rule checking `!= 'anonymous'` (like `isRegistered()`)
+  then passes on an *absent* claim, not because it correctly identified a
+  registered user — so a "host" test using the bare default proves nothing
+  about the real check. Any test standing in for a registered/Google user
+  needs an explicit `{ firebase: { sign_in_provider: 'google.com' } }`, or
+  it's a vacuous pass waiting to be found by the next review, the way it was
+  in milestone 3's first version.
 
-## Starting milestone 3 cold
+## Milestone 3, implemented - what a fresh session needs to know
 
-Everything needed is in `docs/`; this is the short version of what a fresh
-session must not rediscover.
+Room, joining, presence, player identity and the member list are built. Only
+the gate itself (a real multi-device test, and the independent review) has not
+run - see `docs/MILESTONES.md` for exactly what remains.
 
-**Read first:** `docs/MILESTONES.md` (status and what each gate tests), then
-`docs/DESIGN.md` for anything about the product. `docs/DECISIONS.md` says why,
-including the security decisions milestone 3 has to build on.
+**The room code is no longer the session's document id.** That was true
+through milestone 2 and is the single biggest thing to un-learn from reading
+older code or docs by feel rather than checking them. The session id is now
+`crypto.randomUUID()` (unguessable, never shown to a human); the short code a
+person actually types or receives in a link lives in its own
+`roomCodes/{code}` document (`RoomCodeDoc` in `src/lib/model.ts`) that resolves
+to a session id, and can expire and be reclaimed by a new gathering
+(`ROOM_CODE_WINDOW_MS`, currently twelve hours) instead of being squatted
+forever. See `docs/DECISIONS.md`, "Decisions made in milestone 3", for why.
 
-**Three constraints milestone 3 inherits from the rules, all of them load-bearing:**
+**Other constraints milestone 3 built on, still load-bearing:**
 
-- **The room code is the session's document id.** Listing the sessions
-  collection is denied, so nothing can resolve a typed code through a query.
-  Joining is `getDoc(sessions/{code})` and nothing else.
 - **Sessions cannot be deleted, and phase only moves forward** (`lobby` →
   `playing` → `finished`). Both are security guards, not conveniences - see
-  DECISIONS.md before relaxing either.
+  DECISIONS.md before relaxing either. Milestone 3 made session deletion
+  actually *safe* (the id is unguessable, so nothing can retarget a deleted
+  one) without changing the rule - real cleanup would still need a server this
+  app doesn't have.
 - **A player joins by creating `players/{their own uid}`.** That write is what
   makes `isPlayer` true and unlocks the roster; the roster is deliberately
-  unreadable before it. Guests get a uid from anonymous sign-in, which is
-  enabled and verified live.
+  unreadable before it. Guests get a uid from anonymous sign-in
+  (`signInAsGuest` in `src/lib/auth.ts`).
+- **Opening a gathering requires a registered (non-anonymous) host, enforced
+  in rules via `isRegistered()`**, not just a hidden button - see
+  `src/lib/room.ts`'s `createRoom`.
+- **A `roomCodes` write must name a session the caller actually hosts** -
+  `firestore.rules` checks it with `get(sessions/$(sessionId))`, which only
+  works because `createRoom` creates the session *before* claiming its code.
+  Do not flip that order back for convenience; an independent review found
+  this exact gap when the code was claimed first (DECISIONS.md).
 
-**The first thing to decide in milestone 3** is the room-code lifecycle: codes
-are currently never released and any signed-in client can squat an unused one.
-BACKLOG.md has the finding and the likely shape of the answer.
+**Client library:** `src/lib/room.ts` - `createRoom`, `resolveRoomCode`,
+`joinRoom`, plus the `useRoster` and `usePresenceHeartbeat` hooks. Its
+Firestore-touching functions take a `Firestore` instance as a parameter rather
+than importing the app singleton, specifically so `room.test.ts` can run them
+against the rules emulator and prove the claim/retry contract end to end, not
+just what the rules allow in isolation.
 
-**Anything touching `firestore.rules`** must run `npm run test:rules`, and a new
-guard is not proven until it has been deleted and its assertion watched to go
-red. The test file header records exactly which guards have had that done.
+**Anything touching `firestore.rules`** must run `npm run test:rules`, which
+now also runs `src/lib/room.test.ts` (both are excluded from the default
+`npm test` and need the emulator - see `vitest.config.ts` /
+`vitest.rules.config.ts`). A new guard is not proven until it has been deleted
+and its assertion watched to go red. The test file header records exactly
+which guards have had that done.
 
 ## Open questions carried into later milestones
 Full context in `docs/BACKLOG.md`; these two are here because they change what

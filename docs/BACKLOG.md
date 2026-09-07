@@ -63,6 +63,29 @@ where the low end is three or four players and four browser profiles on a laptop
 suffice. Needed once groups of fifteen and up are being tested. Imposter Game
 solved part of this with two-client tests against an emulator.
 
+**Room-code expiry still passes through a client clock.** The 2026-09-07
+outage (see DECISIONS.md) was fixed by having the client ask for less than the
+rule's ceiling — `ROOM_CODE_CLOCK_SKEW_MARGIN_MS`. That absorbs any realistic
+skew but does not remove the class of bug: a device more than thirty minutes
+fast is still denied. The principled fix is to keep expiry entirely in server
+time — write `createdAt` with `serverTimestamp()`, have the rule assert
+`request.resource.data.createdAt == request.time`, and derive expiry as
+`createdAt + window` inside the rule, so no client clock enters any
+comparison. Deferred because it means moving that field from an epoch-millis
+number to a Firestore `Timestamp`, which is inconsistent with every other
+timestamp in the model (`joinedAt`, `lastSeenAt`, `createdAt` everywhere) —
+worth doing as one deliberate pass over all of them, not as a one-field
+exception.
+
+**Orphaned session data is never actually deleted.** Milestone 3 made a reclaimed
+room code point at a brand-new session, leaving the old one's document and every
+subcollection (players, items, votes) in place but unreachable - see
+DECISIONS.md, "Decisions made in milestone 3". Harmless to correctness and cheap
+at this scale, but real cleanup needs something that can walk and delete
+subcollections, which is a server this app deliberately does not have. Worth
+doing once storage or privacy (an abandoned gathering's data sitting around
+indefinitely) actually costs something - not before.
+
 ---
 
 ## Deferred implementation
@@ -100,15 +123,14 @@ Found by an independent review of the *fixes*, and deliberately not fixed in
 milestone 2 because each belongs to a milestone that has not been built yet.
 Recorded with the finding intact so none of them is rediscovered from scratch.
 
-**Room-code lifecycle and squatting — milestone 3.** The room code is now the
-session's document id (forced by denying collection listing), and session
-deletion is denied (a deleted id would let the next creator inherit the previous
-gathering's subcollections). Two consequences neither of those fixes addressed:
-codes are never released, and any signed-in client can create a session on any
-unused code, permanently denying it to a real host. **This wants deciding when
-joining is built:** most likely a long random session id with the short code as
-a separate `get`-only lookup document, plus a code-expiry story. `SessionDoc.expiresAt`
-currently has no enforcement behind it at all.
+**Room-code lifecycle and squatting — resolved in milestone 3.** See
+DECISIONS.md, "Decisions made in milestone 3": the session id is now a random
+unguessable string, the room code lives in its own `roomCodes/{code}` document
+with a bounded, reclaimable `expiresAt`, and the fix is mutation-checked in
+`room.test.ts` and `firestore-rules.test.ts`. `SessionDoc.expiresAt` remains
+unenforced by rules - it is display-only now, carried over from the room
+code's own expiry at creation - since the session document itself is never
+deleted regardless of what it says.
 
 **Item ids must be unguessable — milestone 4.** The claim-before-item ordering
 that closed authorship theft made this a security requirement rather than a

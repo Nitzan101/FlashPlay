@@ -99,8 +99,53 @@ choosing them.
   Google redirect sign-in working end to end on desktop and on a real phone from
   WhatsApp on iOS. Live at `https://flashplay-50bde.firebaseapp.com`.
 - **Milestone 0 — not started.** Blocks milestone 4, not 3.
-- **Milestone 3 — next.** Room, joining, presence, player identity, member list.
-  Anonymous sign-in is enabled and verified live, so guests can authenticate.
+- **Milestone 3 — implemented, gate not yet run.** Room creation, joining by
+  link, presence heartbeat, and the live member list are built: an
+  unguessable session id, a separate reclaimable `roomCodes/{code}` lookup
+  (closing the squatting finding from milestone 2's re-review - see
+  BACKLOG.md and DECISIONS.md), and host-registration now enforced in rules,
+  not just hidden client-side. An independent review of the first version
+  found two more holes - a room-code claim was never checked against the
+  session it pointed at, and the "registered host" tests were passing
+  vacuously rather than for the real reason - both closed and
+  mutation-checked; see DECISIONS.md, "An independent review of the first
+  version, and what it found." Automated evidence: `npm run build`,
+  `npm test` (21 tests), and `npm run test:rules` (69 emulator assertions
+  across `firestore-rules.test.ts` and `room.test.ts`, which proves the
+  client's claim/retry contract end to end rather than only what the rules
+  allow in isolation). Three of the milestone's own guards are
+  mutation-checked (`isRegistered()`, the reclaim-requires-expiry guard, the
+  session/hostUid cross-check).
+
+  **Then the first live run failed three times, on all of that being green.**
+  A laptop clock 200ms fast had every room-code claim denied; the guest's
+  anonymous sign-in happened after the first Firestore read instead of
+  before it; and the client asked "have I already joined?" by reading its own
+  player document, which the roster guard forbids until that document exists.
+  All three are fixed, each with a test that fails without the fix. The full
+  account is in DECISIONS.md, "The first live run"; the general lesson is in
+  CLAUDE.md and is worth carrying into every later milestone: **all three
+  hid behind a test double that could not produce the real failure — the
+  emulator cannot skew a clock, and a mock answers "not found" where real
+  rules answer "permission denied."**
+
+  **Live end-to-end result (2026-09-07):** a room opened on the laptop, four
+  separate browser identities joined by link, and all four appeared on every
+  screen with live presence, without a refresh. A closed window's dot went
+  grey on its own. **And a real phone joined, was locked for over a minute,
+  and resumed on unlock with the roster intact and its presence back to
+  green** - the one part of this that a laptop genuinely cannot stand in for,
+  and the thing most likely to have been broken.
+
+  That leaves exactly two things for the gate, both needing people rather
+  than code: **a timed run with three to five real phones** (the under-two-
+  minutes claim is about humans finding a WhatsApp message and typing a name,
+  which four browser tabs cannot measure), and **the independent four-lens
+  review**.
+
+  **Not yet done:** the actual gate - a three-to-five real phone join test
+  under two minutes with a mid-session screen-lock/foreground check, and the
+  independent four-lens review.
 
 ### How milestone 2 was closed
 
