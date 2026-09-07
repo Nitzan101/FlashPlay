@@ -336,6 +336,35 @@ flag from a document the locked-out players were allowed to create. Whenever a
 rule's condition depends on stored state, the question is who can write that
 state.
 
+## Decisions made in milestone 0 (the prompt pool)
+
+**The second game must quote the item, not re-tell it — a Hebrew constraint
+that English hid.** DESIGN requires an item's text to pass from "Who said
+that" into "Most likely to" *as it is*, wrapped only in a different question,
+because there is no AI in the first slice to splice free text into a template.
+In English that is invisible: "left his phone on the car roof" reads the same
+whoever is saying it. Hebrew conjugates for person, so an answer written as
+`שכחתי את המפתחות` cannot be re-read as David's without becoming `שכח`, and
+nothing in the first slice can do that transformation.
+
+The resolution is to put the name in its own clause and quote the item
+verbatim:
+
+    דוד כתב: «שכחתי את המפתחות בדלת». מי מכם הכי עלול לעשות את זה?
+
+This keeps the "text passes through untouched" rule intact, stays grammatical
+for any answer, and costs nothing. **It is a constraint on milestone 6's
+wording, not just a content note** - and every prompt in the pool is written
+on the assumption that this is the wrapper reading them, so changing the
+wrapper means re-checking the whole pool.
+
+**All first-slice prompts collect personal facts, not group facts.** The
+model supports both drawers, but both chosen games need an item attributable
+to one named person - "something that happened to us" cannot be re-asked as
+"who is most likely to do that". Group-drawer prompts arrive with a game that
+wants them. Asserted in `prompts.test.ts` so that adding one is a deliberate
+decision rather than a slip.
+
 ## Decisions made in milestone 3
 
 **The room code stopped being the session's document id.** Making the code the

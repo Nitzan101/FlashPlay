@@ -98,7 +98,16 @@ choosing them.
 - **Milestone 1 — done.** Repo, build, tests, lint, a separate Firebase project, and
   Google redirect sign-in working end to end on desktop and on a real phone from
   WhatsApp on iOS. Live at `https://flashplay-50bde.firebaseapp.com`.
-- **Milestone 0 — not started.** Blocks milestone 4, not 3.
+- **Milestone 0 — written, gate review in flight.** Eighteen Hebrew harvest
+  prompts in `src/content/prompts.ts`, all personal-drawer, with
+  `prompts.test.ts` holding everything mechanical (pool size, unique ids,
+  actually-Hebrew text, phone-readable length). The three prompt rules are
+  judgements and are reviewed by reading, which is this milestone's gate.
+  Writing them surfaced a design constraint English had hidden - the second
+  game must quote an item after the author's name rather than re-tell it,
+  because Hebrew conjugates for person and nothing in the first slice can
+  re-conjugate free text. See DECISIONS.md, "Decisions made in milestone 0".
+  This unblocks milestone 4.
 - **Milestone 3 — implemented, gate not yet run.** Room creation, joining by
   link, presence heartbeat, and the live member list are built: an
   unguessable session id, a separate reclaimable `roomCodes/{code}` lookup
