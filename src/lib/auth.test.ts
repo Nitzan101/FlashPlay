@@ -10,6 +10,7 @@ const mockOnAuthStateChanged = vi.fn()
 const mockGetRedirectResult = vi.fn()
 const mockSignInWithRedirect = vi.fn()
 const mockSignOut = vi.fn()
+const mockSignInAnonymously = vi.fn()
 
 vi.mock('firebase/auth', () => ({
   GoogleAuthProvider: vi.fn(),
@@ -17,10 +18,11 @@ vi.mock('firebase/auth', () => ({
   getRedirectResult: (...args: unknown[]) => mockGetRedirectResult(...args),
   signInWithRedirect: (...args: unknown[]) => mockSignInWithRedirect(...args),
   signOut: (...args: unknown[]) => mockSignOut(...args),
+  signInAnonymously: (...args: unknown[]) => mockSignInAnonymously(...args),
 }))
 
 // Imported after the mocks above so the module under test picks them up.
-const { signInWithGoogle, signOutUser, useAuthUser } = await import('./auth')
+const { signInWithGoogle, signOutUser, signInAsGuest, useAuthUser } = await import('./auth')
 
 describe('signInWithGoogle', () => {
   it('redirects rather than popping up, because mobile browsers block popups', () => {
@@ -35,6 +37,15 @@ describe('signOutUser', () => {
     mockSignOut.mockResolvedValue(undefined)
     void signOutUser()
     expect(mockSignOut).toHaveBeenCalledWith(mockAuth)
+  })
+})
+
+describe('signInAsGuest', () => {
+  it('signs in anonymously and returns the uid', async () => {
+    mockSignInAnonymously.mockResolvedValue({ user: { uid: 'guest-uid' } })
+    const uid = await signInAsGuest()
+    expect(mockSignInAnonymously).toHaveBeenCalledWith(mockAuth)
+    expect(uid).toBe('guest-uid')
   })
 })
 

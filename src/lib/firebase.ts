@@ -1,5 +1,6 @@
 import { initializeApp, type FirebaseOptions } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
+import { getFirestore } from 'firebase/firestore'
 
 /**
  * Reads config from env vars rather than hardcoding it, so that pointing a
@@ -42,3 +43,4 @@ export const authDomain = config.authDomain as string
 
 export const firebaseApp = initializeApp(config)
 export const auth = getAuth(firebaseApp)
+export const db = getFirestore(firebaseApp)

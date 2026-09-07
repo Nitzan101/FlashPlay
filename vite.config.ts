@@ -8,9 +8,16 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    // Security rules tests need the Firestore emulator and a node environment.
-    // They run separately via `npm run test:rules` so the everyday loop stays
-    // fast and does not depend on an emulator being up.
-    exclude: ['**/node_modules/**', '**/dist/**', 'src/lib/firestore-rules.test.ts'],
+    // Security rules tests (and room.ts's client-contract tests, which also
+    // need real Firestore to prove the claim/retry loop against) need the
+    // Firestore emulator and a node environment. They run separately via
+    // `npm run test:rules` so the everyday loop stays fast and does not
+    // depend on an emulator being up.
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      'src/lib/firestore-rules.test.ts',
+      'src/lib/room.test.ts',
+    ],
   },
 })

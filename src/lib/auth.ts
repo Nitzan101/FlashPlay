@@ -2,6 +2,7 @@ import {
   GoogleAuthProvider,
   getRedirectResult,
   onAuthStateChanged,
+  signInAnonymously,
   signInWithRedirect,
   signOut,
   type User,
@@ -24,6 +25,17 @@ export function signInWithGoogle(): Promise<void> {
 
 export function signOutUser(): Promise<void> {
   return signOut(auth)
+}
+
+/**
+ * A guest "enters with a name only and is never blocked" (DESIGN.md,
+ * "Identity and data"). Anonymous sign-in is what gives them a uid for the
+ * security rules to authorise against - see firestore.rules, isRegistered().
+ * Resolves to the signed-in user's uid.
+ */
+export async function signInAsGuest(): Promise<string> {
+  const credential = await signInAnonymously(auth)
+  return credential.user.uid
 }
 
 export interface AuthState {
