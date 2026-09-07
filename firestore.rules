@@ -38,6 +38,28 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    // DESIGN: "A registered host (Google, one tap) is required to open a
+    // gathering." Every real Firebase Auth token carries a
+    // `firebase.sign_in_provider` claim - `'anonymous'` for a guest,
+    // `'google.com'` for a host - so checking for the one value that means
+    // "guest" is enough; there is no real token where this claim is absent.
+    // (An independent review found the emulator's default mock token DOES
+    // omit it, which made an early version of this check pass vacuously for
+    // "registered" tests rather than for the right reason - see
+    // firestore-rules.test.ts, which now sets a realistic claim explicitly.)
+    function isRegistered() {
+      return isSignedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    // Milestone-3 room-code lifecycle: a code reservation lives at most this
+    // long before it can be reclaimed by a new gathering. Mirrors
+    // ROOM_CODE_WINDOW_MS in src/lib/model.ts - rules cannot import from
+    // there, so the two are kept in step by the emulator tests, the same way
+    // ITEM_WRITE_ORDER is.
+    function maxRoomCodeWindowMs() {
+      return 12 * 60 * 60 * 1000;
+    }
+
     function session(sessionId) {
       return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
     }
@@ -92,6 +114,54 @@ service cloud.firestore {
       }
     }
 
+    // --- the room-code lookup ------------------------------------------------
+    //
+    // Maps the short human-facing code to a session's real (unguessable) id.
+    // `get` only, same reasoning as sessions below: a client must already
+    // know the code to resolve it, and there is no query-based lookup by
+    // design - `list` here would let a code be found by sweeping instead of
+    // by receiving a join link.
+    match /roomCodes/{code} {
+      allow get: if isSignedIn();
+
+      // A fresh reservation: only a registered host may open one, naming a
+      // session that already exists and is actually theirs - an independent
+      // review of the first version of this found that nothing checked the
+      // claim actually pointed where it said: a client could name any
+      // sessionId and hostUid it liked. `src/lib/room.ts` creates the session
+      // before claiming its code specifically so this `get()` has something
+      // real to check. The window is bounded on both ends - not already
+      // expired (a code cannot be born reclaimable) and not further out than
+      // the maximum window (or a host could reserve a code indefinitely,
+      // which is exactly the permanent-squatting problem this collection
+      // exists to remove).
+      allow create: if isRegistered()
+        && request.resource.data.hostUid == request.auth.uid
+        && get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId))
+             .data.hostUid == request.auth.uid
+        && request.resource.data.expiresAt > request.time.toMillis()
+        && request.resource.data.expiresAt <= request.time.toMillis() + maxRoomCodeWindowMs();
+
+      // Reclaiming an expired code. Firestore evaluates a write to an id that
+      // already has a document as `update`, not `create` - regardless of
+      // whether the client called setDoc or updateDoc - which is why this is
+      // a separate rule rather than a condition on create. The existing
+      // reservation must actually be expired; the new one is bounded and
+      // session-checked exactly as a fresh create would be.
+      allow update: if isRegistered()
+        && resource.data.expiresAt < request.time.toMillis()
+        && request.resource.data.hostUid == request.auth.uid
+        && get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId))
+             .data.hostUid == request.auth.uid
+        && request.resource.data.expiresAt > request.time.toMillis()
+        && request.resource.data.expiresAt <= request.time.toMillis() + maxRoomCodeWindowMs();
+
+      // No legitimate flow deletes a code directly - expiry-then-reclaim is
+      // the only lifecycle. Same "remove the failure mode" reasoning as
+      // items' delete rule.
+      allow delete: if false;
+    }
+
     // --- the live gathering -------------------------------------------------
 
     match /sessions/{sessionId} {
@@ -99,14 +169,19 @@ service cloud.firestore {
       // gathering on the project - room codes, hosts, scores - with no join
       // link at all (found in the milestone-2 review). A client must already
       // know the sessionId to read one; there is no query-based lookup by
-      // room code. See DECISIONS.md, "Findings from building (milestone 2 -
-      // reopened)": the room code is the document id, precisely so that
-      // opening a room is always a `get` by a known id and `list` is never
-      // needed for it.
+      // room code. Milestone 3 made the id itself an unguessable random
+      // string rather than the room code (see roomCodes below and
+      // SessionDoc.roomCode in src/lib/model.ts) - `get`-only stays exactly
+      // as necessary, since a guest now reaches a session by resolving a code
+      // through roomCodes first, never by guessing or listing this id.
       allow get: if isSignedIn();
 
-      // Only the host drives the gathering forward.
-      allow create: if isSignedIn() && request.resource.data.hostUid == request.auth.uid;
+      // Only a registered host may open a gathering (DESIGN.md, "Identity and
+      // data") - a guest's anonymous token fails isRegistered(). Enforced
+      // here, not just by hiding the button, for the same reason every other
+      // rule in this file exists: the client cannot be trusted to enforce its
+      // own product rules.
+      allow create: if isRegistered() && request.resource.data.hostUid == request.auth.uid;
 
       // Phase never goes backwards, and the host never changes. The first
       // guard is what stops the host peeking at authorship mid-game (they
@@ -117,11 +192,14 @@ service cloud.firestore {
         && request.resource.data.hostUid == resource.data.hostUid;
 
       // Deleting a session does NOT delete its subcollections - the players,
-      // items and author claims survive. With the room code as the document
-      // id, a deleted id could then be re-created by anyone, who would inherit
-      // the previous gathering's roster and answers. Deletion is therefore
-      // denied outright; expiry is an operational concern, not a client one.
-      // See DECISIONS.md - the room-code lifecycle is milestone-3 work.
+      // items and author claims survive, becoming orphaned garbage rather
+      // than a re-creation risk now that the id is unguessable (milestone 3):
+      // nobody can target that specific id to inherit them. Still denied,
+      // because there is no legitimate reason to delete one and the cleanup
+      // that would make deletion meaningful (removing the subcollections too)
+      // needs a server this app deliberately doesn't have; expiry is handled
+      // one level up, on the room code that points here, not on this
+      // document. See DECISIONS.md, "room-code lifecycle (milestone 3)".
       allow delete: if false;
 
       // --- players ---

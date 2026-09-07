@@ -36,8 +36,22 @@
  *   itemAuthors claim-before-item existence     -> 1
  *   sessions hostUid immutability               -> 1
  *
- * That is 12 of these 48 assertions - every guard added in response to either
- * review. The remaining 36 have not been mutation-checked.
+ * That is 12 of the first 48 assertions - every guard added in response to
+ * either review. The remaining 36 of those have not been mutation-checked.
+ *
+ * Milestone 3 added 13 more (61 total) for the room-code lifecycle - see
+ * SessionDoc.roomCode and RoomCodeDoc in src/lib/model.ts. Three of its
+ * guards have been mutation-checked the same way, the third added after an
+ * independent review found the first version of this rule never checked a
+ * claim's sessionId/hostUid pointed anywhere real:
+ *
+ *   isRegistered() (host vs. guest token)         -> 2 assertions
+ *   roomCodes update requires prior expiry        -> 1
+ *   roomCodes create/update session cross-check   -> 2
+ *
+ * A separate client-contract suite, room.test.ts, proves the actual
+ * claim/retry loop in src/lib/room.ts end to end against these same rules -
+ * not just what the rules allow in isolation.
  *
  * Requires the emulator. Run with `npm run test:rules`, which starts it.
  */
@@ -51,6 +65,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from '
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { ROOM_CODE_CLOCK_SKEW_MARGIN_MS, ROOM_CODE_WINDOW_MS } from './model'
 
 const PROJECT_ID = 'demo-flashplay'
 const SESSION = 'session1'
@@ -123,9 +138,27 @@ beforeEach(async () => {
 })
 
 const asPlayer = () => testEnv.authenticatedContext(PLAYER).firestore()
-const asHost = () => testEnv.authenticatedContext(HOST).firestore()
-const asOutsider = () => testEnv.authenticatedContext(OUTSIDER).firestore()
+// HOST and OUTSIDER carry a realistic non-anonymous provider claim because
+// isRegistered() checks it. Without this, an independent review found these
+// tests were passing "registered" checks for the wrong reason: the emulator's
+// default mock token omits `firebase.sign_in_provider` entirely rather than
+// setting it to a real provider, so isRegistered() was passing vacuously on
+// an absent claim, not on a genuine non-anonymous one - see firestore.rules,
+// isRegistered().
+const asHost = () =>
+  testEnv.authenticatedContext(HOST, { firebase: { sign_in_provider: 'google.com' } }).firestore()
+const asOutsider = () =>
+  testEnv
+    .authenticatedContext(OUTSIDER, { firebase: { sign_in_provider: 'google.com' } })
+    .firestore()
 const asAnonymous = () => testEnv.unauthenticatedContext().firestore()
+
+// A real Firebase guest, as opposed to `asAnonymous` above (which is not
+// signed in at all - see the comment on "refuses an unauthenticated client
+// entirely"). A guest DOES have request.auth != null; the token just carries
+// the anonymous sign-in provider, which is what isRegistered() checks.
+const asGuest = () =>
+  testEnv.authenticatedContext(PLAYER, { firebase: { sign_in_provider: 'anonymous' } }).firestore()
 
 /** Flips an item or a round into its revealed state, bypassing the rules. */
 async function reveal(what: 'item' | 'round') {
@@ -282,6 +315,7 @@ describe('path helpers', () => {
     )
     expect(paths.groupFacts(HOST, 'group1')).toBe(`users/${HOST}/groups/group1/facts`)
     expect(paths.item(SESSION, ITEM)).toBe(`sessions/${SESSION}/items/${ITEM}`)
+    expect(paths.roomCode('1234')).toBe('roomCodes/1234')
   })
 })
 
@@ -571,5 +605,254 @@ describe('F8 - the list gaps the coverage claim had papered over', () => {
   it("refuses another user's private store to a list as well as a get", async () => {
     await assertFails(getDocs(collection(asPlayer(), `users/${HOST}/contacts`)))
     await assertFails(getDocs(collection(asPlayer(), `users/${HOST}/groups`)))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Milestone 3: room, joining, presence, player identity.
+//
+// The room code stopped being the session's document id - see
+// SessionDoc.roomCode and RoomCodeDoc in src/lib/model.ts for why. That
+// unblocks the squatting problem BACKLOG.md recorded after milestone 2: a
+// code can now expire and be reclaimed instead of being denied forever.
+// ---------------------------------------------------------------------------
+
+const NEW_SESSION = 'new-session'
+const CODE = '1234'
+const now = () => Date.now()
+
+describe('M3 - only a registered host may open a gathering', () => {
+  it("refuses a guest's anonymous token", async () => {
+    // DESIGN: "A registered host (Google, one tap) is required to open a
+    // gathering." A guest DOES have request.auth != null (unlike asAnonymous
+    // above) - only the sign-in provider tells them apart.
+    await assertFails(
+      setDoc(doc(asGuest(), `sessions/${NEW_SESSION}`), {
+        roomCode: CODE,
+        hostUid: PLAYER,
+        groupId: null,
+        phase: 'lobby',
+        currentGameId: null,
+        scores: {},
+        createdAt: 0,
+        expiresAt: 0,
+      }),
+    )
+  })
+
+  it('allows a registered user to open one', async () => {
+    await assertSucceeds(
+      setDoc(doc(asHost(), `sessions/${NEW_SESSION}`), {
+        roomCode: CODE,
+        hostUid: HOST,
+        groupId: null,
+        phase: 'lobby',
+        currentGameId: null,
+        scores: {},
+        createdAt: 0,
+        expiresAt: 0,
+      }),
+    )
+  })
+})
+
+describe('M3 - room codes are get-only, bounded, and reclaimable once expired', () => {
+  // A second real session, hosted by OUTSIDER, so tests below that claim or
+  // reclaim a code pointing at it exercise only the guard actually under
+  // test - not an incidental failure because sessionId points at nothing.
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${NEW_SESSION}`), {
+        roomCode: 'WXYZ',
+        hostUid: OUTSIDER,
+        groupId: null,
+        phase: 'lobby',
+        currentGameId: null,
+        scores: {},
+        createdAt: 0,
+        expiresAt: 0,
+      })
+    })
+  })
+
+  it('never allows listing room codes', async () => {
+    // Same reasoning as sessions: a code must be received via a join link,
+    // never found by sweeping the collection.
+    await assertFails(getDocs(collection(asOutsider(), 'roomCodes')))
+  })
+
+  it('lets a registered host create a code within the allowed window', async () => {
+    await assertSucceeds(
+      setDoc(doc(asHost(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: HOST,
+        createdAt: now(),
+        expiresAt: now() + ROOM_CODE_WINDOW_MS - 1000,
+      }),
+    )
+  })
+
+  it("refuses a guest's anonymous token", async () => {
+    await assertFails(
+      setDoc(doc(asGuest(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: PLAYER,
+        createdAt: now(),
+        expiresAt: now() + 1000,
+      }),
+    )
+  })
+
+  it('refuses a code created already expired', async () => {
+    await assertFails(
+      setDoc(doc(asHost(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: HOST,
+        createdAt: now(),
+        expiresAt: now() - 1000,
+      }),
+    )
+  })
+
+  it('refuses a code reserved past the maximum window', async () => {
+    // Without this ceiling, a host could reserve a code indefinitely - the
+    // exact permanent-squatting problem this collection exists to remove.
+    await assertFails(
+      setDoc(doc(asHost(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: HOST,
+        createdAt: now(),
+        expiresAt: now() + ROOM_CODE_WINDOW_MS + 60_000,
+      }),
+    )
+  })
+
+  it('lets anyone resolve one code by id, so a join link can be opened', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: HOST,
+        createdAt: now(),
+        expiresAt: now() + 1000,
+      })
+    })
+    await assertSucceeds(getDoc(doc(asOutsider(), `roomCodes/${CODE}`)))
+  })
+
+  it('refuses to overwrite a code that has not expired yet', async () => {
+    // This is the squatting guard: without it, anyone could steal an
+    // in-use code out from under its current gathering.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: HOST,
+        createdAt: now(),
+        expiresAt: now() + 60_000,
+      })
+    })
+    await assertFails(
+      setDoc(doc(asOutsider(), `roomCodes/${CODE}`), {
+        sessionId: NEW_SESSION,
+        hostUid: OUTSIDER,
+        createdAt: now(),
+        expiresAt: now() + 1000,
+      }),
+    )
+  })
+
+  it('lets a new host reclaim a code once it has expired', async () => {
+    // This is the actual fix for the milestone-2 finding: a squatted or
+    // abandoned code returns to circulation without a server.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: HOST,
+        createdAt: now() - ROOM_CODE_WINDOW_MS - 1000,
+        expiresAt: now() - 1000,
+      })
+    })
+    await assertSucceeds(
+      setDoc(doc(asOutsider(), `roomCodes/${CODE}`), {
+        sessionId: NEW_SESSION,
+        hostUid: OUTSIDER,
+        createdAt: now(),
+        expiresAt: now() + 1000,
+      }),
+    )
+  })
+
+  it('is never deletable directly', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: HOST,
+        createdAt: now(),
+        expiresAt: now() + 1000,
+      })
+    })
+    await assertFails(deleteDoc(doc(asHost(), `roomCodes/${CODE}`)))
+  })
+
+  it('refuses to claim a code for a session hosted by someone else', async () => {
+    // An independent review found the first version of this rule never
+    // checked this at all: a client could name any sessionId and hostUid it
+    // liked. HOST here names their own uid as hostUid but points at
+    // NEW_SESSION, which is genuinely hosted by OUTSIDER.
+    await assertFails(
+      setDoc(doc(asHost(), `roomCodes/${CODE}`), {
+        sessionId: NEW_SESSION,
+        hostUid: HOST,
+        createdAt: now(),
+        expiresAt: now() + 1000,
+      }),
+    )
+  })
+
+  it('refuses to claim a code for a session that does not exist', async () => {
+    await assertFails(
+      setDoc(doc(asHost(), `roomCodes/${CODE}`), {
+        sessionId: 'no-such-session',
+        hostUid: HOST,
+        createdAt: now(),
+        expiresAt: now() + 1000,
+      }),
+    )
+  })
+
+  // --- the clock-skew outage, 2026-09-07 -----------------------------------
+  //
+  // Live symptom: every room-code claim denied, deterministically, on a
+  // laptop whose clock ran ~200ms ahead of Firestore's. The ceiling compares
+  // a CLIENT-computed `expiresAt` against the SERVER's clock, so asking for
+  // exactly the maximum window only succeeds when the client is not ahead.
+  //
+  // The emulator cannot reproduce the real cause - one machine, one clock -
+  // so these two simulate it by computing `expiresAt` the way a fast client
+  // would: from a clock running SIMULATED_SKEW_MS ahead of this one.
+
+  const SIMULATED_SKEW_MS = 2 * 60 * 1000
+
+  it('refuses the full window from a client whose clock runs fast (the outage)', async () => {
+    const fastClientNow = now() + SIMULATED_SKEW_MS
+    await assertFails(
+      setDoc(doc(asHost(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: HOST,
+        createdAt: fastClientNow,
+        expiresAt: fastClientNow + ROOM_CODE_WINDOW_MS, // no margin - what shipped
+      }),
+    )
+  })
+
+  it('accepts the margined window from that same fast client (the fix)', async () => {
+    const fastClientNow = now() + SIMULATED_SKEW_MS
+    await assertSucceeds(
+      setDoc(doc(asHost(), `roomCodes/${CODE}`), {
+        sessionId: SESSION,
+        hostUid: HOST,
+        createdAt: fastClientNow,
+        expiresAt: fastClientNow + ROOM_CODE_WINDOW_MS - ROOM_CODE_CLOCK_SKEW_MARGIN_MS,
+      }),
+    )
   })
 })

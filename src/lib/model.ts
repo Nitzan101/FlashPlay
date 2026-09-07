@@ -66,14 +66,17 @@ export type SessionPhase = 'lobby' | 'playing' | 'finished'
 
 export interface SessionDoc {
   /**
-   * The short code that joins a phone to this gathering.
+   * The document id is a random, unguessable string (`crypto.randomUUID()`),
+   * never typed or shown to a human. This field is the short human-facing
+   * code, kept here only for display - the code's actual lookup lives in a
+   * separate `RoomCodeDoc`, which is what a guest resolves to get here.
    *
-   * **This is also the session's document id.** Listing the sessions
-   * collection is denied by the rules - it would let anyone enumerate every
-   * gathering on the project without a join link - so a room can only ever be
-   * opened by fetching a document whose id you already know. Resolving a room
-   * code through a query is therefore not possible by design, and the code is
-   * the id instead.
+   * **Why split from the id, milestone 3:** the id used to be the code
+   * itself, but that meant a code could never be released - a permanently
+   * squatted code denies a real host forever (BACKLOG, "Room-code lifecycle
+   * and squatting"). An unguessable id removes the enumeration risk that
+   * originally forced code-as-id, which frees the code to expire and be
+   * reclaimed on its own - see `RoomCodeDoc` and `ROOM_CODE_WINDOW_MS`.
    */
   roomCode: string
   hostUid: string
@@ -85,9 +88,64 @@ export interface SessionDoc {
    *  three games into one evening with an arc. */
   scores: Record<string, number>
   createdAt: number
-  /** An abandoned gathering must not hold its room code forever. */
+  /** Carried over from the room code's own `expiresAt` at creation, for
+   *  display only. Not enforced by rules - the session document itself is
+   *  never deleted (see firestore.rules); only the code can expire. */
   expiresAt: number
 }
+
+/**
+ * The join-time lookup for a gathering: maps the short human-facing code to
+ * the session's real (unguessable) id. Same-shape problem as `sessions` used
+ * to have - see the comment on `SessionDoc.roomCode`.
+ *
+ * **Lifecycle, not a convenience.** `create` requires a fresh `expiresAt`
+ * within `ROOM_CODE_WINDOW_MS` of now; `update` is how an expired code is
+ * reclaimed for a new gathering, since Firestore evaluates a write to an
+ * existing document id as `update` regardless of which client call produced
+ * it. The session document a reclaimed code used to point at is never
+ * deleted - it becomes unreachable, not gone. See firestore.rules,
+ * `match /roomCodes/{code}`.
+ */
+export interface RoomCodeDoc {
+  sessionId: string
+  hostUid: string
+  createdAt: number
+  expiresAt: number
+}
+
+/**
+ * How long a room code reservation lives before it becomes reclaimable by a
+ * new gathering. Gatherings run 10-40 minutes (DESIGN.md); twelve hours is
+ * generous headroom for a late start or a paused evening without leaving a
+ * squatted code unusable for days. Enforced in firestore.rules as a literal
+ * (rules cannot import this) - keep the two in step, the way `ITEM_WRITE_ORDER`
+ * documents its own client/rules pairing below.
+ */
+export const ROOM_CODE_WINDOW_MS = 12 * 60 * 60 * 1000
+
+/**
+ * How far short of the maximum window a client actually asks for, to absorb
+ * the difference between its own clock and Firestore's.
+ *
+ * **This is not defensive padding, it is the fix for a real outage.** The
+ * rule's ceiling is `expiresAt <= request.time.toMillis() +
+ * ROOM_CODE_WINDOW_MS`, evaluated against the *server's* clock, while
+ * `expiresAt` is computed from the *client's*. Asking for exactly the maximum
+ * therefore only succeeds when the client's clock is at or behind the
+ * server's - and on 2026-09-07 a laptop running 200ms fast had every single
+ * room-code claim denied, deterministically, with no way to tell from the
+ * error which of the rule's clauses had failed.
+ *
+ * The emulator cannot catch this class of bug: client and server are the same
+ * machine, so the client's timestamp is never ahead of the server's.
+ *
+ * Thirty minutes is far more skew than any NTP-synced device has (a clock
+ * that wrong would already be failing TLS and Firebase Auth token validation),
+ * and it costs nothing - the window only shrinks from 12h to 11h30m, against
+ * gatherings that last well under an hour.
+ */
+export const ROOM_CODE_CLOCK_SKEW_MARGIN_MS = 30 * 60 * 1000
 
 export interface PlayerDoc {
   name: string
@@ -211,6 +269,9 @@ export const paths = {
 
   sessions: () => `sessions`,
   session: (sessionId: string) => `sessions/${sessionId}`,
+
+  roomCodes: () => `roomCodes`,
+  roomCode: (code: string) => `roomCodes/${code}`,
 
   players: (sessionId: string) => `sessions/${sessionId}/players`,
   player: (sessionId: string, playerId: string) =>
