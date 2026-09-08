@@ -370,14 +370,35 @@ sentence must use `secondGameQuestion`, never construct its own question from
 the prompt text, or every fix above is silently undone.
 
 **Two prompts were removed for social risk, not content quality, with no
-skip button built yet to catch them otherwise.** `nobody-looking` invited a
+skip button built yet to catch them otherwise - and the first fix for both
+was itself re-reviewed and found insufficient.** `nobody-looking` invited a
 literal private confession, read aloud with the author's name attached, to a
-room that could include a nine-year-old. `small-lie` (as originally written,
-with no time bound) read as an accusation delivered in front of whoever was
-lied to, rather than the affectionate teasing the rest of the pool aims for.
-Both replaced rather than merely dropped - `small-lie` was kept but reframed
-to childhood (`שקר קטן שאמרתם כשהייתם ילדים`), which preserves the material
-while defusing it.
+room that could include a nine-year-old. Its first replacement,
+`checked-if-seen` ("did something, then looked around to check if anyone
+saw"), was caught by a second review re-judging the fix fresh: it reproduced
+the identical social-risk shape under different words, and duplicated
+`hid-something` in spirit besides. Replaced again with `sing-when-alone`
+("a song you sing when you're home alone"), deliberately outside the
+secrecy/deception theme rather than another variation inside it - this is
+also what actually reduces that theme's over-representation in the pool,
+which swapping one confession prompt for another cannot do.
+
+`small-lie` (as originally written, with no time bound) read as an
+accusation delivered in front of whoever was lied to. The first reframe -
+to childhood - only half-worked: a childhood lie's target is very often the
+parent still sitting at the same table decades later, and "when you were
+children" is not a distancing frame for players who currently are children.
+Reframed again to a lie told to *yourself* (`שקר קטן ומצחיק ששיקרתם
+לעצמכם`) - this removes the present-victim problem structurally, since the
+liar and the "victim" are the same person, rather than by degree, and it
+works identically for a nine-year-old and a grandmother.
+
+**The general point, worth carrying past this file:** re-reviewing a fix
+found a second-order version of the same defect on both of the first
+review's social-risk findings. A fix that changes the words but not the
+shape of a problem is not a fix, and the way to catch that is asking the
+second review to judge the replacement fresh rather than checking whether
+the reviewer's own suggestion was applied correctly.
 
 **All first-slice prompts collect personal facts, not group facts.** The
 model supports both drawers, but both chosen games need an item attributable

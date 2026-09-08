@@ -27,15 +27,25 @@
  * A fourth, unwritten one that follows from the ninety-second window: the
  * prompt has to be broad enough that ONE person can answer it TWICE.
  *
- * **Milestone 0's own gate review rejected the first version of this pool**
- * (2026-09-08): two prompts failed rule 3 outright (`late`, `searched-in-vain`
- * both collected the same one or two common answers - `פקקים`, `משקפיים`),
- * one failed rule 2 (`bought-unused` assumes an adult's spending habits, which
- * a nine-year-old does not have), and two carried real social risk at a family
- * table with no skip button built yet (`nobody-looking` invited a literal
- * confession; `small-lie` read as an accusation in front of whoever was lied
- * to). All five replaced below with the review's suggested text rather than
- * merely removed, to keep the pool at eighteen.
+ * **Milestone 0's own gate review rejected the first version of this pool,
+ * twice** (2026-09-08). First pass: two prompts failed rule 3 outright
+ * (`late`, `searched-in-vain` both collected the same one or two common
+ * answers - `פקקים`, `משקפיים`), one failed rule 2 (`bought-unused` assumes
+ * an adult's spending habits, which a nine-year-old does not have), and two
+ * carried real social risk at a family table with no skip button built yet
+ * (`nobody-looking` invited a literal confession; `small-lie` read as an
+ * accusation in front of whoever was lied to). Second pass, re-reviewing the
+ * fix itself: the replacement for `nobody-looking` (an intermediate id,
+ * `checked-if-seen` - "did something, then looked around to check if anyone
+ * saw") reproduced the exact same social-risk shape under different words,
+ * and duplicated `hid-something` in spirit - replaced again with
+ * `sing-when-alone`, outside the secrecy/deception theme entirely. The first
+ * `small-lie` reframe (to childhood) only half-worked: the person lied to is
+ * still often at the table decades later, and "when you were children" isn't
+ * a distancing frame for players who currently are children. Reframed a
+ * second time to a lie told to *yourself* - `שקר קטן ומצחיק ששיקרתם לעצמכם` -
+ * which removes the present-victim problem structurally rather than by
+ * degree, and works the same for a nine-year-old and a grandmother.
  *
  * --- How an item is re-read in the second game -----------------------------
  *
@@ -160,10 +170,10 @@ export const HARVEST_PROMPTS: readonly HarvestPrompt[] = [
     secondGameQuestion: 'מי מכם הכי עלול לעשות את זה כמו ההורים?',
   },
   {
-    id: 'checked-if-seen',
-    text: 'משהו שעשיתם ומיד הסתכלתם לצדדים לבדוק אם מישהו ראה',
+    id: 'sing-when-alone',
+    text: 'שיר שאתם שרים כשאתם לבד בבית',
     drawer: 'personal',
-    secondGameQuestion: 'מי מכם הכי עלול לעשות את זה ולבדוק שאף אחד לא ראה?',
+    secondGameQuestion: 'מי מכם הכי עלול לשיר את זה בקול רם?',
   },
   {
     id: 'carry-everywhere',
@@ -185,9 +195,9 @@ export const HARVEST_PROMPTS: readonly HarvestPrompt[] = [
   },
   {
     id: 'small-lie',
-    text: 'שקר קטן שאמרתם כשהייתם ילדים',
+    text: 'שקר קטן ומצחיק ששיקרתם לעצמכם',
     drawer: 'personal',
-    secondGameQuestion: 'מי מכם הכי עלול להגיד שקר כזה?',
+    secondGameQuestion: 'מי מכם הכי עלול לשקר ככה?',
   },
   {
     id: 'tripped',

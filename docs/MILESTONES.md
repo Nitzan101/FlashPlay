@@ -98,21 +98,22 @@ choosing them.
 - **Milestone 1 — done.** Repo, build, tests, lint, a separate Firebase project, and
   Google redirect sign-in working end to end on desktop and on a real phone from
   WhatsApp on iOS. Live at `https://flashplay-50bde.firebaseapp.com`.
-- **Milestone 0 — done, pending a second reading.** Eighteen Hebrew harvest
-  prompts in `src/content/prompts.ts`, all personal-drawer, each carrying its
-  own genderless `secondGameQuestion`, with `prompts.test.ts` holding
-  everything mechanical (pool size, unique ids, actually-Hebrew text,
-  phone-readable length, and now the genderless-question shape too). The
-  first version failed its own gate review on 2026-09-08: two prompts broke
-  rule 3 (a common answer), one broke rule 2, two carried real social risk at
-  a family table with no skip button, and the proposed `{name} כתב` wrapper
-  was gendered and produced a meaningless bare noun for most of the pool.
-  All rewritten per the review's own suggested text - see DECISIONS.md,
-  "Decisions made in milestone 0" - rather than left flagged. **Pending:**
-  nobody has re-read this exact rewritten pool against the three rules yet;
-  the review that judged it ran against the version it replaced. This
-  unblocks milestone 4 in practice, but a second pass on the actual shipped
-  text is the honest way to close it.
+- **Milestone 0 — done.** Eighteen Hebrew harvest prompts in
+  `src/content/prompts.ts`, all personal-drawer, each carrying its own
+  genderless `secondGameQuestion`, with `prompts.test.ts` holding everything
+  mechanical (pool size, unique ids, actually-Hebrew text, phone-readable
+  length, the genderless-question shape). Took two review rounds to get
+  here: the first version failed its own gate review on 2026-09-08 (two
+  prompts broke rule 3, one broke rule 2, two carried real social risk, and
+  the proposed `{name} כתב` wrapper was gendered and produced a meaningless
+  bare noun for most of the pool); a second, independent review of that
+  fix then caught that both social-risk replacements had reproduced the
+  same shape of problem under different words. Fixed again and not
+  re-flagged on the third pass. Full account in DECISIONS.md, "Decisions
+  made in milestone 0" - worth reading for the general lesson, not just the
+  content history: a fix that changes the words but not the shape of a
+  problem needs a reviewer judging the replacement fresh, not one checking
+  whether a suggestion was applied. This unblocks milestone 4.
 - **Milestone 3 — implemented, gate not yet run.** Room creation, joining by
   link, presence heartbeat, and the live member list are built: an
   unguessable session id, a separate reclaimable `roomCodes/{code}` lookup
