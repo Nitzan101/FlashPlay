@@ -37,7 +37,11 @@ All verified by execution on 2026-09-04.
 - Test: `npm test` (Vitest, single run) / `npm run test:watch`
 - Security rules test: `npm run test:rules` - starts the Firestore emulator and
   runs the rules suite against it. Needs Java (present: OpenJDK 21). Excluded
-  from `npm test` so the everyday loop stays fast and emulator-free.
+  from `npm test` so the everyday loop stays fast and emulator-free. **Also
+  needs `.env.local` to exist**, even though `room.test.ts` never touches the
+  real project - it imports `room.ts`, which imports `firebase.ts`, which
+  throws on missing `VITE_FIREBASE_*` vars at module load. A fresh clone
+  without `.env.local` gets a suite failure that looks like a rules problem.
 - Deploy rules: `npm run deploy:rules`
 - Deploy app: `npm run build` then `firebase deploy --only hosting --project flashplay-50bde`
 - Lint: `npm run lint` (oxlint)

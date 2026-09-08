@@ -34,7 +34,7 @@ vi.mock('./lib/room', () => ({
   createRoom: (...args: unknown[]) => mockCreateRoom(...args),
   joinRoom: (...args: unknown[]) => mockJoinRoom(...args),
   resolveRoomCode: (...args: unknown[]) => mockResolveRoomCode(...args),
-  useRoster: () => [],
+  useRoster: () => ({ players: [], error: null }),
   usePresenceHeartbeat: () => {},
 }))
 
@@ -113,7 +113,7 @@ describe('host sign-in', () => {
       redirectError: new Error('auth/account-exists-with-different-credential'),
     })
     render(<App />)
-    expect(screen.getByRole('alert')).toHaveTextContent('ההתחברות נכשלה. נסה שוב.')
+    expect(screen.getByRole('alert')).toHaveTextContent('ההתחברות נכשלה. אפשר לנסות שוב.')
   })
 })
 
@@ -145,7 +145,7 @@ describe('creating a room', () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'פתיחת חדר' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('לא הצלחנו לפתוח חדר. נסה שוב.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('אי אפשר לפתוח חדר כרגע.')
   })
 })
 
@@ -189,11 +189,11 @@ describe('joining by a link', () => {
     expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'guest-uid', 'שרה')
   })
 
-  it('goes straight back into the room if this browser already joined it', async () => {
-    // Resumption is decided from local state, not from Firestore: a guest
-    // cannot read its own player document before joining (room.test.ts pins
-    // that down against real rules), so asking would fail for the very people
-    // who have not joined yet.
+  it('goes straight back into the room if this browser already joined it, as a guest', async () => {
+    // Membership resumption is decided from local state, not from Firestore:
+    // a guest cannot read its own player document before joining
+    // (room.test.ts pins that down against real rules), so asking would fail
+    // for the very people who have not joined yet.
     window.history.pushState({}, '', '/join/1234')
     localStorage.setItem(
       'flashplay.session',
@@ -205,13 +205,37 @@ describe('joining by a link', () => {
       redirectError: null,
     })
     mockResolveRoomCode.mockResolvedValue('session-1')
+    // isHost IS derived via one getDoc on the session, unlike membership.
+    mockGetDoc.mockResolvedValue({ data: () => ({ hostUid: 'someone-else' }) })
 
     render(<App />)
 
     await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
     expect(screen.queryByLabelText('איך קוראים לך?')).not.toBeInTheDocument()
-    // The join path must not touch Firestore for membership at all.
-    expect(mockGetDoc).not.toHaveBeenCalled()
+    // A guest does not get the host-only share panel.
+    expect(screen.queryByText('קישור להצטרפות')).not.toBeInTheDocument()
+  })
+
+  it('keeps host controls when the host taps their own share link', async () => {
+    // A hardcoded isHost:false on this exact path was a real bug: a host
+    // checking the link they just posted was demoted to a guest in their own
+    // room and lost the share button for good.
+    window.history.pushState({}, '', '/join/1234')
+    localStorage.setItem(
+      'flashplay.session',
+      JSON.stringify({ sessionId: 'session-1', roomCode: '1234' }),
+    )
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: null } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockResolveRoomCode.mockResolvedValue('session-1')
+    mockGetDoc.mockResolvedValue({ data: () => ({ hostUid: 'host-uid' }) })
+
+    render(<App />)
+
+    await waitFor(() => expect(screen.getByText('קישור להצטרפות')).toBeInTheDocument())
   })
 
   it('shows an error for a code nobody has claimed', async () => {
@@ -224,6 +248,36 @@ describe('joining by a link', () => {
     mockResolveRoomCode.mockRejectedValue(new Error('room-not-found'))
 
     render(<App />)
-    expect(await screen.findByRole('alert')).toHaveTextContent('החדר לא נמצא. ודא שהקישור נכון.')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'החדר לא נמצא. ייתכן שהקישור כבר לא בתוקף.',
+    )
+  })
+
+  it('shows a distinct message for a code that has expired', async () => {
+    window.history.pushState({}, '', '/join/9999')
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'guest-uid', displayName: null, email: null } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockResolveRoomCode.mockRejectedValue(new Error('room-expired'))
+
+    render(<App />)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'הקישור הזה כבר לא בתוקף. אפשר לבקש מהמארח לשלוח קישור חדש.',
+    )
+  })
+
+  it('offers a retry button on a join failure', async () => {
+    window.history.pushState({}, '', '/join/9999')
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'guest-uid', displayName: null, email: null } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockResolveRoomCode.mockRejectedValue(new Error('room-not-found'))
+
+    render(<App />)
+    expect(await screen.findByRole('button', { name: 'ניסיון נוסף' })).toBeInTheDocument()
   })
 })

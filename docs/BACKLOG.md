@@ -183,3 +183,58 @@ touch - if this bites in practice.
 A player can vote for a uid that isn't a player in this gathering. Votes stay
 hidden until reveal either way, so this is not a leak, but scoring logic
 (milestone 5) should not assume every vote resolves to a real player.
+
+## From the milestone-3 mobile-reality and scenario reviews
+
+Two independent reviews converged, unprompted, on the same three serious
+findings, all fixed in the same pass as this file's other entries: a presence
+dot that read "everyone left" during the lobby's normal steady state, a
+share mechanism that was silent on both success and failure with no visible
+fallback, and error/loading screens with no retry. What follows is what was
+deliberately NOT fixed alongside them, and why.
+
+**Real per-player presence needs a different mechanism, not a wider window.**
+The dot is gone from the lobby (see the comment in `Lobby.tsx`) because
+tuning `PRESENT_WINDOW_MS` cannot fix a locked phone whose JS timers stop
+rather than slow down - "prefer removing a failure mode to tuning it." A
+correct version would need `serverTimestamp()` (removing the client-clock
+class of bug entirely, same fix already proposed for `roomCodes.expiresAt`)
+and a genuinely different UX framing than a binary online/away dot, which the
+lock-cycle DESIGN itself documents makes misleading on principle. Revisit once
+a screen actually needs to distinguish "here" from "away" - nothing in
+milestone 3 does.
+
+**No QR code and no manual code-entry screen.** DESIGN names QR as the
+fallback join channel; neither it nor a "type a code" field exist. The fix
+shipped alongside this entry (a visible, selectable join URL under the code)
+closes the immediate "the copy button failed and there is nothing else"
+dead end, but the 4-digit code shown to the room still has nowhere to be
+typed. Building the QR fallback and a manual-entry field is real feature
+work, not a quick fix - deferred until a session without a working link
+(no clipboard, no share, no camera) actually happens.
+
+**Duplicate names have no disambiguation.** Harmless in a lobby; becomes a
+real blocker at milestone 5/6, which vote for a person **by name**. Needs
+deciding before then - append a number, show the join order, or require
+uniqueness at join time.
+
+**A "ghost" player row can never be removed from the UI.** The rules already
+allow the host to delete a player document; no control exists to do it. Bites
+whenever someone re-joins under a fresh uid (cleared storage, "Open in
+Safari" from the WhatsApp browser) and their old row just sits there.
+
+**No Open Graph image.** The `og:title`/`og:description` tags added alongside
+this entry give WhatsApp's link preview *something*, but there is no art
+asset for `og:image` yet - the preview card will still be plain.
+
+**Smaller, not worth their own entry:** no `navigator.wakeLock` request to
+keep a phone's screen on during the harvest/round loop (would reduce how
+often the lock cycle bites, but is a real UX tradeoff - draining a guest's
+battery - not an unambiguous win); no `pageshow`/bfcache handling for
+`visibilitychange` (iOS Safari has historically been unreliable there;
+bounded cost today since the interval alone catches up within 25s); the
+780KB single JS bundle has no code-splitting and no loading shell, so the
+first paint on a slow shared wifi is a blank white screen; `npm run
+test:rules` requires `.env.local` to exist even though `room.test.ts` never
+touches the real project, because importing `room.ts` pulls in
+`firebase.ts`, which throws on missing env vars at module load.

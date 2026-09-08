@@ -345,18 +345,39 @@ because there is no AI in the first slice to splice free text into a template.
 In English that is invisible: "left his phone on the car roof" reads the same
 whoever is saying it. Hebrew conjugates for person, so an answer written as
 `שכחתי את המפתחות` cannot be re-read as David's without becoming `שכח`, and
-nothing in the first slice can do that transformation.
+nothing in the first slice can do that transformation. This much held up.
 
-The resolution is to put the name in its own clause and quote the item
-verbatim:
+**The first proposed wrapper - `{name} כתב: «...»` - was itself wrong, and
+the pool's own gate review found it.** Two bugs, not one: `כתב` is masculine,
+ungrammatical for a female player, and `PlayerDoc` carries no gender field to
+fix it with - there is nothing to inflect the verb from. Separately, and
+worse, most prompts here open with `משהו ש...`, whose natural answer under
+time pressure is a bare noun (`גבינה צהובה`, `מכונת אספרסו`) - quoted after
+any verb, "who is most likely to do **that**" has no antecedent and reads as
+nonsense for roughly three-quarters of the pool.
 
-    דוד כתב: «שכחתי את המפתחות בדלת». מי מכם הכי עלול לעשות את זה?
+**The actual fix: every prompt carries its own second-game question.**
+`HarvestPrompt.secondGameQuestion` (`src/content/prompts.ts`) is a
+genderless, infinitive-form question - Hebrew's infinitive has no person and
+no gender - that already contains the verb the bare-noun answer is missing:
 
-This keeps the "text passes through untouched" rule intact, stays grammatical
-for any answer, and costs nothing. **It is a constraint on milestone 6's
-wording, not just a content note** - and every prompt in the pool is written
-on the assumption that this is the wrapper reading them, so changing the
-wrapper means re-checking the whole pool.
+    התשובה של דוד: «גבינה צהובה». מי מכם הכי עלול לאכול את זה
+    בעמידה מול המקרר?
+
+`התשובה של {name}`, never `{name} כתב`. **This is a constraint on milestone
+6's wording, not just a content note** - the render function that builds this
+sentence must use `secondGameQuestion`, never construct its own question from
+the prompt text, or every fix above is silently undone.
+
+**Two prompts were removed for social risk, not content quality, with no
+skip button built yet to catch them otherwise.** `nobody-looking` invited a
+literal private confession, read aloud with the author's name attached, to a
+room that could include a nine-year-old. `small-lie` (as originally written,
+with no time bound) read as an accusation delivered in front of whoever was
+lied to, rather than the affectionate teasing the rest of the pool aims for.
+Both replaced rather than merely dropped - `small-lie` was kept but reframed
+to childhood (`שקר קטן שאמרתם כשהייתם ילדים`), which preserves the material
+while defusing it.
 
 **All first-slice prompts collect personal facts, not group facts.** The
 model supports both drawers, but both chosen games need an item attributable

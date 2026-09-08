@@ -3,9 +3,9 @@
  *
  * These are the questions everyone in the room answers during the harvest
  * phase of "Who said that". Everyone gets the SAME prompt (otherwise the room
- * cannot tell which question the item being read out answers), each person
- * submits two items to it, and a gathering uses two prompts. A pool of 15-20
- * keeps a group's first few gatherings feeling fresh.
+ * cannot tell which question the item being read out is answering), each
+ * person submits two items to it, and a gathering uses two prompts. A pool of
+ * 15-20 keeps a group's first few gatherings feeling fresh.
  *
  * This file is content, not code, and it is the one place in the repo where
  * Hebrew is correct rather than a policy violation: these strings are read by
@@ -27,6 +27,16 @@
  * A fourth, unwritten one that follows from the ninety-second window: the
  * prompt has to be broad enough that ONE person can answer it TWICE.
  *
+ * **Milestone 0's own gate review rejected the first version of this pool**
+ * (2026-09-08): two prompts failed rule 3 outright (`late`, `searched-in-vain`
+ * both collected the same one or two common answers - `פקקים`, `משקפיים`),
+ * one failed rule 2 (`bought-unused` assumes an adult's spending habits, which
+ * a nine-year-old does not have), and two carried real social risk at a family
+ * table with no skip button built yet (`nobody-looking` invited a literal
+ * confession; `small-lie` read as an accusation in front of whoever was lied
+ * to). All five replaced below with the review's suggested text rather than
+ * merely removed, to keep the pool at eighteen.
+ *
  * --- How an item is re-read in the second game -----------------------------
  *
  * DESIGN requires that an item's text passes into "Most likely to" **as it
@@ -36,14 +46,26 @@
  * In Hebrew it is not: an answer is written in the first person ("שכחתי את
  * המפתחות") and cannot be re-conjugated to third person without a generator.
  *
- * So the second game must quote rather than re-tell:
+ * **The first fix proposed for this (quoting the item after `{name} כתב:`)
+ * was itself wrong, per the same gate review.** Two bugs: `כתב` is masculine
+ * and ungrammatical for a female player, and `PlayerDoc` (`src/lib/model.ts`)
+ * carries no gender field to fix that with - there is nothing to inflect the
+ * verb from. Worse, most prompts here open with `משהו ש...`, whose natural
+ * answer is a bare noun (`גבינה צהובה`, `מכונת אספרסו`) - quoted after any
+ * verb, `מי מכם הכי עלול לעשות את זה?` has no antecedent for `את זה` and
+ * reads as grammatical nonsense.
  *
- *     דוד כתב: «שכחתי את המפתחות בדלת». מי מכם הכי עלול לעשות את זה?
+ * **The actual fix: each prompt carries its own second-game question.**
+ * `secondGameQuestion` is a genderless, infinitive-form question (Hebrew's
+ * infinitive has no person and no gender) that already contains the verb the
+ * bare-noun answer is missing. Rendered as:
  *
- * The name sits in its own clause, the item is quoted verbatim, and the
- * question is grammatical for any answer. **Every prompt below is written to
- * be answered in the first person, because that wrapper is what reads them.**
- * Changing the wrapper means re-checking this whole file.
+ *     התשובה של דוד: «גבינה צהובה». מי מכם הכי עלול לאכול את זה
+ *     בעמידה מול המקרר?
+ *
+ * `התשובה של {name}` (never `{name} כתב`) is genderless and grammatical for
+ * every answer shape. Changing this wrapper means re-checking every prompt's
+ * `secondGameQuestion` against it.
  */
 import type { FactDrawer } from '../lib/model'
 
@@ -58,27 +80,121 @@ export interface HarvestPrompt {
    *  be re-asked as "who is most likely to do that". Group-drawer prompts
    *  arrive with a game that actually wants them. */
   drawer: FactDrawer
+  /** The genderless, infinitive-form question the second game asks after
+   *  quoting this prompt's answer - see the module comment above for why
+   *  this exists as its own field rather than one shared wrapper sentence. */
+  secondGameQuestion: string
 }
 
 export const HARVEST_PROMPTS: readonly HarvestPrompt[] = [
-  { id: 'forgot-where', text: 'משהו ששכחתם איפה שמתם', drawer: 'personal' },
-  { id: 'broke-something', text: 'משהו ששברתם או קלקלתם בטעות', drawer: 'personal' },
-  { id: 'excuse', text: 'תירוץ שהמצאתם כדי לא ללכת לאיזשהו מקום', drawer: 'personal' },
-  { id: 'fridge', text: 'משהו שאכלתם בעמידה מול המקרר', drawer: 'personal' },
-  { id: 'late', text: 'פעם שאיחרתם, ובגלל מה', drawer: 'personal' },
-  { id: 'searched-in-vain', text: 'משהו שחיפשתם בכל הבית והיה עליכם כל הזמן', drawer: 'personal' },
-  { id: 'said-and-regretted', text: 'משהו שאמרתם ורציתם מיד להחזיר', drawer: 'personal' },
-  { id: 'avoided-call', text: 'משהו שעשיתם רק כדי לא לענות לטלפון', drawer: 'personal' },
-  { id: 'fell-asleep', text: 'מקום מוזר שנרדמתם בו', drawer: 'personal' },
-  { id: 'wrong-place', text: 'פעם שנכנסתם למקום הלא נכון', drawer: 'personal' },
-  { id: 'postponing', text: 'משהו שאתם דוחים כבר חודש', drawer: 'personal' },
-  { id: 'like-my-parents', text: 'משהו שאתם עושים בדיוק כמו ההורים שלכם', drawer: 'personal' },
-  { id: 'nobody-looking', text: 'משהו שאתם עושים רק כשאף אחד לא מסתכל', drawer: 'personal' },
-  { id: 'bought-unused', text: 'משהו שקניתם ולא השתמשתם בו אף פעם', drawer: 'personal' },
-  { id: 'laughed-wrong-moment', text: 'משהו שגרם לכם לצחוק בדיוק כשאסור היה', drawer: 'personal' },
-  { id: 'hid-something', text: 'משהו שהחבאתם כדי שלא ימצאו', drawer: 'personal' },
-  { id: 'small-lie', text: 'שקר קטן שסיפרתם השבוע', drawer: 'personal' },
-  { id: 'tripped', text: 'פעם שנפלתם או נתקלתם במשהו מול אנשים', drawer: 'personal' },
+  {
+    id: 'forgot-where',
+    text: 'משהו ששכחתם איפה שמתם אותו',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לשכוח איפה שם את זה?',
+  },
+  {
+    id: 'broke-something',
+    text: 'משהו ששברתם או קלקלתם בטעות',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לשבור את זה?',
+  },
+  {
+    id: 'excuse',
+    text: 'תירוץ שהמצאתם כדי לא לצאת מהבית',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול להמציא את התירוץ הזה?',
+  },
+  {
+    id: 'fridge',
+    text: 'משהו שאכלתם בעמידה מול המקרר',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לאכול את זה בעמידה מול המקרר?',
+  },
+  {
+    id: 'wrong-name',
+    text: 'פעם שקראתם למישהו בשם הלא נכון',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לקרוא למישהו בשם הלא נכון?',
+  },
+  {
+    id: 'false-scare',
+    text: 'פעם שנבהלתם ממשהו שבכלל לא היה מפחיד',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול להיבהל ככה?',
+  },
+  {
+    id: 'said-and-regretted',
+    text: 'משהו שאמרתם ורגע אחרי זה התחרטתם',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול להגיד את זה?',
+  },
+  {
+    id: 'mismatched-clothes',
+    text: 'פעם שיצאתם מהבית עם בגד הפוך או שתי נעליים שונות',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לצאת ככה מהבית?',
+  },
+  {
+    id: 'fell-asleep',
+    text: 'מקום מוזר שנרדמתם בו',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול להירדם שם?',
+  },
+  {
+    id: 'waved-at-stranger',
+    text: 'פעם שנופפתם לשלום למישהו שלא הכרתם',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לנופף למישהו זר?',
+  },
+  {
+    id: 'postponing',
+    text: 'משהו שאתם דוחים כבר חודש',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לדחות את זה חודש?',
+  },
+  {
+    id: 'like-my-parents',
+    text: 'משהו שאתם עושים בדיוק כמו ההורים שלכם',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לעשות את זה כמו ההורים?',
+  },
+  {
+    id: 'checked-if-seen',
+    text: 'משהו שעשיתם ומיד הסתכלתם לצדדים לבדוק אם מישהו ראה',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לעשות את זה ולבדוק שאף אחד לא ראה?',
+  },
+  {
+    id: 'carry-everywhere',
+    text: 'משהו שאתם לוקחים לכל מקום ואף פעם לא משתמשים בו',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לקחת את זה לכל מקום בלי להשתמש?',
+  },
+  {
+    id: 'laughed-wrong-moment',
+    text: 'פעם שצחקתם בדיוק ברגע שאסור היה לצחוק',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לצחוק דווקא אז?',
+  },
+  {
+    id: 'hid-something',
+    text: 'משהו שהחבאתם כדי שאף אחד לא ימצא',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול להחביא את זה?',
+  },
+  {
+    id: 'small-lie',
+    text: 'שקר קטן שאמרתם כשהייתם ילדים',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול להגיד שקר כזה?',
+  },
+  {
+    id: 'tripped',
+    text: 'פעם שנפלתם או נתקלתם במשהו מול כולם',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול ליפול ככה מול כולם?',
+  },
 ] as const
 
 /** DESIGN: "A pool of 15-20 prompts is required." Asserted in prompts.test.ts

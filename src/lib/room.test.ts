@@ -144,6 +144,22 @@ describe('resolveRoomCode', () => {
   it('rejects a code nobody has claimed', async () => {
     await expect(resolveRoomCode(asGuest(), '9999')).rejects.toThrow('room-not-found')
   })
+
+  it('rejects a code whose reservation has expired, distinctly from not-found', async () => {
+    // Without this, a link opened after the window (a day-old WhatsApp
+    // scrollback, most likely) would silently resolve to whatever session
+    // the code has since been reclaimed for - possibly a different
+    // gathering entirely - rather than telling the guest anything is wrong.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'roomCodes/1111'), {
+        sessionId: 'some-other-gathering',
+        hostUid: HOST,
+        createdAt: Date.now() - ROOM_CODE_WINDOW_MS - 1000,
+        expiresAt: Date.now() - 1000,
+      } satisfies RoomCodeDoc)
+    })
+    await expect(resolveRoomCode(asGuest(), '1111')).rejects.toThrow('room-expired')
+  })
 })
 
 describe('joinRoom', () => {

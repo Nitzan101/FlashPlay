@@ -32,13 +32,18 @@ function storeSession(session: StoredSession): void {
   }
 }
 
+const CODE_PATTERN = /^\d{4}$/
+
 /** A join link is `/join/<code>`, with `?code=<code>` as a fallback for
  *  anything that mangles the path (DESIGN.md: QR is the fallback channel;
- *  this is the equivalent fallback at the URL level). */
+ *  this is the equivalent fallback at the URL level). Both forms are
+ *  validated the same way - an unvalidated `?code=` value used to reach
+ *  `paths.roomCode()` and fail inside the Firestore SDK instead of here. */
 function readJoinCodeFromUrl(): string | null {
   const fromPath = /^\/join\/(\d{4})$/.exec(window.location.pathname)
   if (fromPath) return fromPath[1]
-  return new URLSearchParams(window.location.search).get('code')
+  const fromQuery = new URLSearchParams(window.location.search).get('code')
+  return fromQuery && CODE_PATTERN.test(fromQuery) ? fromQuery : null
 }
 
 type Screen =
@@ -56,12 +61,28 @@ function detailOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** How long `loading` may sit with no explanation before offering a way out.
+ *  Below this, a normal load just looks instant; above it, a stuck load used
+ *  to look identical to a slow one, with nothing on screen to tell them apart
+ *  and no way forward either way. */
+const LOADING_TIMEOUT_MS = 8_000
+
 export default function App() {
   const { t } = useTranslation()
   const { user, loading: authLoading, redirectError } = useAuthUser()
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' })
   const [busy, setBusy] = useState(false)
   const [nameInput, setNameInput] = useState('')
+  const [loadingIsSlow, setLoadingIsSlow] = useState(false)
+
+  useEffect(() => {
+    if (screen.kind !== 'loading') {
+      setLoadingIsSlow(false)
+      return
+    }
+    const timer = setTimeout(() => setLoadingIsSlow(true), LOADING_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [screen.kind])
 
   const joinCode = useMemo(() => readJoinCodeFromUrl(), [])
 
@@ -101,7 +122,18 @@ export default function App() {
           // first live join; see room.test.ts, which now pins it down.
           const stored = readStoredSession()
           if (stored?.sessionId === sessionId) {
-            setScreen({ kind: 'in-room', sessionId, roomCode: joinCode, uid, isHost: false })
+            // Tapping your own share link is a real thing hosts do, to check
+            // it works - this must not demote them to a guest in their own
+            // room, which is what a hardcoded `isHost: false` here used to do.
+            const sessionSnap = await getDoc(doc(db, paths.session(sessionId)))
+            if (cancelled) return
+            setScreen({
+              kind: 'in-room',
+              sessionId,
+              roomCode: joinCode,
+              uid,
+              isHost: sessionSnap.data()?.hostUid === uid,
+            })
             return
           }
 
@@ -109,7 +141,8 @@ export default function App() {
         } catch (error) {
           console.error('[FlashPlay] resolving the join link failed:', error)
           if (!cancelled) {
-            setScreen({ kind: 'error', message: t('roomNotFound'), detail: detailOf(error) })
+            const message = detailOf(error) === 'room-expired' ? t('roomExpired') : t('roomNotFound')
+            setScreen({ kind: 'error', message, detail: detailOf(error) })
           }
         }
         return
@@ -152,7 +185,9 @@ export default function App() {
     setBusy(true)
     try {
       const { sessionId, roomCode } = await createRoom(db, user.uid)
-      await joinRoom(db, sessionId, user.uid, user.displayName ?? user.email ?? t('appName'))
+      // Falls back to a generic label, never the email - the roster is
+      // visible to every guest, and an email address has no business in it.
+      await joinRoom(db, sessionId, user.uid, user.displayName ?? t('hostFallbackName'))
       storeSession({ sessionId, roomCode })
       setScreen({ kind: 'in-room', sessionId, roomCode, uid: user.uid, isHost: true })
     } catch (error) {
@@ -191,16 +226,39 @@ export default function App() {
         </p>
       )}
 
-      {screen.kind === 'loading' && <p>{t('loading')}</p>}
+      {screen.kind === 'loading' && (
+        <div className="flex flex-col items-center gap-2">
+          <p>{t('loading')}</p>
+          {loadingIsSlow && (
+            <>
+              <p className="text-sm text-neutral-500">{t('loadingSlow')}</p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2"
+              >
+                {t('retryButton')}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {screen.kind === 'error' && (
-        <div role="alert" className="flex flex-col items-center gap-1">
+        <div role="alert" className="flex flex-col items-center gap-2">
           <p className="text-red-600">{screen.message}</p>
           {screen.detail && (
             <p dir="ltr" className="font-mono text-xs text-neutral-500">
               {screen.detail}
             </p>
           )}
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2"
+          >
+            {t('retryButton')}
+          </button>
         </div>
       )}
 
@@ -248,6 +306,11 @@ export default function App() {
             value={nameInput}
             onChange={(event) => setNameInput(event.target.value)}
             placeholder={t('yourNamePlaceholder')}
+            // A pasted or joke name with no bound would overflow the roster
+            // on every phone in the room - see Lobby.tsx's truncate class,
+            // which handles the rest of it.
+            maxLength={40}
+            enterKeyHint="done"
             className="rounded-md border border-neutral-300 px-3 py-2 text-center"
             autoFocus
           />

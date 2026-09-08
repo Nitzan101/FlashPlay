@@ -64,6 +64,24 @@ describe('the harvest prompt pool', () => {
     }
   })
 
+  it('gives every prompt a genderless second-game question', () => {
+    // Milestone 0's own gate review found the first version's wrapper
+    // (`{name} כתב: ...`) was gendered and produced a meaningless bare-noun
+    // question for most prompts - see the module comment on
+    // `secondGameQuestion`. This is the one part of that fix a test can
+    // actually hold: present, Hebrew, and shaped like the genderless
+    // question every prompt is now written against.
+    for (const prompt of HARVEST_PROMPTS) {
+      expect(prompt.secondGameQuestion.trim()).not.toBe('')
+      expect(prompt.secondGameQuestion).toMatch(/\p{Script=Hebrew}/u)
+      expect(prompt.secondGameQuestion).not.toMatch(/[A-Za-z]/)
+      expect(prompt.secondGameQuestion.startsWith('מי מכם')).toBe(true)
+      expect(prompt.secondGameQuestion.endsWith('?')).toBe(true)
+      // The genderless wrapper this depends on: never `כתב`/`כתבה`.
+      expect(prompt.secondGameQuestion).not.toMatch(/כתב/)
+    }
+  })
+
   it('collects only personal facts, for now', () => {
     // Both first-slice games need an item attributable to one named person.
     // A group fact cannot be re-asked as "who is most likely to do that", so

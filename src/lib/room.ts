@@ -96,10 +96,13 @@ async function claimRoomCode(
 
 /** Firebase errors carry a `code` like 'permission-denied'; anything else
  *  falls back to its message. Used to make a failure reportable rather than
- *  swallowed. */
+ *  swallowed. Guards against `error` being `null`/non-object, which a plain
+ *  property read on it would throw on. */
 function errorCode(error: unknown): string {
-  const code = (error as { code?: unknown }).code
-  if (typeof code === 'string') return code
+  if (error && typeof error === 'object') {
+    const code = (error as { code?: unknown }).code
+    if (typeof code === 'string') return code
+  }
   return error instanceof Error ? error.message : String(error)
 }
 
@@ -167,14 +170,24 @@ export async function createRoom(
   return { sessionId, roomCode }
 }
 
-/** Resolves a typed or shared room code to the session it currently points
- *  at. Throws if the code has never been claimed. */
+/**
+ * Resolves a typed or shared room code to the session it currently points
+ * at. Throws `'room-not-found'` if the code has never been claimed, or
+ * `'room-expired'` if its reservation has passed - without this check, a
+ * link opened after the window (a day-old WhatsApp scrollback, most likely)
+ * would silently join whatever session the code has since been reclaimed
+ * for, which could belong to a different gathering entirely.
+ */
 export async function resolveRoomCode(firestore: Firestore, code: string): Promise<string> {
   const snap = await getDoc(doc(firestore, paths.roomCode(code)))
   if (!snap.exists()) {
     throw new Error('room-not-found')
   }
-  return (snap.data() as RoomCodeDoc).sessionId
+  const claim = snap.data() as RoomCodeDoc
+  if (claim.expiresAt < Date.now()) {
+    throw new Error('room-expired')
+  }
+  return claim.sessionId
 }
 
 /** Joining is creating your own player document - this is what makes
@@ -207,23 +220,45 @@ export async function touchPresence(
 
 // --- React hooks (app-only: always the real, module-level db) --------------
 
-/** Live member list. Only resolves once you have joined - isPlayer() gates
- *  read access on the roster until your own player document exists. */
-export function useRoster(sessionId: string | null): (PlayerDoc & { id: string })[] {
-  const [roster, setRoster] = useState<(PlayerDoc & { id: string })[]>([])
+export interface RosterState {
+  players: (PlayerDoc & { id: string })[]
+  /** Set if the listener itself failed - e.g. this browser's player document
+   *  was deleted from under it, or a genuine network/permission error. An
+   *  unhandled listener error otherwise fails silently: the roster just
+   *  stays empty forever with nothing on screen to say why. */
+  error: string | null
+}
+
+/** Live member list, in join order. Only resolves once you have joined -
+ *  isPlayer() gates read access on the roster until your own player document
+ *  exists. */
+export function useRoster(sessionId: string | null): RosterState {
+  const [state, setState] = useState<RosterState>({ players: [], error: null })
 
   useEffect(() => {
     if (!sessionId) {
-      setRoster([])
+      setState({ players: [], error: null })
       return
     }
-    const unsubscribe = onSnapshot(collection(db, paths.players(sessionId)), (snapshot) => {
-      setRoster(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as PlayerDoc) })))
-    })
+    const unsubscribe = onSnapshot(
+      collection(db, paths.players(sessionId)),
+      (snapshot) => {
+        const players = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as PlayerDoc) }))
+        // Firestore's default order is by document id (the uid), which
+        // shuffles unpredictably as people join. joinedAt is stored for
+        // exactly this - the list should only ever grow downward.
+        players.sort((a, b) => a.joinedAt - b.joinedAt)
+        setState({ players, error: null })
+      },
+      (error) => {
+        console.error('[FlashPlay] roster listener failed:', errorCode(error), error)
+        setState((prev) => ({ ...prev, error: errorCode(error) }))
+      },
+    )
     return unsubscribe
   }, [sessionId])
 
-  return roster
+  return state
 }
 
 /**
@@ -235,11 +270,20 @@ export function usePresenceHeartbeat(sessionId: string | null, uid: string | nul
   useEffect(() => {
     if (!sessionId || !uid) return
 
-    void touchPresence(db, sessionId, uid)
-    const interval = setInterval(() => void touchPresence(db, sessionId, uid), HEARTBEAT_INTERVAL_MS)
+    // A failed heartbeat (e.g. this player's document no longer exists) must
+    // not become an unhandled rejection repeating every 25s - caught and
+    // logged instead, the same reporting shape as everywhere else in this
+    // file.
+    const beat = () =>
+      void touchPresence(db, sessionId, uid).catch((error: unknown) => {
+        console.error('[FlashPlay] presence heartbeat failed:', errorCode(error), error)
+      })
+
+    beat()
+    const interval = setInterval(beat, HEARTBEAT_INTERVAL_MS)
 
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') void touchPresence(db, sessionId, uid)
+      if (document.visibilityState === 'visible') beat()
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
 

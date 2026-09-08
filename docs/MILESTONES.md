@@ -98,16 +98,21 @@ choosing them.
 - **Milestone 1 — done.** Repo, build, tests, lint, a separate Firebase project, and
   Google redirect sign-in working end to end on desktop and on a real phone from
   WhatsApp on iOS. Live at `https://flashplay-50bde.firebaseapp.com`.
-- **Milestone 0 — written, gate review in flight.** Eighteen Hebrew harvest
-  prompts in `src/content/prompts.ts`, all personal-drawer, with
-  `prompts.test.ts` holding everything mechanical (pool size, unique ids,
-  actually-Hebrew text, phone-readable length). The three prompt rules are
-  judgements and are reviewed by reading, which is this milestone's gate.
-  Writing them surfaced a design constraint English had hidden - the second
-  game must quote an item after the author's name rather than re-tell it,
-  because Hebrew conjugates for person and nothing in the first slice can
-  re-conjugate free text. See DECISIONS.md, "Decisions made in milestone 0".
-  This unblocks milestone 4.
+- **Milestone 0 — done, pending a second reading.** Eighteen Hebrew harvest
+  prompts in `src/content/prompts.ts`, all personal-drawer, each carrying its
+  own genderless `secondGameQuestion`, with `prompts.test.ts` holding
+  everything mechanical (pool size, unique ids, actually-Hebrew text,
+  phone-readable length, and now the genderless-question shape too). The
+  first version failed its own gate review on 2026-09-08: two prompts broke
+  rule 3 (a common answer), one broke rule 2, two carried real social risk at
+  a family table with no skip button, and the proposed `{name} כתב` wrapper
+  was gendered and produced a meaningless bare noun for most of the pool.
+  All rewritten per the review's own suggested text - see DECISIONS.md,
+  "Decisions made in milestone 0" - rather than left flagged. **Pending:**
+  nobody has re-read this exact rewritten pool against the three rules yet;
+  the review that judged it ran against the version it replaced. This
+  unblocks milestone 4 in practice, but a second pass on the actual shipped
+  text is the honest way to close it.
 - **Milestone 3 — implemented, gate not yet run.** Room creation, joining by
   link, presence heartbeat, and the live member list are built: an
   unguessable session id, a separate reclaimable `roomCodes/{code}` lookup
@@ -153,21 +158,59 @@ choosing them.
 
   **Live end-to-end result (2026-09-07):** a room opened on the laptop, four
   separate browser identities joined by link, and all four appeared on every
-  screen with live presence, without a refresh. A closed window's dot went
-  grey on its own. **And a real phone joined, was locked for over a minute,
-  and resumed on unlock with the roster intact and its presence back to
-  green** - the one part of this that a laptop genuinely cannot stand in for,
-  and the thing most likely to have been broken.
+  screen live, without a refresh. **And a real phone joined, was locked for
+  over a minute, and resumed on unlock with the roster intact** - the one
+  part of this that a laptop genuinely cannot stand in for, and the thing
+  most likely to have been broken. (At the time of this run, presence was
+  still shown as a per-player dot; see the next entry for why it no longer
+  is - the roster membership result above still stands.)
 
-  That leaves exactly two things for the gate, both needing people rather
-  than code: **a timed run with three to five real phones** (the under-two-
-  minutes claim is about humans finding a WhatsApp message and typing a name,
-  which four browser tabs cannot measure), and **the independent four-lens
-  review**.
+  **Four independent reviews (correctness, mobile reality, the full
+  scenario, lesson-capture quality) plus a re-run of the security review
+  then ran against the built milestone**, alongside a separate gate review of
+  the milestone-0 prompt pool. Correctness found nothing serious. The other
+  three converged, twice independently and unprompted, on the same findings:
+  a presence dot that read "everyone left" during the lobby's own normal
+  steady state (phones lock while waiting, so within about a minute every dot
+  but the viewer's own goes grey); a share mechanism (copy-link) silent on
+  both success and failure with no visible fallback, though DESIGN names one
+  (QR); and error/loading screens with no retry and no timeout. All three
+  fixed: the dot is gone in favour of an always-correct member count (see the
+  comment in `Lobby.tsx` - tuning the window cannot fix a locked phone whose
+  timers stop rather than slow down), the join link is now shown as visible,
+  selectable text with a copy button that actually confirms or reports
+  failure, and every error/loading screen has a retry. Also fixed in the same
+  pass: `isHost` was hardcoded `false` on the join-link resume path, so a
+  host checking their own link lost the share button in their own room;
+  `resolveRoomCode` never checked `expiresAt`, so a stale or reclaimed link
+  joined the wrong gathering silently; the roster listener had no error
+  handler and the presence heartbeat could throw an unhandled rejection every
+  25s; several progress/error strings were masculine-only against the
+  gender-neutral `(את/ה)` already chosen elsewhere. Full findings, including
+  what was deliberately deferred (QR/manual code entry, duplicate-name
+  disambiguation, a host control to remove a ghost player row), are in
+  BACKLOG.md, "From the milestone-3 mobile-reality and scenario reviews."
 
-  **Not yet done:** the actual gate - a three-to-five real phone join test
-  under two minutes with a mid-session screen-lock/foreground check, and the
-  independent four-lens review.
+  Automated evidence after this round: `npm test` (34 tests), `npm run
+  test:rules` (72 assertions).
+
+  **The milestone-0 prompt pool is not ready** on the strength of its own
+  gate review: the "quote, don't re-tell" wrapper this file's DECISIONS entry
+  proposed is gendered (`דוד כתב` fails for a female player) and produces a
+  meaningless bare-noun answer for roughly three-quarters of the pool; two
+  prompts fail rule 3 outright, one fails rule 2, and two carry real social
+  risk at a family table with no skip button built yet. The review supplies
+  concrete replacement text for every failure. Tracked separately - this
+  does not block milestone 3's gate, but does block milestone 4 starting for
+  real.
+
+  **The independent four-lens review is now done** - correctness, data and
+  security, mobile reality, and the full scenario walkthrough, plus the
+  lesson-capture check the gate also requires. That leaves exactly one thing
+  for milestone 3's gate, and it needs people rather than code: **a timed run
+  with three to five real phones.** The under-two-minutes claim is about
+  humans finding a WhatsApp message and typing a name, which browser tabs on
+  one laptop cannot measure regardless of how many identities they simulate.
 
 ### How milestone 2 was closed
 

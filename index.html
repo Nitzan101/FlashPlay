@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FlashPlay</title>
+    <!--
+      A join link's only distribution channel is being pasted into a WhatsApp
+      chat. WhatsApp's link-preview crawler does not execute this app's JS, so
+      without these static tags the pasted link renders as a bare, unlabelled
+      URL - easy to mistake for spam in a family chat. No og:image yet; there
+      is no art asset for one (see BACKLOG.md).
+    -->
+    <meta name="description" content="משחקים שנבנים מהאנשים שבחדר - הצטרפו למפגש" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="he_IL" />
+    <meta property="og:title" content="FlashPlay" />
+    <meta property="og:description" content="משחקים שנבנים מהאנשים שבחדר - הצטרפו למפגש" />
   </head>
   <body>
     <div id="root"></div>
