@@ -164,3 +164,22 @@ milestone 5's gate, which tests exactly this device.
 **`PlayerDoc.uid` can lie — routine.** The rules check the document id against
 the caller's uid but never the `uid` *field*. Harmless while client code keys
 off the document id, a trap the day it keys off the field.
+
+## From the milestone-3 security re-review
+
+**Session creation doesn't constrain `phase`/`scores` — routine.** A host can
+open a session already `phase: 'finished'` with fabricated `scores`. No
+cross-user exposure - it is their own session - but worth a field-shape check
+whenever `sessions` create is next touched.
+
+**Session update lets the host freely rewrite `roomCode`/`groupId`/
+`currentGameId` — routine.** No security effect, since nothing in the rules
+gates on those fields, but it is a data-coherence gap: `SessionDoc.roomCode`
+can drift from what `roomCodes` actually points to. Same fix shape as the item
+lock above - `affectedKeys()` bounded to the fields a given transition should
+touch - if this bites in practice.
+
+**`VoteDoc.votedForPlayerId` is never checked against the roster — routine.**
+A player can vote for a uid that isn't a player in this gathering. Votes stay
+hidden until reveal either way, so this is not a leak, but scoring logic
+(milestone 5) should not assume every vote resolves to a real player.

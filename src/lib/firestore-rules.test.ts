@@ -39,7 +39,8 @@
  * That is 12 of the first 48 assertions - every guard added in response to
  * either review. The remaining 36 of those have not been mutation-checked.
  *
- * Milestone 3 added 13 more (61 total) for the room-code lifecycle - see
+ * Milestone 3 added 15 more to this file (63 total here; 70 across the whole
+ * suite with room.test.ts) for the room-code lifecycle - see
  * SessionDoc.roomCode and RoomCodeDoc in src/lib/model.ts. Three of its
  * guards have been mutation-checked the same way, the third added after an
  * independent review found the first version of this rule never checked a
@@ -47,7 +48,21 @@
  *
  *   isRegistered() (host vs. guest token)         -> 2 assertions
  *   roomCodes update requires prior expiry        -> 1
- *   roomCodes create/update session cross-check   -> 2
+ *   roomCodes create session cross-check          -> 2
+ *
+ * The `isRegistered()` count above was wrong in an earlier version of this
+ * file - it claimed 2 assertions when the roomCodes one was overdetermined
+ * (it also failed the session cross-check regardless of registration, so it
+ * could not attribute the denial to isRegistered() at all). A second
+ * independent review re-ran the mutation and caught it. Fixed by giving that
+ * test a session genuinely hosted by the guest, isolating the one clause
+ * actually under test - see the comment on "M3 - room codes ... refuses a
+ * guest's anonymous token". Recorded here as a warning to the next person
+ * writing a mutation-check claim in this file: re-derive it, do not trust
+ * the sentence that came before yours, including this one.
+ *
+ * The session cross-check above is verified for `create` only; `update`
+ * carries an identical clause that has not been independently mutated.
  *
  * A separate client-contract suite, room.test.ts, proves the actual
  * claim/retry loop in src/lib/room.ts end to end against these same rules -
@@ -382,6 +397,22 @@ describe('S1 - the reveal guard cannot be forced open', () => {
       updateDoc(doc(asHost(), `sessions/${SESSION}/items/${ITEM}`), { revealed: false }),
     )
   })
+
+  it('refuses the host rewriting text in the very update that reveals it', async () => {
+    // Found by an independent review: constraining the `revealed` flag alone
+    // left every other field open on that same write, so the host could
+    // frame anyone for anything at the exact moment the room reads it.
+    await assertFails(
+      updateDoc(doc(asHost(), `sessions/${SESSION}/items/${ITEM}`), {
+        revealed: true,
+        text: 'התוקף שינה את זה',
+      }),
+    )
+    // The one-field reveal is still fine on its own.
+    await assertSucceeds(
+      updateDoc(doc(asHost(), `sessions/${SESSION}/items/${ITEM}`), { revealed: true }),
+    )
+  })
 })
 
 describe('S2 - gatherings cannot be enumerated', () => {
@@ -693,9 +724,28 @@ describe('M3 - room codes are get-only, bounded, and reclaimable once expired', 
   })
 
   it("refuses a guest's anonymous token", async () => {
+    // Must be isolated to isRegistered() alone: an independent review found
+    // an earlier version of this test pointed at SESSION (hosted by HOST)
+    // while naming PLAYER as hostUid, so it was ALSO failing the session
+    // cross-check regardless of registration - overdetermined, and unable to
+    // say which guard actually did the denying. A session genuinely hosted
+    // by the guest makes isRegistered() the only clause that can fail here.
+    const guestHostedSession = 'guest-hosted-session'
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${guestHostedSession}`), {
+        roomCode: 'ABCD',
+        hostUid: PLAYER,
+        groupId: null,
+        phase: 'lobby',
+        currentGameId: null,
+        scores: {},
+        createdAt: 0,
+        expiresAt: 0,
+      })
+    })
     await assertFails(
       setDoc(doc(asGuest(), `roomCodes/${CODE}`), {
-        sessionId: SESSION,
+        sessionId: guestHostedSession,
         hostUid: PLAYER,
         createdAt: now(),
         expiresAt: now() + 1000,

@@ -428,6 +428,48 @@ Mutation-checked: removing that clause from `create` turned red both "refuses
 to claim a code for a session hosted by someone else" and "...that does not
 exist."
 
+### A security review found a fourth hole: revealed items were not locked
+
+**Constraining the `revealed` flag alone left every other field on that same
+write open.** `items` update required `revealed` to flip false→true and
+nothing else, so `updateDoc(item, { revealed: true, text: 'forged' })`
+succeeded - the host could rewrite what a claimed author supposedly wrote at
+the exact moment the room reads it. This is not cosmetic: milestone 0's
+decision that an item's text passes into the second game *untouched* assumes
+the text seen at reveal is the text that was actually submitted, and the host
+is a scoring player with a documented history of needing exactly this kind of
+guard (S1, F1). Fixed with
+`request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revealed'])`.
+Mutation-checked: removing that clause turned red "refuses the host rewriting
+text in the very update that reveals it."
+
+Two more from the same review, real but not blocking: `sessions` create does
+not constrain the initial `phase`/`scores` (a host can open a session already
+`finished`, with fabricated scores - self-inflicted, no cross-user exposure),
+and `sessions` update lets the host freely rewrite `roomCode`/`groupId`/
+`currentGameId` (no security effect, since nothing gates on them, but a
+coherence gap). Both in BACKLOG.
+
+### A second independent review, on the coverage claims themselves
+
+**One of this document's own mutation-check claims was false.** The line
+above it - "isRegistered()... turned two assertions red" - was written after
+mutating `isRegistered()` and watching the `sessions` and `roomCodes` "refuses
+a guest's anonymous token" tests both go red. What was missed: the `roomCodes`
+version of that test named a session hosted by someone else, so it was
+**already failing the session cross-check regardless of registration** -
+overdetermined, unable to say which guard actually did the denying. A second
+independent review re-ran the exact mutation and caught it: neutering
+`isRegistered()` alone flipped only the `sessions` test. Fixed by giving the
+`roomCodes` test a session genuinely hosted by the guest, which isolates
+`isRegistered()` as the only clause that can fail - re-verified, and the claim
+above is now true. This is the same failure mode as "The 'registered host'
+tests were passing for the wrong reason," above, recurring a second time
+inside the very sentence written to record the first instance. The general
+lesson - a coverage claim is unverified until someone re-derives it, including
+the person who wrote it - is in the vault's Rules of Thumb rather than repeated
+here again.
+
 ### The first live run: three bugs, one shape
 
 Three separate failures on the first real use, each fixed with a test that

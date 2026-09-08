@@ -119,12 +119,25 @@ choosing them.
   vacuously rather than for the real reason - both closed and
   mutation-checked; see DECISIONS.md, "An independent review of the first
   version, and what it found." Automated evidence: `npm run build`,
-  `npm test` (21 tests), and `npm run test:rules` (69 emulator assertions
-  across `firestore-rules.test.ts` and `room.test.ts`, which proves the
-  client's claim/retry contract end to end rather than only what the rules
-  allow in isolation). Three of the milestone's own guards are
-  mutation-checked (`isRegistered()`, the reclaim-requires-expiry guard, the
-  session/hostUid cross-check).
+  `npm test` (31 tests, prompt-pool tests included), and `npm run test:rules`
+  (71 emulator assertions: 64 in `firestore-rules.test.ts`, 7 in
+  `room.test.ts`, which proves the client's claim/retry contract end to end
+  rather than only what the rules allow in isolation). Four of the
+  milestone's own guards are mutation-checked (`isRegistered()`, the
+  reclaim-requires-expiry guard, the session/hostUid cross-check on
+  `create`, the revealed-item field lock below). **A second independent
+  review then found one of those claims was itself false** - the
+  `isRegistered()` count was right in total but for the wrong reason, one of
+  its two assertions being overdetermined by an unrelated clause. Fixed and
+  re-verified; see DECISIONS.md, "A second independent review, on the
+  coverage claims themselves."
+
+  **A security review then found a real hole, unrelated to the room-code
+  work**, in a rule milestone 2 shipped: revealing an item only constrained
+  the `revealed` flag, leaving `text` open on the same write - the host could
+  rewrite what someone supposedly wrote at the exact moment the room reads
+  it. Fixed with a field-lock (`affectedKeys().hasOnly(['revealed'])`) and
+  mutation-checked. See DECISIONS.md, "A security review found a fourth hole."
 
   **Then the first live run failed three times, on all of that being green.**
   A laptop clock 200ms fast had every room-code claim denied; the guest's

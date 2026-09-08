@@ -251,9 +251,17 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/sessions/$(sessionId)/itemAuthors/$(itemId))
                .data.authorPlayerId == request.auth.uid;
 
+        // Only the `revealed` flag may change on this write - an independent
+        // review found that constraining the flag alone left every other
+        // field open, so the host could rewrite `text` in the very update
+        // that reveals it. Milestone 0's decision that an item's text passes
+        // into the second game untouched depends on this: the host is a
+        // scoring player, and a host who can edit an answer at reveal time
+        // can frame anyone for anything.
         allow update: if isHost(sessionId)
           && request.resource.data.revealed == true
-          && resource.data.revealed == false;
+          && resource.data.revealed == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revealed']);
 
         allow delete: if false;
       }
