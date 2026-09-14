@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { usePresenceHeartbeat, useRoster } from './lib/room'
+import { pickHarvestPromptIds, startHarvestGame } from './lib/harvest'
+import { db } from './lib/firebase'
+import { useRoster } from './lib/room'
 
 interface LobbyProps {
   sessionId: string
@@ -12,10 +14,23 @@ interface LobbyProps {
 export default function Lobby({ sessionId, roomCode, uid, isHost }: LobbyProps) {
   const { t } = useTranslation()
   const { players, error } = useRoster(sessionId)
-  usePresenceHeartbeat(sessionId, uid)
 
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [startState, setStartState] = useState<'idle' | 'busy' | 'error'>('idle')
   const joinUrl = `${window.location.origin}/join/${roomCode}`
+
+  async function startGame() {
+    setStartState('busy')
+    try {
+      await startHarvestGame(db, sessionId, pickHarvestPromptIds())
+      // No local success state to set - useSession() upstream (Gathering.tsx)
+      // sees the phase flip to 'playing' and unmounts this screen for
+      // Harvest for every device in the room, host included.
+    } catch (error) {
+      console.error('[FlashPlay] startHarvestGame failed:', error)
+      setStartState('error')
+    }
+  }
 
   async function copyLink() {
     try {
@@ -88,6 +103,24 @@ export default function Lobby({ sessionId, roomCode, uid, isHost }: LobbyProps) 
       </ul>
 
       <p className="text-neutral-500">{isHost ? t('lobbyWaitingHost') : t('lobbyWaitingGuest')}</p>
+
+      {isHost && (
+        <div className="flex flex-col items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void startGame()}
+            disabled={startState === 'busy'}
+            className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          >
+            {startState === 'busy' ? t('startingGame') : t('startGame')}
+          </button>
+          {startState === 'error' && (
+            <p role="alert" className="text-xs text-red-600">
+              {t('startGameError')}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -609,3 +609,122 @@ produces - it proved isRegistered() doesn't reject an absent claim, not that
 it accepts a real one. Both `firestore-rules.test.ts` and `room.test.ts` now
 give their host contexts an explicit `{firebase: {sign_in_provider:
 'google.com'}}` claim, matching what Google sign-in actually issues.
+
+## Decisions made in milestone 4
+
+MILESTONES.md named four requirements for this milestone - timeout or host
+override, a minimum submission threshold, duplicate blocking, joining during
+submission - without specifying numbers or mechanisms for any of them. Three
+were genuinely undecided rather than inferrable from DESIGN.md, and were put
+to Nitzan directly on 2026-09-08 rather than guessed.
+
+**No automatic minimum-submission gate.** The host can always advance from
+harvesting to rounds, at any submission count. The advisory count shown on
+screen (`useHarvestProgress`) is display only, never a block.
+
+**"Duplicate blocking" means one item per player per prompt per game, not
+identical-text detection.** Two different players submitting the same text is
+allowed and unremarkable; one player submitting twice to the same prompt is
+what the phrase in MILESTONES.md was naming, since it sits in a list that is
+otherwise entirely about pacing against real people, not content moderation.
+
+**A fixed 90s harvest timer (DESIGN's own number) plus a host "give it another
+minute" button**, rather than a host-configurable duration set up front at
+room creation. Nitzan's own framing: fixed, with "continue now" as the
+override, plus an option for "another 30 seconds/minute" the host can add if
+time runs out. Implemented as `extendGamePhase`, addable any number of times
+via Firestore's `increment()` rather than a read-modify-write, so two rapid
+taps cannot race each other.
+
+**Architecture decision, not put to a vote but load-bearing: every phase
+transition is an explicit host write, never a client-side timer firing
+automatically.** `GameDoc.phaseEndsAt` only drives what the countdown
+*displays* - nothing in `harvest.ts` or `firestore.rules` ever compares it
+against anything. This is a deliberate choice not to repeat the room-code
+approach (a rule comparing a client-computed timestamp against
+`request.time`, which a 200ms clock skew broke outright in production on
+2026-09-07) in a second place in the app. Since nothing security- or
+correctness-relevant reads this timestamp, a skewed or stalled device clock
+can only make the number on screen briefly wrong, never make the gathering do
+the wrong thing - the host's own tap is what actually advances it, always.
+The principled server-time fix BACKLOG.md proposes for room codes remains
+undone and unnecessary here for the same reason it would be unnecessary
+there if nothing ever compared the timestamp to anything.
+
+**"Duplicate blocking" is structural, not a count check** - a new
+`PromptSubmissionDoc` at
+`sessions/{sessionId}/games/{gameId}/prompts/{promptId}/submissions/{uid}`,
+document id the player's own uid. This was chosen over a random,
+first-write-wins id (the `itemAuthors` pattern) specifically because a random
+id here would reopen the exact pre-claim attack `itemAuthors` was made
+unguessable to prevent: any player can see any other player's uid in the
+roster, so a predictable-by-formula path keyed on a *victim's* uid would let
+an attacker front-run and permanently occupy that slot. Keying the id on the
+uid that must *write* it, not the uid it is *about*, means only that player
+can ever attempt the write at all - there is nothing for anyone else to race,
+the same reasoning `PlayerDoc`'s own id already relies on. This also closes
+BACKLOG's "orphan claims are unbounded" as a side effect: a player can hold at
+most one `itemAuthors` claim per prompt per game, since a second claim has no
+slot left to point at.
+
+`ItemAuthorDoc` gained `gameId`/`promptId` fields to make this checkable: the
+claim is written before the item exists (`ITEM_WRITE_ORDER`), so at that point
+there is nowhere else in the write sequence to learn which submission slot it
+should be validated against. `items` create then cross-checks its own
+declared `gameId`/`promptId` against the claim's, closing the gap where a slot
+reserved for one prompt could otherwise be spent on an item tagged as a
+different one. All three new guards (the slot's non-updatability, the
+harvesting-phase gate on item creation, and the slot/claim cross-check) are
+mutation-checked in `firestore-rules.test.ts`.
+
+### What the milestone-4 review found
+
+Four independent reviews ran against the built milestone - correctness, data
+and security, mobile reality, and the full scenario walkthrough. Two serious
+findings, both fixed in the same pass, and both worth keeping for their shape
+rather than their detail.
+
+**The new collection re-published the secret the whole game depends on
+hiding.** `submissions/{uid}` was written with `allow read: if
+isPlayer(sessionId)`, to let a player check their own slot. But that document
+pairs a player's uid with their item id, and `items` is readable by every
+player - so listing one collection handed any player with devtools the
+complete author-to-item mapping, before any reveal. `itemAuthors` was locked
+down across two milestones and three reviews for exactly this; a second
+document invented in a third milestone gave it away in a different shape. The
+rules file's own header says "anywhere else that needs to hide something until
+a moment arrives should reuse [the one shape] rather than invent a second
+mechanism" - the failure here was not skipping that advice but not noticing
+the new collection fell under it at all, because it was conceived as a
+bookkeeping slot rather than as authorship data. **Any document that pairs a
+player with one of their items is the answer key, whatever it is called.** Now
+`get`, owner only, mutation-checked.
+
+**Making the slot immutable made a failed submission permanent.** The slot is
+keyed by uid and can never be updated - that is what blocks duplicates - and
+`submitHarvestItem` wrote it first, with a freshly generated item id. So a
+client that died between that write and the item write could never submit that
+prompt again: every retry minted a new id and was denied at the first write.
+Worse, the UI read a slot alone as "submitted" and showed a green tick for an
+answer that did not exist. This is precisely the scenario milestone 4's own
+gate exists to test (a device deliberately killed mid-phase), which is why the
+review found it and the suite did not. The fix is that a retry resumes the
+slot's recorded item id instead of minting one, and that the UI asks whether
+the *item* exists rather than whether the slot does.
+
+**The general lesson, which is not about either bug:** both came from the same
+place - a guard added for one property (duplicates) changed a property nobody
+re-examined (recoverability, and who can read what). ITEM_WRITE_ORDER's
+"generate a fresh id on retry" rule had been correct for two milestones and
+was silently invalidated by prepending a write to it. A new constraint is also
+a change to every invariant the old ones rested on, and the cheap check is to
+re-read the comments the new code makes stale rather than only the code it
+touches.
+
+The other findings were routine and are in BACKLOG.md, "From the milestone-4
+four-lens review", except three fixed in passing: a missing `.catch` on the
+resume read (the room-code outage's lesson, applied again), error screens in
+`Gathering.tsx` with no retry, and `continueToRounds` being the one
+masculine-imperative label among a set of deliberately genderless ones. The
+"rounds coming soon" placeholder also said "milestone" in Hebrew, on a screen
+real people will see at the gate run.

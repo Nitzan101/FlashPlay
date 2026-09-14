@@ -90,6 +90,42 @@ choosing them.
 
 ## Status
 
+- **Milestone 4 — implemented, gate not yet run.** The session state machine
+  and the harvest phase: `startHarvestGame`, `submitHarvestItem`,
+  `advanceGamePhase`, `extendGamePhase` in `src/lib/harvest.ts`, wired into a
+  new `Gathering.tsx` router and `Harvest.tsx` screen. Every phase transition
+  is an explicit host write (never a client-side timer), the countdown shown
+  to players is advisory-only, and "duplicate blocking" is enforced
+  structurally through a new `PromptSubmissionDoc` slot rather than a count.
+  Three parameters with no answer in DESIGN.md were decided directly with
+  Nitzan on 2026-09-08 rather than inferred: no automatic minimum-submission
+  gate (the host can always advance), "duplicate blocking" means one item per
+  player per prompt, and a fixed 90s timer with a host "give another minute"
+  button rather than a host-configurable duration. Full account, including
+  why the timer needed no server-time fix the way room codes did, in
+  CLAUDE.md, "Milestone 4, implemented", and DECISIONS.md, "Decisions made in
+  milestone 4".
+
+  **The independent four-lens review has run** (correctness, data and
+  security, mobile reality, the full scenario walkthrough) and found two
+  serious defects, both fixed: the submission slot was readable by every
+  player, which reconstructed the author-to-item mapping the first game
+  depends on hiding, and a device killed between the slot write and the item
+  write locked that player out of the prompt permanently while the UI told
+  them their answer was in. The second one is the milestone's own gate
+  scenario reproduced by reading the code - which is the strongest argument
+  for why that gate still matters. Both are mutation-checked. Full account in
+  DECISIONS.md, "What the milestone-4 review found"; the routine findings,
+  including why the host's progress figure counts answers rather than people,
+  are in BACKLOG.md.
+
+  Automated evidence: `npm run build`, `npm test` (41 tests, including a new
+  `Harvest.test.tsx` covering every state of the harvest screen), `npm run
+  test:rules` (105 assertions, six of this milestone's guards
+  mutation-checked). **Not yet run: the real-people half of the gate** - a
+  multi-device session with one device deliberately killed mid-phase. Deferred
+  by Nitzan on 2026-09-08 to be run together with milestone 3's still-
+  outstanding timed run rather than as its own session.
 - **Milestone 2 — done (reviewed twice, reopened twice).** Data model, security
   rules, and 48 emulator assertions. The gate's independent review found four
   demonstrated holes in the first version; all four are fixed, each fix

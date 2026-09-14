@@ -167,12 +167,41 @@ export interface GameDoc {
   type: GameType
   phase: GamePhase
   /** Everyone answers the same prompts, or the room cannot tell which question
-   *  the item being read out is answering. Two per gathering. */
+   *  the item being read out is answering. Two per gathering - enforced in
+   *  firestore.rules on create (`promptIds.size() == 2`), not just here. */
   promptIds: string[]
   /** Position in the gathering's sequence. */
   order: number
   startedAt: number
+  /**
+   * Advisory only - purely a client-side countdown target, never compared
+   * against anything in firestore.rules. DESIGN: "every phase needs a timeout
+   * or a host override." A phase only ever actually ends on an explicit
+   * host write (advancePhase in harvest.ts), so nothing security-relevant
+   * depends on this number being accurate - unlike ROOM_CODE_WINDOW_MS, which
+   * a rule enforces against the server's clock and which a 200ms skew broke
+   * outright (see CLAUDE.md). A stale or skewed countdown here just displays
+   * a few hundred ms off; the host's own tap is what moves the game forward.
+   * Set on phase start to `now + HARVEST_WINDOW_MS`, and bumped by
+   * `HARVEST_EXTEND_MS` on "give another minute" - see extendPhase().
+   */
+  phaseEndsAt: number
 }
+
+/** DESIGN: "Everyone submits two items to a prompt, ninety-second window." */
+export const HARVEST_WINDOW_MS = 90_000
+
+/** The host's "give it another minute" button adds this much to
+ *  `GameDoc.phaseEndsAt`, any number of times - see extendPhase() in
+ *  harvest.ts. Not a design measurement, just a round, guessable unit. */
+export const HARVEST_EXTEND_MS = 60_000
+
+/** Bounds an item's text, which is PUBLIC and rendered on every phone in the
+ *  room the moment it is submitted - enforced both here (client maxLength)
+ *  and in firestore.rules (a client is never trusted to enforce its own
+ *  limit). Generous for a ninety-second answer, tight enough that one
+ *  submission cannot dominate the round-loop screen. */
+export const ITEM_TEXT_MAX_LENGTH = 300
 
 /**
  * PUBLIC. Readable by everyone in the gathering, and therefore contains no
@@ -194,9 +223,16 @@ export interface ItemDoc {
  *
  * This is the whole game: if the author's id travelled in the public item, a
  * player with devtools open would simply read the answer.
+ *
+ * `gameId`/`promptId` are carried here, not just on the item, because the
+ * claim is written *before* the item exists (see ITEM_WRITE_ORDER) - the
+ * rule enforcing the one-item-per-prompt cap (PromptSubmissionDoc, below)
+ * needs somewhere to find them at that point.
  */
 export interface ItemAuthorDoc {
   authorPlayerId: string
+  gameId: string
+  promptId: string
 }
 
 /**
@@ -218,14 +254,66 @@ export interface ItemAuthorDoc {
  * the same batch as its claim is evaluated against a claim that does not yet
  * exist and is rejected. Verified against the emulator.
  *
- * **Ids must be unguessable, and a retry must use a fresh one.** Both are
- * security requirements created by this ordering, not conveniences. A
- * predictable id lets another player pre-claim it and permanently block that
- * submission (claims cannot be updated, and only the host can delete one). And
- * a client that dies between the two writes leaves an orphan claim: retrying
- * with the same id can never succeed, so generate a new one.
+ * **Ids must be unguessable, and must stay unpublished.** This is a security
+ * requirement created by the ordering, not a convenience: a predictable - or
+ * merely readable - id lets another player pre-claim it and permanently block
+ * that submission, since claims cannot be updated and only the host can
+ * delete one. Milestone 4 briefly broke this by storing the id in a
+ * player-readable document (see PromptSubmissionDoc), which is why the slot
+ * is now `get`-able by its own owner alone.
+ *
+ * **A retry continues the existing slot; only a first attempt mints an id.**
+ * Before milestone 4 the rule was the opposite - a client that died between
+ * the two writes left an orphan claim, and a retry had to generate a new id
+ * because the old one could never be completed. The uid-keyed slot changed
+ * that: it cannot be re-created, so a retry that minted a fresh id was denied
+ * at the first write and the player was locked out of that prompt for good.
+ * submitHarvestItem() therefore resumes from the slot's recorded item id.
+ *
+ * **Milestone 4 prepends a third write, for the same structural reason.**
+ * Before either of the above, the client writes a PromptSubmissionDoc at
+ * `sessions/{sessionId}/games/{gameId}/prompts/{promptId}/submissions/{uid}`.
+ * That path's last segment is the caller's own uid, not a generated id - see
+ * PromptSubmissionDoc for why that's what makes it safe against the
+ * pre-claim-and-block attack ITEM_WRITE_ORDER's ids exist to prevent, in a
+ * way a shared, first-write-wins slot could not be.
  */
-export const ITEM_WRITE_ORDER = 'itemAuthors before items, sequential, fresh id per attempt' as const
+export const ITEM_WRITE_ORDER =
+  'promptSubmission, then itemAuthors, then items - sequential; a retry resumes the slot it already reserved' as const
+
+/**
+ * One player's reservation of one prompt slot within one game - this is what
+ * "duplicate blocking" (MILESTONES.md, milestone 4) actually means: a player
+ * may submit at most one item per prompt per game, structurally rather than
+ * by a count a client could get wrong.
+ *
+ * **Document id is the player's own uid**, the same trick `PlayerDoc` uses:
+ * firestore.rules requires the id to equal `request.auth.uid`, so - unlike
+ * `itemAuthors`, where a random id makes first-write-wins the safe primitive
+ * - nobody else can ever attempt to write this specific document at all.
+ * A random or first-write-wins id here would reopen exactly the pre-claim
+ * attack ITEM_WRITE_ORDER's ids were made unguessable to prevent: another
+ * player could compute this deterministic path from a victim's public uid and
+ * front-run it, permanently blocking that person's submission.
+ *
+ * `itemId` is chosen by the client and written here FIRST, before either of
+ * the writes ITEM_WRITE_ORDER describes - see submitHarvestItem() in
+ * harvest.ts. The rules cross-check it at both later steps, which is what
+ * stops a slot being reserved once and then spent on a different item.
+ *
+ * **This document is the author mapping in a second form, so only its owner
+ * may read it.** It pairs a uid with an item id, and `items` is readable by
+ * every player - so a rule letting players list these slots hands out exactly
+ * the answer key `itemAuthors` exists to withhold until the reveal, and
+ * publishes the item id an attacker needs to pre-claim someone's submission.
+ * The first version of the rule did precisely that; an independent review
+ * found it on 2026-09-08. Anything added later that pairs a player with one
+ * of their items has the same property and needs the same treatment.
+ */
+export interface PromptSubmissionDoc {
+  itemId: string
+  submittedAt: number
+}
 
 export type RoundPhase = 'preview' | 'voting' | 'revealed'
 
@@ -279,6 +367,12 @@ export const paths = {
 
   games: (sessionId: string) => `sessions/${sessionId}/games`,
   game: (sessionId: string, gameId: string) => `sessions/${sessionId}/games/${gameId}`,
+
+  // No collection-level helper on purpose: these slots are `get`-only to
+  // their own owner, so a path meant for listing them is a path nothing may
+  // legally use.
+  promptSubmission: (sessionId: string, gameId: string, promptId: string, uid: string) =>
+    `sessions/${sessionId}/games/${gameId}/prompts/${promptId}/submissions/${uid}`,
 
   items: (sessionId: string) => `sessions/${sessionId}/items`,
   item: (sessionId: string, itemId: string) => `sessions/${sessionId}/items/${itemId}`,

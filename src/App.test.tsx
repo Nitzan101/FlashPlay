@@ -36,6 +36,25 @@ vi.mock('./lib/room', () => ({
   resolveRoomCode: (...args: unknown[]) => mockResolveRoomCode(...args),
   useRoster: () => ({ players: [], error: null }),
   usePresenceHeartbeat: () => {},
+  // These tests never leave the lobby, so a fixed 'lobby' phase is enough to
+  // route Gathering.tsx there - milestone 4's own screen (Harvest, driven by
+  // useGame) is exercised in Harvest.test.tsx instead.
+  useSession: () => ({ session: { phase: 'lobby', currentGameId: null }, error: null }),
+}))
+
+// Gathering.tsx (and, through it, Lobby.tsx and Harvest.tsx) import from
+// here - mocked so these tests never touch real Firestore calls through a
+// path App.tsx itself does not exercise.
+vi.mock('./lib/harvest', () => ({
+  useGame: () => ({ game: null, error: null }),
+  useHarvestProgress: () => ({ submittedCount: 0, error: null }),
+  pickHarvestPromptIds: () => ['p1', 'p2'],
+  startHarvestGame: vi.fn(),
+  submitHarvestItem: vi.fn(),
+  getMySubmission: vi.fn().mockResolvedValue(null),
+  getSubmissionState: vi.fn().mockResolvedValue('none'),
+  advanceGamePhase: vi.fn(),
+  extendGamePhase: vi.fn(),
 }))
 
 const mockedUseAuthUser = vi.mocked(useAuthUser)

@@ -25,3 +25,7 @@ dist-ssr
 
 # Firebase CLI local cache
 .firebase/
+
+# Claude Code's per-machine permission choices (launch.json IS committed - it
+# is how the dev server is started for a preview, the same for everyone).
+.claude/settings.local.json

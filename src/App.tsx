@@ -1,7 +1,7 @@
 import { doc, getDoc } from 'firebase/firestore'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import Lobby from './Lobby'
+import Gathering from './Gathering'
 import { signInAsGuest, signInWithGoogle, signOutUser, useAuthUser } from './lib/auth'
 import { db } from './lib/firebase'
 import { paths } from './lib/model'
@@ -325,7 +325,7 @@ export default function App() {
       )}
 
       {screen.kind === 'in-room' && (
-        <Lobby
+        <Gathering
           sessionId={screen.sessionId}
           roomCode={screen.roomCode}
           uid={screen.uid}

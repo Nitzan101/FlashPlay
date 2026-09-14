@@ -18,6 +18,7 @@ export default defineConfig({
       '**/dist/**',
       'src/lib/firestore-rules.test.ts',
       'src/lib/room.test.ts',
+      'src/lib/harvest.test.ts',
     ],
   },
 })

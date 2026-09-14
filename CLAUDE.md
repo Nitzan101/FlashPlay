@@ -22,8 +22,9 @@ superseded**. It is kept only as an archive of the planning phase; where it and
 `docs/` disagree, `docs/` wins.
 
 Milestone status lives in `docs/MILESTONES.md` - that is its only home; do not
-restate it here. Short version: milestone 1 is done, milestone 2 (data model,
-then security rules) is next.
+restate it here. Short version: milestones 0-3 are done or implemented,
+milestone 4 (the session state machine and the harvest phase) is implemented
+below - check `docs/MILESTONES.md` for exactly which gates have actually run.
 
 **The app's canonical URL is `https://flashplay-50bde.firebaseapp.com`** - this is
 the link to share, and it is not interchangeable with the `.web.app` one. See
@@ -36,11 +37,12 @@ All verified by execution on 2026-09-04.
 - Run: `npm run dev`
 - Test: `npm test` (Vitest, single run) / `npm run test:watch`
 - Security rules test: `npm run test:rules` - starts the Firestore emulator and
-  runs the rules suite against it. Needs Java (present: OpenJDK 21). Excluded
-  from `npm test` so the everyday loop stays fast and emulator-free. **Also
-  needs `.env.local` to exist**, even though `room.test.ts` never touches the
-  real project - it imports `room.ts`, which imports `firebase.ts`, which
-  throws on missing `VITE_FIREBASE_*` vars at module load. A fresh clone
+  runs the rules suite against it (`firestore-rules.test.ts`, `room.test.ts`,
+  `harvest.test.ts`). Needs Java (present: OpenJDK 21). Excluded from `npm
+  test` so the everyday loop stays fast and emulator-free. **Also needs
+  `.env.local` to exist**, even though these files never touch the real
+  project - they import `room.ts`/`harvest.ts`, which import `firebase.ts`,
+  which throws on missing `VITE_FIREBASE_*` vars at module load. A fresh clone
   without `.env.local` gets a suite failure that looks like a rules problem.
 - Deploy rules: `npm run deploy:rules`
 - Deploy app: `npm run build` then `firebase deploy --only hosting --project flashplay-50bde`
@@ -54,6 +56,13 @@ watch the test go red before claiming it guards anything.
 `npm run test:rules` is required on top of that for anything touching
 `firestore.rules` or the data model, and a rules change is only proven when the
 rule has been deleted and the matching assertion watched to go red.
+
+**Any number or file name written into these docs comes from the run, not from
+the previous milestone's text.** Three times now a coverage claim here has been
+right in total and wrong in detail - a per-file split carried forward after the
+file changed, and a comment pointing at a test file that did not exist yet.
+Count with `grep -cE "^\s+it\(" <file>` per file (no `it.each` in this repo, so
+that is exact) and check the referenced file exists before writing the sentence.
 
 Two kinds of change are not covered by that and need more:
 - **Anything touching anonymity, ownership or read access** — the client reads
@@ -79,7 +88,20 @@ Two kinds of change are not covered by that and need more:
   Single source of truth for document shapes; `firestore.rules` mirrors it by
   hand and the two are kept in step by the emulator tests.
 - `src/lib/room.ts` — room creation, joining, presence: `createRoom`,
-  `resolveRoomCode`, `joinRoom`, `useRoster`, `usePresenceHeartbeat`.
+  `resolveRoomCode`, `joinRoom`, `useRoster`, `usePresenceHeartbeat`,
+  `useSession` (live session-document listener - milestone 4's screens are
+  driven by this, not by App.tsx's one-off getDoc calls).
+- `src/lib/harvest.ts` — milestone 4: the session state machine and the
+  harvest phase. `startHarvestGame`, `submitHarvestItem` (the three-write
+  contract - see `ITEM_WRITE_ORDER` in `model.ts`), `getMySubmission`,
+  `advanceGamePhase`, `extendGamePhase`, `pickHarvestPromptIds`, plus the
+  `useGame`/`useHarvestProgress` hooks.
+- `src/Gathering.tsx` — routes an in-room screen off the live session/game
+  documents (lobby vs. harvest vs. "rounds not built yet"), and hosts the
+  presence heartbeat for the whole gathering, not just the lobby screen.
+- `src/Harvest.tsx` — the harvest phase UI: one answer per prompt, the
+  advisory countdown, and the host's "give another minute" / "continue"
+  controls.
 - `src/lib/canonicalHost.ts` — bounces the `.web.app` twin to the auth domain.
   Read its comment before touching anything about domains.
 - `src/test/setup.ts` — Vitest setup (jest-dom matchers).
@@ -231,6 +253,34 @@ so there is no reason to co-locate them.
   needs an explicit `{ firebase: { sign_in_provider: 'google.com' } }`, or
   it's a vacuous pass waiting to be found by the next review, the way it was
   in milestone 3's first version.
+- **Any document pairing a player's uid with one of their item ids IS the
+  author mapping, whatever it is called, and must be readable by its owner
+  alone.** Milestone 4's `submissions/{uid}` slot was written with `read: if
+  isPlayer(sessionId)` because it looked like bookkeeping; since `items` is
+  public to players, listing that one collection reconstructed the whole
+  answer key the first game depends on hiding, and published the item id
+  needed to pre-claim someone else's submission. Found by review on
+  2026-09-08, now `get` + owner only. The question to ask of a new collection
+  is not "is this secret?" but "does it let someone join two things that are
+  each individually fine?"
+- **An immutable, uid-keyed guard needs a resume path designed with it.** The
+  same slot blocks duplicates by being un-updatable, which also meant a client
+  that died mid-sequence could never retry - and it silently invalidated
+  ITEM_WRITE_ORDER's two-milestone-old "generate a fresh id on retry" rule,
+  which was then wrong in a comment nobody re-read. When a new write is
+  prepended to an existing sequence, re-read the invariants the old sequence
+  documented, not just the code.
+- **A rules `get()` on a document that does not exist fails the whole
+  evaluation** with `Property <field> is undefined on object`, rather than
+  cleanly denying. So adding a `get()`-based cross-check to a rule breaks
+  every existing test whose fixture omits that document, with an error that
+  reads like a rules bug rather than a missing seed. Seed the full chain a new
+  rule will traverse.
+- **`vi.mock`'s factory must list every export its consumers import**, even
+  transitively - adding one function to `room.ts`/`harvest.ts` makes
+  `App.test.tsx` throw `No '<name>' export is defined on the mock` at render
+  time, which looks like a component bug. This has now bitten twice in
+  milestone 4 alone; check the mock factories when adding an export.
 
 ## Milestone 3, implemented - what a fresh session needs to know
 
@@ -282,6 +332,106 @@ now also runs `src/lib/room.test.ts` (both are excluded from the default
 `vitest.rules.config.ts`). A new guard is not proven until it has been deleted
 and its assertion watched to go red. The test file header records exactly
 which guards have had that done.
+
+## Milestone 4, implemented - what a fresh session needs to know
+
+The session state machine and the harvest phase are built. The gate itself
+(a multi-device run where one device is deliberately killed mid-phase) has
+not run - see `docs/MILESTONES.md`.
+
+**Every phase transition is an explicit host write, never a client-side
+timer.** `GameDoc.phaseEndsAt` only drives the on-screen countdown - nothing
+in the client or in `firestore.rules` ever compares it against anything, so a
+skewed device clock (the exact bug that broke room codes on 2026-09-07) can
+make the number on screen wrong but can never make the game do the wrong
+thing. The host's own tap (`advanceGamePhase`) is what moves the gathering
+forward, every time. This was a deliberate simplification agreed with Nitzan
+on 2026-09-08, rather than porting the room-code approach (a rule comparing a
+client timestamp to `request.time`) to a second place in the app.
+
+**Three design parameters here have no answer in DESIGN.md or MILESTONES.md**
+and were decided directly with Nitzan on 2026-09-08, not inferred:
+- **No automatic minimum-submission threshold.** The host can always advance
+  from harvesting to rounds, at any submission count. `useHarvestProgress`'s
+  count is advisory display only, never a gate.
+- **"Duplicate blocking" means one item per player per prompt per game** -
+  see `PromptSubmissionDoc` below. (Not, e.g., blocking identical text from
+  two different players - that is allowed.)
+- **The harvest timer is a fixed 90s** (DESIGN's own number), plus a host
+  "give it another minute" button (`extendGamePhase`) that adds
+  `HARVEST_EXTEND_MS` any number of times, rather than a host-configurable
+  duration set up front.
+
+**"Duplicate blocking" is enforced by a new collection, not a count check.**
+`sessions/{sessionId}/games/{gameId}/prompts/{promptId}/submissions/{uid}`
+(`PromptSubmissionDoc` in `src/lib/model.ts`) is a slot whose document id is
+the player's own uid - the same trick `PlayerDoc` uses. That is what makes it
+safe against a front-running block, unlike `itemAuthors`' random ids: nobody
+but `uid` can ever attempt to write this specific document, so there is
+nothing for another player to race by pre-claiming it. `submitHarvestItem` in
+`harvest.ts` writes this slot *before* either of the two writes
+`ITEM_WRITE_ORDER` already documented - three sequential writes now, not two.
+A second submission attempt for a prompt cannot produce a second item (the
+slot already exists and is never updatable), which is what closes the BACKLOG
+item "orphan claims are unbounded" as a side effect: a player can hold at
+most one `itemAuthors` claim per prompt per game.
+
+**Two things about that slot were wrong in the first version and are worth
+not re-introducing.** It was readable by every player, which handed out the
+answer key (see Known pitfalls - it pairs a uid with an item id, and `items`
+is public); it is now `get`, owner only. And a retry minted a fresh item id,
+so a device killed between the slot write and the item write locked that
+player out of that prompt forever while the UI showed them a green tick;
+`submitHarvestItem` now resumes the slot's recorded id, and the UI asks
+`getSubmissionState` whether the *item* exists rather than trusting the slot.
+Both were found by the milestone's own four-lens review, not by the suite.
+
+**`ItemAuthorDoc` now carries `gameId`/`promptId`, not just `authorPlayerId`.**
+The claim is written before the item exists, so at that point there is
+nowhere else to find which submission slot it should be checked against - see
+the comment on `ItemAuthorDoc` in `model.ts`. `items` create then cross-checks
+its own declared `gameId`/`promptId` against the claim's, so a slot reserved
+for one prompt cannot be spent on an item tagged as a different one.
+
+**`items` create is also gated on the game's phase and the text's length.** A
+submission after the host has advanced the game past `harvesting` is refused,
+not silently accepted; `ITEM_TEXT_MAX_LENGTH` (300) bounds text that is
+PUBLIC and rendered on every phone in the room the instant it lands, mirrored
+in both `model.ts` and `firestore.rules`.
+
+**Joining during submission needed no rules change.** `players` create was
+already `isSignedIn()`-only with no phase check (milestone 3), so a player who
+joins mid-harvest simply lands in `Gathering.tsx`'s harvest branch like anyone
+else - DESIGN's requirement here was already satisfied by the room layer.
+
+Automated evidence: `npm run build`, `npm test` (41 tests, including
+`Harvest.test.tsx`, which drives every state of the harvest screen - notably
+that a reserved-but-unwritten slot shows the input again rather than a green
+tick), `npm run test:rules` (105 assertions: 81 in
+`firestore-rules.test.ts`, 16 in
+`harvest.test.ts`, which proves `submitHarvestItem`'s three-write contract,
+the client-visible shape of duplicate blocking, and the resume-after-a-killed-
+device path end to end rather than only what the rules allow in isolation, and
+8 in `room.test.ts`). Six guards are mutation-checked: the submission-slot
+non-updatability (duplicate blocking's headline claim), the harvesting-phase
+gate on item creation, the slot/claim item-id cross-check, the owner-only read
+on the slot (widening it back to `read: if isPlayer(sessionId)` reddens
+exactly one assertion), the resume path itself (making the retry mint a fresh
+id again reddens exactly four), and the screen's own reading of it (treating
+any slot as "submitted" again reddens exactly one).
+
+**The four-lens review has run** - correctness, data and security, mobile
+reality, and the full scenario walkthrough, on 2026-09-08. It found two
+serious defects, both fixed and both described above; everything else is in
+BACKLOG.md, "From the milestone-4 four-lens review", and the shape-level
+lessons are in DECISIONS.md, "What the milestone-4 review found".
+
+**Not yet run: the gate itself.** A multi-device session where one device is
+deliberately killed mid-harvest-phase, to prove the host override actually
+recovers the gathering when a real phone genuinely stops responding rather
+than merely being slow. Needs real people, the same as milestone 3's
+still-outstanding timed run - both are candidates for a single combined
+session rather than two separate ones.
 
 ## Open questions carried into later milestones
 Full context in `docs/BACKLOG.md`; these two are here because they change what

@@ -44,6 +44,33 @@ export const resources = {
       rosterLoadError: 'אי אפשר לטעון את רשימת המשתתפים כרגע.',
       youSuffix: '(את/ה)',
       hostFallbackName: 'המארח',
+
+      // --- milestone 4: the harvest phase ---
+      startGame: 'התחלת המשחק',
+      startingGame: 'מתחילים...',
+      startGameError: 'אי אפשר להתחיל את המשחק כרגע.',
+      sessionLoadError: 'אי אפשר לטעון את החדר כרגע.',
+      gameLoadError: 'אי אפשר לטעון את המשחק כרגע.',
+      harvestIntro: 'לכל שאלה - תשובה אחת קצרה',
+      yourAnswerPlaceholder: 'התשובה שלך',
+      submitAnswer: 'שליחה',
+      submittingAnswer: 'שולחים...',
+      submitAnswerError: 'אי אפשר לשלוח כרגע.',
+      alreadySubmitted: 'נשלח ✓',
+      harvestTimeLeft: 'נשארו {{seconds}} שניות',
+      harvestTimeUp: 'הזמן נגמר - עדיין אפשר לשלוח',
+      extendTime: 'עוד דקה',
+      extendingTime: 'מוסיפים זמן...',
+      extendTimeError: 'אי אפשר להוסיף זמן כרגע.',
+      harvestProgress: 'הוגשו {{count}} תשובות עד כה',
+      // A noun, not an imperative: every label here stays genderless, and
+      // 'המשך' reads as masculine-singular.
+      continueToRounds: 'מעבר הלאה',
+      advancingPhase: 'ממשיכים...',
+      advancePhaseError: 'אי אפשר להמשיך כרגע.',
+      // Seen by real people at the milestone-4 gate run, so it says what
+      // happened in their terms - no internal vocabulary on a player's phone.
+      roundsComingSoon: 'האיסוף הסתיים. הסבבים עדיין בבנייה.',
     },
   },
 } as const

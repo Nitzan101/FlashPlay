@@ -68,6 +68,23 @@ service cloud.firestore {
       return isSignedIn() && session(sessionId).hostUid == request.auth.uid;
     }
 
+    // Milestone 4: used both to gate writes to the phase actually in progress
+    // (a submission after the host has moved on must not silently succeed)
+    // and to find a PromptSubmissionDoc, whose path includes gameId - see
+    // itemAuthors create, below.
+    function game(sessionId, gameId) {
+      return get(/databases/$(database)/documents/sessions/$(sessionId)/games/$(gameId)).data;
+    }
+
+    // The one-submission-per-player-per-prompt slot - see PromptSubmissionDoc
+    // in src/lib/model.ts. Used by `itemAuthors` create, which is the one
+    // place in the sequence that has to check a claim against the slot that
+    // reserved it; `items` create cross-checks the claim instead, since by
+    // then the claim already carries the same gameId/promptId.
+    function promptSubmission(sessionId, gameId, promptId, uid) {
+      return get(/databases/$(database)/documents/sessions/$(sessionId)/games/$(gameId)/prompts/$(promptId)/submissions/$(uid)).data;
+    }
+
     // Membership is "you have a player document in this gathering". Holding the
     // link is not enough on its own: the link is a bearer token that can be
     // forwarded out of the group, so joining has to leave a trace that the
@@ -222,7 +239,61 @@ service cloud.firestore {
       // --- games ---
       match /games/{gameId} {
         allow read: if isPlayer(sessionId);
-        allow write: if isHost(sessionId);
+
+        // Shape-checked on create only - see BACKLOG.md, "sessions create
+        // doesn't constrain phase/scores", the same "routine" reasoning
+        // applies to update (the host can always drive their own gathering
+        // wherever they like; there is no cross-user exposure in it).
+        allow create: if isHost(sessionId)
+          && request.resource.data.phase == 'harvesting'
+          // Mirrors PROMPTS_PER_GATHERING in src/content/prompts.ts.
+          && request.resource.data.promptIds.size() == 2;
+        allow update: if isHost(sessionId);
+        allow delete: if false;
+
+        // --- one submission slot per player per prompt: "duplicate
+        // blocking" (MILESTONES.md, milestone 4) ---
+        //
+        // See PromptSubmissionDoc in src/lib/model.ts for why the document id
+        // being the player's own uid, rather than a shared first-write-wins
+        // slot, is what makes this safe against being front-run and blocked:
+        // only `uid` itself can ever call create here, so there is nothing
+        // for another player to race.
+        match /prompts/{promptId} {
+          match /submissions/{uid} {
+            // `get`, and only your own slot. The first version of this rule
+            // was `read: if isPlayer(sessionId)`, which handed every player
+            // the answer key: this document pairs a player's uid with their
+            // item id, and `items` is readable by every player, so listing
+            // this collection reconstructs precisely the author-to-item
+            // mapping `itemAuthors` exists to hide until the reveal. It also
+            // published the one value ITEM_WRITE_ORDER requires to stay
+            // unguessable, so another player could copy a victim's itemId
+            // into their own slot, claim it first, and permanently block that
+            // person's submission. Found by an independent security review on
+            // 2026-09-08. Nothing legitimate needs another player's slot:
+            // getMySubmission() reads its own, and useHarvestProgress()
+            // counts `items`.
+            // Mutation-checked on 2026-09-08: widening this back to
+            // `read: if isPlayer(sessionId)` turned exactly "refuses a player
+            // another player's slot, and refuses listing them to anyone"
+            // red, and nothing else.
+            allow get: if isUser(uid) && isPlayer(sessionId);
+            allow create: if isUser(uid) && isPlayer(sessionId)
+              && game(sessionId, gameId).phase == 'harvesting'
+              && request.resource.data.keys().hasOnly(['itemId', 'submittedAt'])
+              && request.resource.data.itemId is string;
+            // Never updatable: a second attempt for the same prompt is
+            // exactly the duplicate this collection exists to block, and
+            // reusing an already-spent slot for a different item would let a
+            // player edit an already-checked-in answer without the item
+            // rules ever seeing it happen. Mutation-checked: temporarily
+            // allowing update turned exactly "refuses a second reservation
+            // for the same prompt" red, and nothing else.
+            allow update: if false;
+            allow delete: if isHost(sessionId);
+          }
+        }
       }
 
       // --- harvested items: PUBLIC, text only ---
@@ -246,10 +317,33 @@ service cloud.firestore {
         // for why that claim cannot be raced or observed in advance - this is
         // what closes S4 (authorship could otherwise be stolen between the
         // two writes).
+        //
+        // Milestone 4 adds three checks on top: the item's declared
+        // gameId/promptId must match what the (earlier-written) itemAuthors
+        // claim actually recorded - otherwise a player could reserve one
+        // prompt's submission slot and spend it on an item tagged as a
+        // different prompt, defeating the one-per-prompt cap - the game must
+        // still be in its harvesting phase (a submission after the host has
+        // moved the gathering on to rounds must not silently create an item
+        // nobody expects), and the text is bounded, since it is PUBLIC and
+        // rendered on every phone in the room the instant it lands.
         allow create: if isPlayer(sessionId)
           && request.resource.data.revealed == false
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          // Mirrors ITEM_TEXT_MAX_LENGTH in src/lib/model.ts - rules cannot
+          // import from there, so this is kept in step by the emulator
+          // tests, the same way maxRoomCodeWindowMs() is.
+          && request.resource.data.text.size() <= 300
           && get(/databases/$(database)/documents/sessions/$(sessionId)/itemAuthors/$(itemId))
-               .data.authorPlayerId == request.auth.uid;
+               .data.authorPlayerId == request.auth.uid
+          && get(/databases/$(database)/documents/sessions/$(sessionId)/itemAuthors/$(itemId))
+               .data.gameId == request.resource.data.gameId
+          && get(/databases/$(database)/documents/sessions/$(sessionId)/itemAuthors/$(itemId))
+               .data.promptId == request.resource.data.promptId
+          // Mutation-checked: removing this clause turned exactly "refuses
+          // an item created after the game has moved past harvesting" red.
+          && game(sessionId, request.resource.data.gameId).phase == 'harvesting';
 
         // Only the `revealed` flag may change on this write - an independent
         // review found that constraining the flag alone left every other
@@ -294,8 +388,20 @@ service cloud.firestore {
         // being rewritten: the host may delete a claim, and without this
         // condition delete-then-create would be an update by another route,
         // letting a player take authorship of an already-revealed item.
+        //
+        // Milestone 4: the claim must also point at a PromptSubmissionDoc
+        // this same caller already reserved for this exact item id - the
+        // slot that "duplicate blocking" is enforced through (see
+        // games/{gameId}/prompts/{promptId}/submissions above). Without this
+        // cross-check a player could skip reserving a slot entirely and claim
+        // as many items as they liked for one prompt.
         allow create: if isPlayer(sessionId)
           && request.resource.data.authorPlayerId == request.auth.uid
+          && request.resource.data.keys().hasOnly(['authorPlayerId', 'gameId', 'promptId'])
+          // Mutation-checked: removing this cross-check turned exactly
+          // "refuses an authorship claim naming an item id its slot did not
+          // reserve" red.
+          && promptSubmission(sessionId, request.resource.data.gameId, request.resource.data.promptId, request.auth.uid).itemId == itemId
           && !exists(/databases/$(database)/documents/sessions/$(sessionId)/items/$(itemId));
         // Never updatable - otherwise a player could rewrite history after
         // the reveal.

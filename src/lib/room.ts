@@ -97,8 +97,9 @@ async function claimRoomCode(
 /** Firebase errors carry a `code` like 'permission-denied'; anything else
  *  falls back to its message. Used to make a failure reportable rather than
  *  swallowed. Guards against `error` being `null`/non-object, which a plain
- *  property read on it would throw on. */
-function errorCode(error: unknown): string {
+ *  property read on it would throw on. Exported for harvest.ts, which needs
+ *  the same reporting shape rather than a second copy of it. */
+export function errorCode(error: unknown): string {
   if (error && typeof error === 'object') {
     const code = (error as { code?: unknown }).code
     if (typeof code === 'string') return code
@@ -107,8 +108,10 @@ function errorCode(error: unknown): string {
 }
 
 /** Runs one named write, reporting which step failed rather than letting a
- *  bare error reach the UI with no indication of where it came from. */
-async function step<T>(name: string, run: () => Promise<T>): Promise<T> {
+ *  bare error reach the UI with no indication of where it came from. Exported
+ *  for harvest.ts, whose multi-step submission writes need the same
+ *  reporting shape as this file's own. */
+export async function step<T>(name: string, run: () => Promise<T>): Promise<T> {
   try {
     return await run()
   } catch (error) {
@@ -252,6 +255,45 @@ export function useRoster(sessionId: string | null): RosterState {
       },
       (error) => {
         console.error('[FlashPlay] roster listener failed:', errorCode(error), error)
+        setState((prev) => ({ ...prev, error: errorCode(error) }))
+      },
+    )
+    return unsubscribe
+  }, [sessionId])
+
+  return state
+}
+
+export interface SessionState {
+  session: (SessionDoc & { id: string }) | null
+  error: string | null
+}
+
+/**
+ * Live view of the session document - milestone 4's state machine needs
+ * every device in the room to see a phase change the moment the host makes
+ * it, not on their next refresh. App.tsx's own getDoc calls are one-off reads
+ * for the initial screen decision; this is the ongoing listener the
+ * in-gathering screens are driven by.
+ */
+export function useSession(sessionId: string | null): SessionState {
+  const [state, setState] = useState<SessionState>({ session: null, error: null })
+
+  useEffect(() => {
+    if (!sessionId) {
+      setState({ session: null, error: null })
+      return
+    }
+    const unsubscribe = onSnapshot(
+      doc(db, paths.session(sessionId)),
+      (snap) => {
+        setState({
+          session: snap.exists() ? { id: snap.id, ...(snap.data() as SessionDoc) } : null,
+          error: null,
+        })
+      },
+      (error) => {
+        console.error('[FlashPlay] session listener failed:', errorCode(error), error)
         setState((prev) => ({ ...prev, error: errorCode(error) }))
       },
     )

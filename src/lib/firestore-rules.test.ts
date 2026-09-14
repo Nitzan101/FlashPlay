@@ -89,6 +89,8 @@ const PLAYER = 'player-uid'
 const OUTSIDER = 'outsider-uid'
 const ITEM = 'item1'
 const ROUND = 'round1'
+const GAME = 'game1'
+const PROMPT = 'p1'
 
 let testEnv: RulesTestEnvironment
 
@@ -128,18 +130,40 @@ beforeEach(async () => {
       name: 'Player',
       uid: PLAYER,
     })
+    // M4: a real games/{gameId} document is required now that items' create
+    // rule reads its phase (get() on a document that does not exist errors
+    // rather than denying cleanly, so every item-creation test below needs
+    // this to exist regardless of which guard it is actually exercising).
+    await setDoc(doc(db, `sessions/${SESSION}/games/${GAME}`), {
+      type: 'who-said-that',
+      phase: 'harvesting',
+      promptIds: [PROMPT, 'p2'],
+      order: 0,
+      startedAt: 0,
+      phaseEndsAt: 0,
+    })
     await setDoc(doc(db, `sessions/${SESSION}/items/${ITEM}`), {
-      gameId: 'game1',
+      gameId: GAME,
       text: 'I left my phone on the car roof',
-      promptId: 'p1',
+      promptId: PROMPT,
       revealed: false,
       createdAt: 0,
     })
     await setDoc(doc(db, `sessions/${SESSION}/itemAuthors/${ITEM}`), {
       authorPlayerId: HOST,
+      gameId: GAME,
+      promptId: PROMPT,
+    })
+    // The submission slot ITEM's claim above points at - see
+    // PromptSubmissionDoc in src/lib/model.ts. Kept consistent with it so a
+    // test that re-derives ITEM's write sequence from scratch (rather than
+    // trusting this seed) finds a coherent fixture.
+    await setDoc(doc(db, `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${HOST}`), {
+      itemId: ITEM,
+      submittedAt: 0,
     })
     await setDoc(doc(db, `sessions/${SESSION}/rounds/${ROUND}`), {
-      gameId: 'game1',
+      gameId: GAME,
       itemId: ITEM,
       phase: 'voting',
       order: 0,
@@ -331,6 +355,9 @@ describe('path helpers', () => {
     expect(paths.groupFacts(HOST, 'group1')).toBe(`users/${HOST}/groups/group1/facts`)
     expect(paths.item(SESSION, ITEM)).toBe(`sessions/${SESSION}/items/${ITEM}`)
     expect(paths.roomCode('1234')).toBe('roomCodes/1234')
+    expect(paths.promptSubmission(SESSION, GAME, PROMPT, HOST)).toBe(
+      `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${HOST}`,
+    )
   })
 })
 
@@ -365,13 +392,15 @@ describe('S1 - the reveal guard cannot be forced open', () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/fresh`), {
         authorPlayerId: PLAYER,
+        gameId: GAME,
+        promptId: PROMPT,
       })
     })
     await assertSucceeds(
       setDoc(doc(asPlayer(), `sessions/${SESSION}/items/fresh`), {
-        gameId: 'game1',
+        gameId: GAME,
         text: 'mine',
-        promptId: 'p1',
+        promptId: PROMPT,
         revealed: false,
         createdAt: 0,
       }),
@@ -595,18 +624,39 @@ describe('F4 - authorship cannot be rewritten by deleting the claim', () => {
     // item as their own.
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await deleteDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/${ITEM}`))
+      // A real submission slot for PLAYER naming ITEM, so the only reason
+      // this can fail is the guard actually under test (the item still
+      // exists) - not an incidental missing-field error that would deny it
+      // for the wrong reason.
+      await setDoc(
+        doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${PLAYER}`),
+        { itemId: ITEM, submittedAt: 0 },
+      )
     })
     await assertFails(
       setDoc(doc(asPlayer(), `sessions/${SESSION}/itemAuthors/${ITEM}`), {
         authorPlayerId: PLAYER,
+        gameId: GAME,
+        promptId: PROMPT,
       }),
     )
   })
 
   it('still allows a claim for an item that does not exist yet', async () => {
+    // M4: the claim must also point at a submission slot this player has
+    // already reserved for this exact item id - see the M4 describe block
+    // below for that guard's own tests.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'brandnew', submittedAt: 0 },
+      )
+    })
     await assertSucceeds(
       setDoc(doc(asPlayer(), `sessions/${SESSION}/itemAuthors/brandnew`), {
         authorPlayerId: PLAYER,
+        gameId: GAME,
+        promptId: PROMPT,
       }),
     )
   })
@@ -904,5 +954,271 @@ describe('M3 - room codes are get-only, bounded, and reclaimable once expired', 
         expiresAt: fastClientNow + ROOM_CODE_WINDOW_MS - ROOM_CODE_CLOCK_SKEW_MARGIN_MS,
       }),
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Milestone 4: the session state machine and the harvest phase.
+//
+// "Duplicate blocking" (MILESTONES.md) is enforced through the submission
+// slot at games/{gameId}/prompts/{promptId}/submissions/{uid} - see
+// PromptSubmissionDoc in src/lib/model.ts. The headline claim, mutation-
+// checked below ("temporarily allowing update... turns the duplicate-
+// blocking assertion red"): a player may reserve at most one slot per prompt
+// per game, because the document id is their own uid and it is never
+// updatable once created.
+// ---------------------------------------------------------------------------
+
+const OTHER_PROMPT = 'p2'
+
+describe('M4 - submission slots: one player, one prompt, one attempt', () => {
+  it('lets a player reserve a slot for a prompt they have not yet answered', async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(asPlayer(), `sessions/${SESSION}/games/${GAME}/prompts/${OTHER_PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'fresh-item', submittedAt: 0 },
+      ),
+    )
+  })
+
+  it('refuses a second reservation for the same prompt - this is "duplicate blocking"', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}/prompts/${OTHER_PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'first-item', submittedAt: 0 },
+      )
+    })
+    await assertFails(
+      setDoc(
+        doc(asPlayer(), `sessions/${SESSION}/games/${GAME}/prompts/${OTHER_PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'second-item', submittedAt: 0 },
+      ),
+    )
+  })
+
+  it('refuses reserving a slot on someone else\'s behalf', async () => {
+    await assertFails(
+      setDoc(
+        doc(asPlayer(), `sessions/${SESSION}/games/${GAME}/prompts/${OTHER_PROMPT}/submissions/${HOST}`),
+        { itemId: 'stolen-slot', submittedAt: 0 },
+      ),
+    )
+  })
+
+  it('refuses a slot reservation once the game has moved past harvesting', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}`), { phase: 'rounds' })
+    })
+    await assertFails(
+      setDoc(
+        doc(asPlayer(), `sessions/${SESSION}/games/${GAME}/prompts/${OTHER_PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'too-late', submittedAt: 0 },
+      ),
+    )
+  })
+
+  // The headline read guard. The seeded slot belongs to HOST and records
+  // ITEM's id, and every player can read ITEM's text - so anyone able to read
+  // this document, or list the collection, holds the answer key the whole
+  // first game depends on withholding. The first version of the rule was
+  // `read: if isPlayer(sessionId)` and granted exactly that.
+  it("refuses a player another player's slot, and refuses listing them to anyone", async () => {
+    await assertFails(
+      getDoc(
+        doc(asPlayer(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${HOST}`),
+      ),
+    )
+    await assertFails(
+      getDocs(collection(asPlayer(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions`)),
+    )
+    // The host is a scoring player too (DESIGN), so listing is closed to them
+    // for the same reason it is closed to everyone else.
+    await assertFails(
+      getDocs(collection(asHost(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions`)),
+    )
+  })
+
+  it('lets a player read back only their own slot, and an outsider nothing', async () => {
+    await assertSucceeds(
+      getDoc(
+        doc(asHost(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${HOST}`),
+      ),
+    )
+    await assertFails(
+      getDoc(
+        doc(asOutsider(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${HOST}`),
+      ),
+    )
+  })
+
+  it('refuses a shape carrying fields other than itemId/submittedAt', async () => {
+    await assertFails(
+      setDoc(
+        doc(asPlayer(), `sessions/${SESSION}/games/${GAME}/prompts/${OTHER_PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'sneaky', submittedAt: 0, extra: 'field' },
+      ),
+    )
+  })
+})
+
+describe('M4 - an item must match the slot and claim that reserved it', () => {
+  it('refuses an authorship claim naming an item id its slot did not reserve', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}/prompts/${OTHER_PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'reserved-item', submittedAt: 0 },
+      )
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/itemAuthors/different-item`), {
+        authorPlayerId: PLAYER,
+        gameId: GAME,
+        promptId: OTHER_PROMPT,
+      }),
+    )
+  })
+
+  it('refuses a claim carrying fields other than authorPlayerId/gameId/promptId', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}/prompts/${OTHER_PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'sneaky-claim', submittedAt: 0 },
+      )
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/itemAuthors/sneaky-claim`), {
+        authorPlayerId: PLAYER,
+        gameId: GAME,
+        promptId: OTHER_PROMPT,
+        extra: 'field',
+      }),
+    )
+  })
+
+  it('refuses an item whose declared promptId does not match its own claim', async () => {
+    // A player who reserved a slot for one prompt cannot spend the claim it
+    // produced on an item tagged as a different prompt - that would defeat
+    // the one-per-prompt cap by laundering it through a mismatched tag.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/mismatched`), {
+        authorPlayerId: PLAYER,
+        gameId: GAME,
+        promptId: PROMPT,
+      })
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/items/mismatched`), {
+        gameId: GAME,
+        text: 'x',
+        promptId: OTHER_PROMPT,
+        revealed: false,
+        createdAt: 0,
+      }),
+    )
+  })
+
+  it('refuses an item created after the game has moved past harvesting', async () => {
+    // The host advancing the phase must not leave a race where a submission
+    // already in flight still silently lands.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/toolate`), {
+        authorPlayerId: PLAYER,
+        gameId: GAME,
+        promptId: PROMPT,
+      })
+      await setDoc(
+        doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'toolate', submittedAt: 0 },
+      )
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}`), { phase: 'rounds' })
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/items/toolate`), {
+        gameId: GAME,
+        text: 'too late',
+        promptId: PROMPT,
+        revealed: false,
+        createdAt: 0,
+      }),
+    )
+  })
+})
+
+describe('M4 - item text is bounded, since it is public the instant it lands', () => {
+  it('refuses empty text', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/empty`), {
+        authorPlayerId: PLAYER,
+        gameId: GAME,
+        promptId: PROMPT,
+      })
+      await setDoc(
+        doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'empty', submittedAt: 0 },
+      )
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/items/empty`), {
+        gameId: GAME,
+        text: '',
+        promptId: PROMPT,
+        revealed: false,
+        createdAt: 0,
+      }),
+    )
+  })
+
+  it('refuses text past the bound (mirrors ITEM_TEXT_MAX_LENGTH)', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/itemAuthors/toolong`), {
+        authorPlayerId: PLAYER,
+        gameId: GAME,
+        promptId: PROMPT,
+      })
+      await setDoc(
+        doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}/prompts/${PROMPT}/submissions/${PLAYER}`),
+        { itemId: 'toolong', submittedAt: 0 },
+      )
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/items/toolong`), {
+        gameId: GAME,
+        text: 'x'.repeat(301),
+        promptId: PROMPT,
+        revealed: false,
+        createdAt: 0,
+      }),
+    )
+  })
+})
+
+describe('M4 - games are shape-checked on create', () => {
+  const wellFormed = {
+    type: 'who-said-that',
+    phase: 'harvesting',
+    promptIds: ['a', 'b'],
+    order: 1,
+    startedAt: 0,
+    phaseEndsAt: 0,
+  }
+
+  it('refuses a non-host opening a game', async () => {
+    await assertFails(setDoc(doc(asPlayer(), `sessions/${SESSION}/games/newgame`), wellFormed))
+  })
+
+  it('refuses a game opened in a phase other than harvesting', async () => {
+    await assertFails(
+      setDoc(doc(asHost(), `sessions/${SESSION}/games/newgame`), { ...wellFormed, phase: 'rounds' }),
+    )
+  })
+
+  it('refuses a game opened with the wrong number of prompts (mirrors PROMPTS_PER_GATHERING)', async () => {
+    await assertFails(
+      setDoc(doc(asHost(), `sessions/${SESSION}/games/newgame`), { ...wellFormed, promptIds: ['a'] }),
+    )
+  })
+
+  it('lets the host open a well-formed game', async () => {
+    await assertSucceeds(setDoc(doc(asHost(), `sessions/${SESSION}/games/newgame`), wellFormed))
   })
 })

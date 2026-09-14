@@ -238,3 +238,41 @@ first paint on a slow shared wifi is a blank white screen; `npm run
 test:rules` requires `.env.local` to exist even though `room.test.ts` never
 touches the real project, because importing `room.ts` pulls in
 `firebase.ts`, which throws on missing env vars at module load.
+
+## From the milestone-4 four-lens review
+
+The two serious findings (the submission slot being readable by every player,
+and a killed device stranding its own submission permanently) were fixed in
+the same pass, not deferred - see DECISIONS.md, "What the milestone-4 review
+found." What follows is what was left.
+
+**The harvest progress figure counts items, not people.** `useHarvestProgress`
+shows the host "N answers so far" across both prompts, so four answers could
+be four people who answered one prompt each or two who answered both - a host
+deciding whether to give the room another minute cannot tell those apart.
+Counting *submitters* instead is not a small change: it would mean reading the
+submission slots, and those are now readable only by their own owner, because
+a slot pairs a uid with an item id and `items` is public - exactly the answer
+key `itemAuthors` withholds. So the honest options are a host-only aggregate
+that does not exist without a server, or leaving the item count as the
+approximation it is. Left as-is deliberately; revisit if the host actually
+struggles with the call at a real gathering.
+
+**An answer typed but not sent when the host advances is lost silently.** The
+phase flip unmounts the harvest screen mid-keystroke. Persisting the draft
+would not help - submissions are closed by then, in the rules as well as the
+UI - so the only real improvement is a warning before the host advances, or a
+"you didn't finish this one" acknowledgement afterwards. Neither is built.
+
+**A submission whose first write lands just before the host advances is lost.**
+The slot's create is gated on `phase == 'harvesting'` and so is the item's, so
+a sequence that straddles the host's tap reserves a slot it can never fill.
+The player sees a submission error, the harvest is over anyway, and the slot
+is inert - no wrong state, just an answer that did not make it. Fixing it
+properly needs the whole submission to be one atomic write, which the
+claim-before-item ordering deliberately prevents.
+
+**No host control to clear a stranded slot.** The rules allow the host to
+delete one; no UI does. Much less pressing now that a retry resumes a
+stranded slot on its own, and only reachable at all if a slot can never be
+completed (the straddle case above).
