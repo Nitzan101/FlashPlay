@@ -134,25 +134,47 @@ service cloud.firestore {
         && game(sessionId, session(sessionId).currentGameId).phase == 'rounds';
     }
 
+    function round(sessionId, roundId) {
+      return get(/databases/$(database)/documents/sessions/$(sessionId)/rounds/$(roundId)).data;
+    }
+
     // Whether this round's item has already been revealed, which is what makes
     // its author readable - so voting must already be closed. See the votes
     // rules below. Mutation-checked on 2026-09-14: dropping the clause that
     // uses this turned exactly "refuses a vote once the item is revealed, even
     // if the round still says voting" red.
+    //
+    // **Only in "who said that".** In "most likely to" every item is revealed
+    // before the game even starts - that is what the game is built from - and
+    // the author is named in the question itself, so there is nothing for a
+    // revealed item to give away. Written without the game-type check first,
+    // this clause silently forbade every vote in the second game; the second
+    // game's own suite caught it.
     function authorExposed(sessionId, roundId) {
-      return itemRevealed(sessionId,
-        get(/databases/$(database)/documents/sessions/$(sessionId)/rounds/$(roundId)).data.itemId);
+      return game(sessionId, round(sessionId, roundId).gameId).type == 'who-said-that'
+        && itemRevealed(sessionId, round(sessionId, roundId).itemId);
     }
 
-    // A vote names someone who is really in this gathering, and never the
-    // voter themselves - see the votes rules below for why that is the game's
-    // rule rather than a sanity check. Both mutation-checked on 2026-09-14:
-    // each clause, removed on its own, turned exactly one assertion red
-    // ("refuses a self-vote" and "refuses a vote for somebody who is not in
-    // this gathering").
-    function validVote(sessionId, playerId) {
+    // A self-vote is refused in "who said that" and allowed in "most likely
+    // to". In the first game abstaining or voting for yourself would mark the
+    // author out, which is the whole reason they vote at all. In the second
+    // there is nothing to hide and "me" is often the honest answer - and the
+    // author of the item being discussed is the likeliest majority pick, so
+    // barring them from it would exclude one named person from the scoring
+    // every round (found in the milestone-6 review).
+    function selfVoteAllowed(sessionId, roundId) {
+      return game(sessionId, round(sessionId, roundId).gameId).type == 'most-likely-to';
+    }
+
+    // A vote always names someone who is really in this gathering. Whether it
+    // may name the voter depends on the game - see selfVoteAllowed above.
+    // Mutation-checked on 2026-09-14: each clause, removed on its own, turned
+    // exactly one assertion red ("refuses a self-vote in the first game" and
+    // "refuses a vote for somebody who is not in this gathering").
+    function validVote(sessionId, roundId, playerId) {
       return request.resource.data.keys().hasOnly(['votedForPlayerId', 'castAt'])
-        && request.resource.data.votedForPlayerId != playerId
+        && (request.resource.data.votedForPlayerId != playerId
+            || selfVoteAllowed(sessionId, roundId))
         && exists(/databases/$(database)/documents/sessions/$(sessionId)/players/$(request.resource.data.votedForPlayerId));
     }
 
@@ -295,11 +317,37 @@ service cloud.firestore {
         // doesn't constrain phase/scores", the same "routine" reasoning
         // applies to update (the host can always drive their own gathering
         // wherever they like; there is no cross-user exposure in it).
+        //
+        // **Except `type`, which is now security-relevant.** The vote guard
+        // below (`authorExposed`) only applies to `who-said-that` rounds,
+        // because in "most likely to" every item is revealed by design. A
+        // review on 2026-09-14 showed what that meant while `type` stayed
+        // freely writable: flip the game to `most-likely-to`, reveal an item,
+        // read its author, change your vote, flip the type back - and nothing
+        // records that it ever happened. Narrowing a security predicate by a
+        // document field makes that field part of the boundary, so it is
+        // pinned in the same change that narrowed the predicate.
+        // Each game type opens in the only phase that makes sense for it.
+        // "Most likely to" has no harvest at all - it is built from the items
+        // the first game revealed, so it starts in `rounds` with no prompts of
+        // its own (DESIGN, "Most likely to").
         allow create: if isHost(sessionId)
-          && request.resource.data.phase == 'harvesting'
-          // Mirrors PROMPTS_PER_GATHERING in src/content/prompts.ts.
-          && request.resource.data.promptIds.size() == 2;
-        allow update: if isHost(sessionId);
+          && (
+            (
+              request.resource.data.type == 'who-said-that'
+              && request.resource.data.phase == 'harvesting'
+              // Mirrors PROMPTS_PER_GATHERING in src/content/prompts.ts.
+              && request.resource.data.promptIds.size() == 2
+            ) || (
+              request.resource.data.type == 'most-likely-to'
+              && request.resource.data.phase == 'rounds'
+              && request.resource.data.promptIds.size() == 0
+            )
+          );
+        // Mutation-checked on 2026-09-14: dropping the type clause turned
+        // exactly "refuses to change a game's type after it has started" red.
+        allow update: if isHost(sessionId)
+          && request.resource.data.type == resource.data.type;
         allow delete: if false;
 
         // --- one submission slot per player per prompt: "duplicate
@@ -553,11 +601,11 @@ service cloud.firestore {
           allow create: if isUser(playerId) && isPlayer(sessionId)
             && !roundRevealed(sessionId, roundId)
             && !authorExposed(sessionId, roundId)
-            && validVote(sessionId, playerId);
+            && validVote(sessionId, roundId, playerId);
           allow update: if isUser(playerId) && isPlayer(sessionId)
             && !roundRevealed(sessionId, roundId)
             && !authorExposed(sessionId, roundId)
-            && validVote(sessionId, playerId);
+            && validVote(sessionId, roundId, playerId);
           allow delete: if isHost(sessionId);
         }
       }

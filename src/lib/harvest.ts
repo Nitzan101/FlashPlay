@@ -253,6 +253,10 @@ export function useGame(sessionId: string | null, gameId: string | null): GameSt
       setState({ game: null, error: null })
       return
     }
+    // Clear first: without this the previous game's document is still on
+    // screen for the round trip after `currentGameId` changes, which is how a
+    // host tapping "start the second game" twice created two of them.
+    setState({ game: null, error: null })
     const unsubscribe = onSnapshot(
       doc(db, paths.game(sessionId, gameId)),
       (snap) => {

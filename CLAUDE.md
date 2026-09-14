@@ -22,9 +22,10 @@ superseded**. It is kept only as an archive of the planning phase; where it and
 `docs/` disagree, `docs/` wins.
 
 Milestone status lives in `docs/MILESTONES.md` - that is its only home; do not
-restate it here. Short version: milestones 0-5 are done or implemented -
-the harvest phase and the "who said that" round loop both have their own
-sections below - check `docs/MILESTONES.md` for which gates have actually run.
+restate it here. Short version: milestones 0-6 are done or implemented - both
+games, the scoring and the ending are built, and the harvest, the first game
+and the second each have a section below - check `docs/MILESTONES.md` for
+which gates have actually run.
 
 **The app's canonical URL is `https://flashplay-50bde.firebaseapp.com`** - this is
 the link to share, and it is not interchangeable with the `.web.app` one. See
@@ -103,6 +104,16 @@ Two kinds of change are not covered by that and need more:
   `useAuthor` hooks.
 - `src/Rounds.tsx` — the round screen: host preview and skip, voting on every
   phone, the reveal with who-voted-for-whom, and the running scoreboard.
+- `src/lib/secondGame.ts` — milestone 6: "most likely to". `startSecondGame`,
+  `openNextSecondRound` (revealed items only), `scoreMajority`,
+  `mostVotedPlayers`, `endGathering`, `useRevealedItems`. The round mechanics
+  themselves are rounds.ts's, reused.
+- `src/SecondGame.tsx` / `src/BetweenGames.tsx` / `src/Finale.tsx` — the second
+  game, the pause between games, and the evening's last screen.
+- `src/lib/useAction.ts` — one host tap: busy, the error with its code, and the
+  "still trying" notice a write that never settles needs.
+- `src/HostButton.tsx`, `src/Scoreboard.tsx`, `src/LoadFailure.tsx` — the
+  pieces every screen shares.
 - `src/Gathering.tsx` — routes an in-room screen off the live session/game
   documents (lobby, harvest, rounds, or "the second game is not built yet"), and hosts the
   presence heartbeat for the whole gathering, not just the lobby screen.
@@ -493,6 +504,61 @@ between them - all fixed, all described above or in DECISIONS.md, "What the
 milestone-5 review found". Two are worth carrying forward as habits rather than
 facts: a multi-write sequence needs its resume path designed with it, and a
 gap between two writes is a state an attacker can sit in.
+
+## Milestone 6, implemented - what a fresh session needs to know
+
+"Most likely to", cumulative scoring and the ending are built. What has not
+run is the gate: a full evening with three to five real friends, and the
+listener fan-out check across browser profiles.
+
+**The second game has no harvest and no prompts of its own.** It is built from
+the items the first game **revealed**, which is the one thing that keeps it a
+different game: an unrevealed item makes "who is most likely to do this" the
+same question as "who wrote this". `openNextSecondRound` queries
+`revealed == true` and nothing else; the rules pair each game type with the
+only phase it may start in.
+
+**Each prompt carries the question its answers get asked in the second game**
+(`secondGameQuestion` in `src/content/prompts.ts`). A Hebrew answer is written
+in the first person and cannot be re-conjugated without a generator, so the
+question is written to fit a bare answer: "התשובה של דוד: «גבינה צהובה». מי
+מכם הכי עלול לאכול את זה בעמידה מול המקרר?"
+
+**Scoring differs, and is passed in rather than branched on.** `revealRound`
+takes a `scorer`, so the delicate part - the resumable reveal sequence - has
+exactly one implementation. "Who said that" pays for correct guesses; "most
+likely to" pays everyone who voted with the majority, ties included.
+
+**A self-vote is allowed in the second game and refused in the first**
+(`selfVoteAllowed` in `firestore.rules`). In the first game, abstaining or
+voting for yourself would mark the author out. In the second, "me" is an
+honest answer - and the author of the item under discussion is the likeliest
+majority pick, so barring them would exclude one named person from the scoring
+every round.
+
+**Narrowing a rule by a document field made that field part of the boundary.**
+The vote guard keys off `game.type`, and `games` update was host-writable with
+no shape check - so the host could flip the type, read an author while voting
+was still open, and flip it back. `type` is now pinned immutable in the same
+rule. Anything that narrows a security predicate by a field has to pin that
+field in the same change.
+
+Automated evidence: `npm run build`, `npm test` (80 tests: 9 in
+`SecondGame.test.tsx`, 6 in `Ending.test.tsx`, 11 in `scoring.test.ts` for the
+arithmetic of both games, plus the earlier screens' suites), `npm run
+test:rules` (148 assertions: 85 in `firestore-rules.test.ts`, 24 in
+`rounds.test.ts`, 16 in `harvest.test.ts`, 15 in `secondGame.test.ts`, 8 in
+`room.test.ts`). Two of this milestone's guards are mutation-checked: the
+game-type pin and the self-vote split, each turning exactly the named
+assertion red.
+
+**The four-lens review ran on 2026-09-14** and found eight serious defects -
+all fixed. The one worth carrying as a habit: three of them were fixes that
+already existed in `Rounds.tsx` and simply did not come across when this
+screen was built from it. **A screen copied from a reviewed screen has to be
+diffed against it, not read next to it** - which is why the slow-action
+handling now lives in `useAction` rather than in whichever file wrote it
+first.
 
 ## Open questions carried into later milestones
 Full context in `docs/BACKLOG.md`; these two are here because they change what

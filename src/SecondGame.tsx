@@ -6,24 +6,12 @@ import LoadFailure from './LoadFailure'
 import Scoreboard from './Scoreboard'
 import { db } from './lib/firebase'
 import { MAX_ROUNDS } from './lib/model'
-import {
-  castVote,
-  finishGame,
-  getMyVote,
-  openNextRound,
-  openVoting,
-  revealRound,
-  scoreRound,
-  skipRound,
-  useAuthor,
-  useItems,
-  useRounds,
-  useVotes,
-} from './lib/rounds'
+import { castVote, finishGame, getMyVote, openVoting, revealRound, skipRound, useAuthor, useRounds, useVotes } from './lib/rounds'
+import { mostVotedPlayers, openNextSecondRound, scoreMajority, useRevealedItems } from './lib/secondGame'
 import { errorCode, useRoster } from './lib/room'
 import { useAction } from './lib/useAction'
 
-interface RoundsProps {
+interface SecondGameProps {
   sessionId: string
   gameId: string
   uid: string
@@ -32,29 +20,28 @@ interface RoundsProps {
 }
 
 /**
- * "Who said that" - milestone 5. Every device renders from the same live
- * documents, so what a player sees is whatever phase the host's last tap put
- * the round in; there is no per-device sequencing to get out of step.
+ * "Most likely to" - milestone 6, and the second half of the loop this whole
+ * project exists to prove: the material is what the room typed ten minutes
+ * ago and has already heard attributed.
  *
- * The one thing this screen must never do is show the author before the
- * reveal. It cannot: the author lives in a document the rules refuse to
- * everybody until the item is revealed, so there is no field here to leak by
- * accident (DESIGN, "Anonymity leaks through the client").
+ * Nothing is hidden here. The author is named in the question itself, which
+ * is exactly what makes this a different question from the first game rather
+ * than the same one again - so unlike Rounds.tsx, this screen has no secret
+ * to keep, and the votes stay private only until the reveal so that the room
+ * does not simply follow the first person to answer.
  */
-export default function Rounds({ sessionId, gameId, uid, isHost, scores }: RoundsProps) {
+export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: SecondGameProps) {
   const { t } = useTranslation()
   const { players, error: rosterError } = useRoster(sessionId)
   const { rounds, loading: roundsLoading, error: roundsError } = useRounds(sessionId, gameId)
-  const { items, loading: itemsLoading, error: itemsError } = useItems(sessionId, gameId)
+  const { items, loading: itemsLoading, error: itemsError } = useRevealedItems(sessionId)
 
   const round = rounds.length > 0 ? rounds[rounds.length - 1] : null
   const revealed = round?.phase === 'revealed'
   const { votes, error: votesError } = useVotes(sessionId, round?.id ?? null, revealed)
-  const { authorPlayerId, error: authorError } = useAuthor(
-    sessionId,
-    round?.itemId ?? null,
-    revealed,
-  )
+  // The item is revealed by definition here, so its author is readable from
+  // the moment the round opens - it is part of the question, not the answer.
+  const { authorPlayerId, error: authorError } = useAuthor(sessionId, round?.itemId ?? null, true)
 
   const [myVote, setMyVote] = useState<string | null>(null)
   const host = useAction()
@@ -63,8 +50,6 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
   const nameOf = (playerId: string) =>
     players.find((p) => p.id === playerId)?.name ?? t('unknownPlayer')
 
-  // A phone that reloads mid-round must not be offered a fresh vote, so the
-  // answer comes from Firestore rather than from state this component lost.
   useEffect(() => {
     if (!round || round.phase !== 'voting') {
       setMyVote(null)
@@ -76,8 +61,6 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
         if (!cancelled) setMyVote(voted)
       })
       .catch((error: unknown) => {
-        // Not fatal: the vote can simply be cast again, and the rules allow
-        // replacing it while the round is open.
         console.error('[FlashPlay] reading own vote failed:', errorCode(error), error)
       })
     return () => {
@@ -93,25 +76,25 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
     })
   }
 
-  // Everything below is derived from the live documents rather than kept in
-  // component state, so a reload mid-game rebuilds the same screen.
   const playedRounds = rounds.filter((r) => r.phase !== 'skipped')
   const spent = new Set(rounds.map((r) => r.itemId))
   const unplayed = Object.keys(items).filter((id) => !spent.has(id)).length
-  // Until the first snapshots land, "no material" and "not loaded" are the
-  // same empty map - and they call for opposite host controls.
+  // "Nothing left to play" and "not loaded yet" look identical from an empty
+  // map, and they call for opposite host controls - the review found this
+  // screen telling a host the second game had no material, with "end the game"
+  // as the only button, while its first snapshot was still in flight.
   const loading = roundsLoading || itemsLoading
   const exhausted = !loading && (playedRounds.length >= MAX_ROUNDS || unplayed === 0)
   const item = round ? items[round.itemId] : undefined
   const prompt = item ? HARVEST_PROMPTS.find((p) => p.id === item.promptId) : undefined
   const votesCast = round ? players.filter((p) => p.votedRoundId === round.id).length : 0
-  // Shown to everyone from the round document once the host has scored it, and
-  // computed locally in the moment before that write lands.
-  const awarded =
-    round?.awarded ?? (authorPlayerId ? scoreRound(votes, authorPlayerId) : {})
-  // A skipped item is one the host decided the room should not hear. Showing
-  // it under "we skipped this" would defeat the entire preview.
-  const itemVisible = item && (isHost ? round?.phase !== 'skipped' : round?.phase === 'voting' || revealed)
+  const awarded = round?.awarded ?? scoreMajority(votes)
+  const mostVoted = revealed ? mostVotedPlayers(votes) : []
+  // Being "the one the room picked" needs the room to have actually converged.
+  // In a fully split vote every single player tops the tally, and inviting all
+  // eight of them to defend themselves is not the moment DESIGN is after.
+  const defending =
+    mostVoted.length > 0 && Object.values(votes).length > mostVoted.length ? mostVoted : []
 
   if (rosterError || roundsError || itemsError) {
     return (
@@ -124,6 +107,7 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
 
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-4">
+      <p className="text-sm text-neutral-500">{t('secondGameTitle')}</p>
       {round && (
         <p className="text-sm text-neutral-500">
           {t('roundCounter', {
@@ -136,59 +120,71 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
       {loading && <p className="text-neutral-500">{t('loadingRound')}</p>}
       {!loading && !round && !exhausted && !isHost && <p>{t('waitingForHostToRead')}</p>}
       {!loading && !round && exhausted && (
-        <p className="text-neutral-500">{t('noItemsLeft')}</p>
+        <p className="text-neutral-500">{t('noRevealedItemsLeft')}</p>
       )}
 
-      {round && (
+      {round && item && round.phase !== 'skipped' && (
         <div className="flex w-full flex-col items-center gap-2 rounded-md border border-neutral-200 p-4">
-          {prompt && (
-            <p className="text-xs text-neutral-500">{t('roundPromptLabel', { text: prompt.text })}</p>
+          {/* DESIGN's exact framing, and the reason each prompt carries its own
+              second-game question: an answer written in the first person
+              cannot be re-conjugated without a generator, so the question is
+              written to fit the bare answer rather than the other way round. */}
+          {/* The name IS the question here, so a placeholder would be worse
+              than a pause: "the answer of somebody" is not a game. */}
+          {authorPlayerId ? (
+            <p className="text-center">
+              {t('secondGameQuote', { name: nameOf(authorPlayerId), text: item.text })}
+            </p>
+          ) : authorError ? (
+            <p role="alert" className="text-center text-xs text-red-600">
+              {t('revealLoadError')}{' '}
+              <span dir="ltr" className="font-mono">
+                ({authorError})
+              </span>
+            </p>
+          ) : (
+            <p className="text-center text-neutral-500">{t('loadingRound')}</p>
           )}
-          {itemVisible && <p className="text-center text-lg">{item.text}</p>}
+          {prompt && <p className="text-center text-lg font-medium">{prompt.secondGameQuestion}</p>}
           {round.phase === 'preview' && (
             <p className="text-xs text-neutral-500">
               {isHost ? t('hostPreviewOnly') : t('waitingForHostToRead')}
             </p>
           )}
-          {round.phase === 'skipped' && <p className="text-neutral-500">{t('roundSkipped')}</p>}
         </div>
       )}
 
+      {round?.phase === 'skipped' && <p className="text-neutral-500">{t('roundSkipped')}</p>}
+
       {round?.phase === 'voting' && (
-        <div className="flex w-full flex-col items-center gap-2">
-          <p className="font-medium">{t('whoWroteThis')}</p>
-          <div className="flex w-full flex-col gap-2">
-            {players
-              // Never yourself: the author votes too, for someone else, so
-              // that abstaining or self-voting cannot mark them out. The rules
-              // refuse a self-vote as well - this only hides it.
-              .filter((player) => player.id !== uid)
-              .map((player) => (
-                <button
-                  key={player.id}
-                  type="button"
-                  onClick={() => void vote(player.id)}
-                  disabled={voter.busy}
-                  className={
-                    myVote === player.id
-                      ? 'cursor-pointer rounded-md border-2 border-blue-600 bg-blue-50 px-4 py-3 font-medium disabled:opacity-50'
-                      : 'cursor-pointer rounded-md border border-neutral-300 px-4 py-3 disabled:opacity-50'
-                  }
-                >
-                  {player.name}
-                  {myVote === player.id ? ' ✓' : ''}
-                </button>
-              ))}
-          </div>
-          {/* The options stay tappable after voting: a mis-tap on a phone is
-              ordinary, and the rules already allow replacing a vote until the
-              reveal. Hiding them made a wrong tap final. */}
-          <p className="text-xs text-neutral-500">
-            {myVote ? t('changeVoteHint') : t('everyoneVotesHint')}
+        <div className="flex w-full flex-col gap-2">
+          {players
+            // Yourself included, unlike the first game: "me" is often the
+            // honest answer to "who is most likely to", and the author of the
+            // item being discussed is the likeliest pick of all - barring them
+            // would exclude one named person from the scoring every round.
+            .map((player) => (
+              <button
+                key={player.id}
+                type="button"
+                onClick={() => void vote(player.id)}
+                disabled={voter.busy}
+                className={
+                  myVote === player.id
+                    ? 'cursor-pointer rounded-md border-2 border-blue-600 bg-blue-50 px-4 py-3 font-medium disabled:opacity-50'
+                    : 'cursor-pointer rounded-md border border-neutral-300 px-4 py-3 disabled:opacity-50'
+                }
+              >
+                {player.name}
+                {myVote === player.id ? ' ✓' : ''}
+              </button>
+            ))}
+          <p className="text-center text-xs text-neutral-500">
+            {myVote ? t('changeVoteHint') : t('majorityScoringHint')}
           </p>
-          {voter.slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
+          {voter.slow && <p className="text-center text-xs text-neutral-500">{t('stillWorking')}</p>}
           {voter.error && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-center text-xs text-red-600">
               {t('voteError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({voter.error})
@@ -200,25 +196,36 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
 
       {revealed && (
         <div className="flex w-full flex-col items-center gap-1">
-          {authorPlayerId && (
-            <p className="text-lg font-medium">{t('authorWas', { name: nameOf(authorPlayerId) })}</p>
+          {/* DESIGN: "after each vote, whoever got the most votes gets one
+              sentence to defend themselves - the social moment is the point,
+              not the scoring, and without it the game is a survey." */}
+          {mostVoted.length > 0 && (
+            <p className="text-center text-lg font-medium">
+              {t('mostVotedIs', { names: mostVoted.map(nameOf).join(', ') })}
+            </p>
           )}
-          {(authorError || votesError) && (
+          {defending.length > 0 && (
+            <p className="text-center text-lg">
+              {t('defenceInvitation', { names: defending.map(nameOf).join(', ') })}
+            </p>
+          )}
+          {/* Repeated here on purpose: the hint shown during voting is gone by
+              now, and this is the screen where the points appear. */}
+          <p className="text-xs text-neutral-500">{t('majorityScoringReminder')}</p>
+          {votesError && (
             <p role="alert" className="text-xs text-red-600">
               {t('revealLoadError')}{' '}
               <span dir="ltr" className="font-mono">
-                ({authorError ?? votesError})
+                ({votesError})
               </span>
             </p>
           )}
           {Object.entries(votes).map(([voterId, votedForPlayerId]) => (
-            <p
-              key={voterId}
-              className={
-                votedForPlayerId === authorPlayerId ? 'text-green-700' : 'text-neutral-600'
-              }
-            >
-              {t('votedForLine', { voter: nameOf(voterId), target: nameOf(votedForPlayerId) })}
+            <p key={voterId} className="text-neutral-600">
+              {t('votedForSecondGameLine', {
+                voter: nameOf(voterId),
+                target: nameOf(votedForPlayerId),
+              })}
             </p>
           ))}
           {Object.entries(awarded).map(([playerId, points]) => (
@@ -268,7 +275,9 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
               <HostButton
                 busy={host.busy}
                 busyLabel={t('revealingRound')}
-                onClick={() => void host.run(() => revealRound(db, sessionId, round.id))}
+                onClick={() =>
+                  void host.run(() => revealRound(db, sessionId, round.id, scoreMajority))
+                }
                 primary
               >
                 {t('revealRound')}
@@ -276,14 +285,12 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
             </>
           )}
 
-          {/* A reveal that died partway leaves the round revealed but unscored.
-              Re-running it finishes the job - every step of it checks whether
-              it already happened - so the host gets the button back rather
-              than a round nobody was paid for. */}
           {revealed && !round.awarded && (
             <HostButton
               busy={host.busy}
-              onClick={() => void host.run(() => revealRound(db, sessionId, round.id))}
+              onClick={() =>
+                void host.run(() => revealRound(db, sessionId, round.id, scoreMajority))
+              }
               primary
             >
               {t('completeReveal')}
@@ -301,10 +308,6 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
             </HostButton>
           )}
 
-          {exhausted && round && <p className="text-sm text-neutral-500">{t('noItemsLeft')}</p>}
-
-          {/* DESIGN: "every phase needs a timeout or a host override." A room
-              that has had enough at round five can stop there. */}
           <HostButton
             busy={host.busy}
             busyLabel={t('finishingGame')}
@@ -312,6 +315,10 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
           >
             {t('finishGame')}
           </HostButton>
+
+          {exhausted && round && (
+            <p className="text-sm text-neutral-500">{t('noRevealedItemsLeft')}</p>
+          )}
 
           {host.slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
           {host.error && (
@@ -330,6 +337,6 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
   )
 
   async function openNext() {
-    await openNextRound(db, sessionId, gameId)
+    await openNextSecondRound(db, sessionId, gameId)
   }
 }

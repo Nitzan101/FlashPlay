@@ -176,6 +176,14 @@ export type GamePhase = 'harvesting' | 'rounds' | 'done'
 
 export interface GameDoc {
   type: GameType
+  /**
+   * `who-said-that` opens in `harvesting`; `most-likely-to` opens straight in
+   * `rounds` and has no prompts of its own, because it is built out of the
+   * items the first game already revealed (DESIGN: an unrevealed item would
+   * make "who is most likely to do this" the same question as "who wrote
+   * this", collapsing the two games into one). firestore.rules enforces that
+   * pairing on create.
+   */
   phase: GamePhase
   /** Everyone answers the same prompts, or the room cannot tell which question
    *  the item being read out is answering. Two per gathering - enforced in
@@ -368,6 +376,17 @@ export const MAX_ROUNDS = 10
  */
 export const POINTS_FOR_CORRECT_GUESS = 2
 export const POINTS_PER_FOOLED_VOTER = 1
+
+/**
+ * "Most likely to" has no correct answer, so DESIGN scores reading the room:
+ * "whoever voted with the majority gets a point, which is on-thesis because
+ * the game rewards familiarity with the group."
+ *
+ * Ties count as majorities. With eight people and three names splitting the
+ * vote, declaring nobody right would make the most interesting rounds - the
+ * ones the room genuinely disagrees about - the only unscored ones.
+ */
+export const POINTS_FOR_MAJORITY_VOTE = 1
 
 /**
  * **Reveal order matters, and getting it backwards is exploitable.**

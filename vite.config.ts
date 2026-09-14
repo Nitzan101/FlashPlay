@@ -20,6 +20,7 @@ export default defineConfig({
       'src/lib/room.test.ts',
       'src/lib/harvest.test.ts',
       'src/lib/rounds.test.ts',
+      'src/lib/secondGame.test.ts',
     ],
   },
 })

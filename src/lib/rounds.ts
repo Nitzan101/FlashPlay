@@ -199,6 +199,10 @@ export async function revealRound(
   firestore: Firestore,
   sessionId: string,
   roundId: string,
+  /** How this round pays out. The second game passes its own (majority
+   *  scoring, no correct answer) rather than duplicating the resume logic
+   *  above, which is the delicate part. */
+  scorer: (votes: Record<string, string>, authorPlayerId: string) => Record<string, number> = scoreRound,
 ): Promise<RoundSummary> {
   const roundRef = doc(firestore, paths.round(sessionId, roundId))
   const round = (
@@ -221,13 +225,19 @@ export async function revealRound(
     step('read-author', () => getDoc(doc(firestore, paths.itemAuthor(sessionId, itemId)))),
   ])
 
-  const { authorPlayerId } = authorSnap.data() as ItemAuthorDoc
+  // Missing only if a claim was never written - impossible through
+  // submitHarvestItem, but this runs after the round has already been closed,
+  // so throwing here would strand exactly the state the resume path exists to
+  // recover. The second game's scorer ignores the author anyway.
+  const authorPlayerId = authorSnap.exists()
+    ? (authorSnap.data() as ItemAuthorDoc).authorPlayerId
+    : ''
   const votes: Record<string, string> = {}
   for (const vote of votesSnap.docs) {
     votes[vote.id] = (vote.data() as VoteDoc).votedForPlayerId
   }
 
-  const awarded = round.awarded ?? scoreRound(votes, authorPlayerId)
+  const awarded = round.awarded ?? scorer(votes, authorPlayerId)
   if (!round.awarded) {
     await step('record-awards', () => updateDoc(roundRef, { awarded }))
   }
@@ -276,6 +286,10 @@ export async function finishGame(
 
 export interface RoundsState {
   rounds: (RoundDoc & { id: string })[]
+  /** True until the first snapshot arrives. Without it, "no rounds yet" and
+   *  "not loaded yet" are the same screen - and they call for opposite host
+   *  controls. */
+  loading: boolean
   error: string | null
 }
 
@@ -283,23 +297,24 @@ export interface RoundsState {
  *  MAX_ROUNDS, so listening to all of them costs nothing and gives the screen
  *  both the current round and "round 4 of 10" without a second query. */
 export function useRounds(sessionId: string | null, gameId: string | null): RoundsState {
-  const [state, setState] = useState<RoundsState>({ rounds: [], error: null })
+  const [state, setState] = useState<RoundsState>({ rounds: [], loading: true, error: null })
 
   useEffect(() => {
     if (!sessionId || !gameId) {
-      setState({ rounds: [], error: null })
+      setState({ rounds: [], loading: false, error: null })
       return
     }
+    setState({ rounds: [], loading: true, error: null })
     const unsubscribe = onSnapshot(
       query(collection(db, paths.rounds(sessionId)), where('gameId', '==', gameId)),
       (snap) => {
         const rounds = snap.docs.map((d) => ({ id: d.id, ...(d.data() as RoundDoc) }))
         rounds.sort((a, b) => a.order - b.order)
-        setState({ rounds, error: null })
+        setState({ rounds, loading: false, error: null })
       },
       (error) => {
         console.error('[FlashPlay] rounds listener failed:', errorCode(error), error)
-        setState((prev) => ({ ...prev, error: errorCode(error) }))
+        setState((prev) => ({ ...prev, loading: false, error: errorCode(error) }))
       },
     )
     return unsubscribe
@@ -310,6 +325,8 @@ export function useRounds(sessionId: string | null, gameId: string | null): Roun
 
 export interface ItemsState {
   items: Record<string, ItemDoc>
+  /** True until the first snapshot arrives - see RoundsState.loading. */
+  loading: boolean
   error: string | null
 }
 
@@ -317,23 +334,24 @@ export interface ItemsState {
  *  an itemId; the text everyone reads comes from here, and it updates in place
  *  when the host reveals one. */
 export function useItems(sessionId: string | null, gameId: string | null): ItemsState {
-  const [state, setState] = useState<ItemsState>({ items: {}, error: null })
+  const [state, setState] = useState<ItemsState>({ items: {}, loading: true, error: null })
 
   useEffect(() => {
     if (!sessionId || !gameId) {
-      setState({ items: {}, error: null })
+      setState({ items: {}, loading: false, error: null })
       return
     }
+    setState({ items: {}, loading: true, error: null })
     const unsubscribe = onSnapshot(
       query(collection(db, paths.items(sessionId)), where('gameId', '==', gameId)),
       (snap) => {
         const items: Record<string, ItemDoc> = {}
         for (const d of snap.docs) items[d.id] = d.data() as ItemDoc
-        setState({ items, error: null })
+        setState({ items, loading: false, error: null })
       },
       (error) => {
         console.error('[FlashPlay] items listener failed:', errorCode(error), error)
-        setState((prev) => ({ ...prev, error: errorCode(error) }))
+        setState((prev) => ({ ...prev, loading: false, error: errorCode(error) }))
       },
     )
     return unsubscribe

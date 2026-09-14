@@ -1,8 +1,10 @@
 import { useTranslation } from 'react-i18next'
+import BetweenGames from './BetweenGames'
+import Finale from './Finale'
 import Harvest from './Harvest'
 import LoadFailure from './LoadFailure'
 import Rounds from './Rounds'
-import Scoreboard from './Scoreboard'
+import SecondGame from './SecondGame'
 import { useGame } from './lib/harvest'
 import { usePresenceHeartbeat, useRoster, useSession } from './lib/room'
 import Lobby from './Lobby'
@@ -27,7 +29,7 @@ interface GatheringProps {
 export default function Gathering({ sessionId, roomCode, uid, isHost }: GatheringProps) {
   const { t } = useTranslation()
   usePresenceHeartbeat(sessionId, uid)
-  const { players } = useRoster(sessionId)
+  const { players, error: rosterError } = useRoster(sessionId)
 
   const { session, error: sessionError } = useSession(sessionId)
   const gameId = session?.currentGameId ?? null
@@ -36,11 +38,21 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
   // Every error screen carries a retry, the same as App.tsx's - a phone with
   // no console is the only place these are ever seen, and a dead end there is
   // indistinguishable from the app being broken (milestone 3's review).
-  if (sessionError) {
-    return <LoadFailure message={t('sessionLoadError')} code={sessionError} />
+  // The roster is not decoration on the last screens of the evening: the
+  // scoreboard and the winner are drawn from it, and an empty one renders a
+  // finale with no scores and no explanation.
+  if (sessionError || rosterError) {
+    return <LoadFailure message={t('sessionLoadError')} code={sessionError ?? rosterError} />
   }
   if (!session) {
     return <p>{t('loading')}</p>
+  }
+
+  // The evening is over: the last screen is the standings, not a redirect
+  // back to a lobby that no longer means anything (session phase is
+  // monotonic, so there is no way out of this state by design).
+  if (session.phase === 'finished') {
+    return <Finale players={players} scores={session.scores ?? {}} />
   }
 
   if (session.phase === 'lobby') {
@@ -68,7 +80,15 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
   }
 
   if (game.phase === 'rounds') {
-    return (
+    return game.type === 'most-likely-to' ? (
+      <SecondGame
+        sessionId={sessionId}
+        gameId={game.id}
+        uid={uid}
+        isHost={isHost}
+        scores={session.scores ?? {}}
+      />
+    ) : (
       <Rounds
         sessionId={sessionId}
         gameId={game.id}
@@ -79,14 +99,16 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
     )
   }
 
-  // The first game is over. The second one ("most likely to", built from the
-  // items this game revealed) is milestone 6 - but the scores stay on screen:
-  // ten rounds of guessing that end on a bare grey sentence is not an ending,
-  // and DESIGN wants the evening to have an arc.
+  // A game has ended. What comes next - the second game, or the end of the
+  // evening - depends on which one it was.
   return (
-    <div className="flex w-full max-w-sm flex-col items-center gap-4">
-      <Scoreboard players={players} scores={session.scores ?? {}} title={t('finalScoresTitle')} />
-      <p className="text-neutral-500">{t('gameFinishedComingSoon')}</p>
-    </div>
+    <BetweenGames
+      sessionId={sessionId}
+      finishedType={game.type}
+      finishedOrder={game.order}
+      players={players}
+      scores={session.scores ?? {}}
+      isHost={isHost}
+    />
   )
 }

@@ -81,8 +81,9 @@ beforeEach(() => {
     { id: THIRD, name: 'Third', uid: THIRD, hasDevice: true, lastSeenAt: 0, joinedAt: 3, votedRoundId: null },
   ]
   rosterError = null
-  mockRounds.mockReturnValue({ rounds: [], error: null })
+  mockRounds.mockReturnValue({ loading: false, rounds: [], error: null })
   mockItems.mockReturnValue({
+    loading: false,
     items: {
       item1: { gameId: 'game1', text: 'the answer', promptId: PROMPT, revealed: false, createdAt: 0 },
       item2: { gameId: 'game1', text: 'another', promptId: PROMPT, revealed: false, createdAt: 0 },
@@ -112,7 +113,7 @@ describe('Rounds', () => {
   // The preview exists so the host can decide whether the room hears this at
   // all - which only works if the room is not already reading it.
   it('shows a previewed item to the host alone', () => {
-    mockRounds.mockReturnValue({ rounds: [round('preview')], error: null })
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('preview')], error: null })
 
     const player = renderRounds(false)
     expect(screen.queryByText('the answer')).not.toBeInTheDocument()
@@ -127,7 +128,7 @@ describe('Rounds', () => {
   // `preview`, so the first version of this screen published the item to
   // every phone the instant the host suppressed it.
   it('never shows a skipped item to anyone', () => {
-    mockRounds.mockReturnValue({ rounds: [round('skipped')], error: null })
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('skipped')], error: null })
 
     const player = renderRounds(false)
     expect(screen.queryByText('the answer')).not.toBeInTheDocument()
@@ -139,7 +140,7 @@ describe('Rounds', () => {
   })
 
   it('offers every player but yourself to vote for, and lets the vote change', async () => {
-    mockRounds.mockReturnValue({ rounds: [round('voting')], error: null })
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('voting')], error: null })
     renderRounds(false)
 
     expect(await screen.findByText('מי כתב/ה את זה?')).toBeInTheDocument()
@@ -161,7 +162,7 @@ describe('Rounds', () => {
   })
 
   it('resumes a vote already cast, so a reload shows what was chosen', async () => {
-    mockRounds.mockReturnValue({ rounds: [round('voting')], error: null })
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('voting')], error: null })
     mockGetMyVote.mockResolvedValue(HOST)
     renderRounds(false)
 
@@ -169,7 +170,7 @@ describe('Rounds', () => {
   })
 
   it('reports a failed vote with its error code, not just "it failed"', async () => {
-    mockRounds.mockReturnValue({ rounds: [round('voting')], error: null })
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('voting')], error: null })
     mockCastVote.mockRejectedValue({ code: 'permission-denied' })
     renderRounds(false)
 
@@ -179,7 +180,7 @@ describe('Rounds', () => {
   })
 
   it('counts votes for the host from the roster, not from the votes themselves', () => {
-    mockRounds.mockReturnValue({ rounds: [round('voting')], error: null })
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('voting')], error: null })
     roster[0].votedRoundId = 'round1'
     roster[1].votedRoundId = 'round1'
 
@@ -207,7 +208,7 @@ describe('Rounds', () => {
   // A reveal whose scoring write was lost leaves the round revealed but
   // unpaid. The host needs the way back in; re-running is safe by design.
   it('offers the host a way to finish a reveal that never scored', () => {
-    mockRounds.mockReturnValue({ rounds: [round('revealed')], error: null })
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('revealed')], error: null })
     mockAuthor.mockReturnValue({ authorPlayerId: PLAYER, error: null })
 
     const unscored = renderRounds(true)
@@ -216,7 +217,7 @@ describe('Rounds', () => {
     unscored.unmount()
 
     // With the awards recorded, that button is gone.
-    mockRounds.mockReturnValue({ rounds: [round('revealed', { awarded: {} })], error: null })
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('revealed', { awarded: {} })], error: null })
     renderRounds(true)
     expect(screen.queryByText('השלמת החשיפה')).not.toBeInTheDocument()
   })
@@ -224,7 +225,7 @@ describe('Rounds', () => {
   // DESIGN: "every phase needs a timeout or a host override." A room bored at
   // round five must be able to stop without skipping each item one at a time.
   it('lets the host end the game at any point, not only when the items run out', async () => {
-    mockRounds.mockReturnValue({ rounds: [round('voting')], error: null })
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('voting')], error: null })
     renderRounds(true)
 
     fireEvent.click(screen.getByText('סיום המשחק'))
@@ -232,7 +233,7 @@ describe('Rounds', () => {
   })
 
   it('tells everyone when the material has run out, not just the host', () => {
-    mockItems.mockReturnValue({ items: {}, error: null })
+    mockItems.mockReturnValue({ items: {}, loading: false, error: null })
 
     renderRounds(false)
     expect(screen.getByText('אין עוד תשובות לסבבים')).toBeInTheDocument()

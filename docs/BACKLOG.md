@@ -308,3 +308,33 @@ server.
 Firestore write on a phone that has quietly lost its connection never settles,
 so the button sits disabled forever); `Harvest.tsx` has the same shape and did
 not get the same treatment in this pass.
+
+## From the milestone-6 four-lens review
+
+The eight serious findings were fixed in the same pass - see DECISIONS.md,
+"What the milestone-6 review found". These were left.
+
+**The same item can come up in both games, and the second game's question can
+repeat.** A gathering uses two prompts, so up to ten "most likely to" rounds
+share two question sentences. It is not wrong - the item quoted each time is
+different - but a room may notice the repetition before the ten rounds are up.
+Worth revisiting when there are more prompts per gathering, or a third game.
+
+**The second game reuses the first game's ten-round cap.** Nobody has decided
+whether a second game should be shorter; ten plus ten plus a harvest may be
+longer than the 10-40 minutes DESIGN targets. The host can end either game
+early, so this is a default, not a limit.
+
+**`rounds` create does not check that the round's item belongs to the round's
+game.** A host could point a second-game round at an unrevealed first-game
+item. No leak follows (item text was always readable to players, and
+`itemAuthors` still requires the item to be revealed), and the client never
+does it - but the rule says less than the client assumes.
+
+**`Finale` is terminal with no way out.** Correct - the session phase is
+monotonic by design - but a player who lands there mid-evening because the
+host ended early has no route back to anything, including a new gathering.
+
+**The scoreboard sits below a long reveal on a phone.** After a vote breakdown
+for eight people plus the awards, the standings are off-screen at the moment
+the room most wants them.

@@ -90,6 +90,33 @@ choosing them.
 
 ## Status
 
+- **Milestone 6 — implemented, the review half of the gate has run.** "Most
+  likely to", cumulative scoring and the ending: `src/lib/secondGame.ts`,
+  `src/SecondGame.tsx`, `src/BetweenGames.tsx`, `src/Finale.tsx`. The second
+  game draws only items the first game revealed, quotes each one attributed to
+  its author, and asks the question that prompt carries for exactly this
+  purpose. Scoring is the majority's, ties included; the most-voted player is
+  invited to defend themselves in one sentence; the evening ends on the
+  cumulative standings with the winner named.
+
+  **The four-lens review found eight serious defects, all fixed.** Three were
+  fixes that already existed on the first game's screen and did not come
+  across when this one was built from it (the slow-connection notice, listener
+  errors surfaced, the preview-phase message) - the reason the shared
+  `useAction` hook now exists. Two were worse: a security narrowing that made
+  `game.type` part of the boundary without pinning it, letting the host flip
+  the type to read an author mid-vote, and a loading state indistinguishable
+  from "no material left", which offered a host with a slow connection nothing
+  but the button that ends the game. Full account in DECISIONS.md, "What the
+  milestone-6 review found".
+
+  Automated evidence: `npm run build`, `npm test` (80 tests), `npm run
+  test:rules` (148 assertions), two guards mutation-checked. **Not yet run:
+  the real-people half** - a full evening with three to five friends, which is
+  the only way to answer the question this milestone exists for (does the
+  second game read as a new question?), plus the listener fan-out check across
+  browser profiles.
+
 - **Milestone 5 — implemented, the review half of the gate has run.** The
   "who said that" round loop and scoring: `openNextRound`, `openVoting`,
   `skipRound`, `castVote`, `revealRound`, `finishGame` in `src/lib/rounds.ts`,

@@ -801,3 +801,76 @@ Firebase code, a write sequence that reported a landed vote as failed, and
 joining that was still open inside the round loop - DESIGN's sentence permits
 joining during submission *and* blocks it inside the round loop, and milestone
 4 had implemented only the first half. Routine findings are in BACKLOG.md.
+
+## Decisions made in milestone 6
+
+**The second game's scoring is passed into the first game's reveal, not
+branched on inside it.** `revealRound` takes a `scorer`, so the resumable
+reveal sequence - the part that took a review and two fixes to get right -
+exists once. "Who said that" pays for correct guesses; "most likely to" pays
+everyone who voted with the majority.
+
+**A self-vote is allowed in the second game and refused in the first.** The
+first game's rule exists so that abstaining or self-voting cannot mark the
+author out; that reason does not survive into a game where the author is named
+in the question. And the author is the likeliest majority answer of all -
+"who is most likely to leave the keys on the roof" right after the room learned
+David did exactly that - so barring them would exclude one named person from
+the scoring in every round about them.
+
+**Ties count as majorities, and a completely split vote invites nobody to
+defend themselves.** The first follows from the alternative being worse: the
+rounds the room disagrees about most would be the only unscored ones. The
+second is where that stops - if every name ties, nobody was picked, and
+putting eight people on trial at once is not the social moment DESIGN wants.
+
+### What the milestone-6 review found
+
+Four lenses on 2026-09-14, eight serious findings, all fixed. Three general
+lessons came out of it, and they are worth more than the individual bugs.
+
+**A screen copied from a reviewed screen has to be diffed against it, not read
+next to it.** Three of the eight were fixes that already existed in
+`Rounds.tsx` and silently did not come across when `SecondGame.tsx` was built
+from it: the slow-connection notice, listener errors surfaced to the user, and
+the "the host is reading, wait" message during preview. Reading the source
+screen while writing the new one is exactly the check that misses this, because
+the fixes are small and the structure is what the eye follows. The durable fix
+was not another review pass but moving the shared behaviour into
+`useAction`/`HostButton`/`LoadFailure`, so the next screen inherits it instead
+of needing to remember it.
+
+**Narrowing a security predicate by a document field makes that field part of
+the boundary.** The vote guard was narrowed to apply only to `who-said-that`
+rounds, correctly - in the second game every item is revealed by design, and
+the first version of that clause silently forbade every vote there. But
+`games` update was deliberately unconstrained ("the host can drive their own
+gathering wherever they like"), so the host could flip `type` to
+`most-likely-to`, reveal an item, read its author while voting was still open,
+and flip it back with nothing recording that it happened. The fix pins `type`
+in the same rule. The general form: the moment a rule reads a field to decide
+what is allowed, that field stops being ordinary data.
+
+**"Loading" and "empty" are different states, and a screen that conflates them
+will eventually offer the wrong button.** `useRevealedItems` starts at `{}`,
+which is also what "the first game revealed nothing" looks like - a state that
+can genuinely happen. So on a slow first round-trip the second game told the
+host there was no material and offered "end the game" as the only control.
+Every listener hook now reports `loading` separately, and the screens gate on
+it.
+
+The other findings: the reveal reused the first game's wording ("X thought it
+was Y") in a game with no right answer, and never repeated how scoring worked
+on the screen where the points appear; the author's name - which *is* the
+question here - could render as "מישהו" while its one-shot read was in flight
+or after it failed; `useGame` kept the previous game's document for a round
+trip after the host started the second one, which a second tap turned into a
+third game document; the evening's only irreversible button had no
+confirmation; and a missing author claim would have thrown inside the reveal
+*after* the round had already closed, stranding exactly the state the resume
+path exists to recover. Routine findings are in BACKLOG.md.
+
+**One test was found to be a coin flip rather than a guard.** "only ever draws
+an item the first game revealed" selected from a two-item pool with the real
+`Math.random`, so deleting the filter it names failed it roughly half the
+time. It now injects its randomness. Any test that picks from a pool has to.
