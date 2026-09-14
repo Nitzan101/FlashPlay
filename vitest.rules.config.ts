@@ -8,7 +8,12 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/lib/firestore-rules.test.ts', 'src/lib/room.test.ts', 'src/lib/harvest.test.ts'],
+    include: [
+      'src/lib/firestore-rules.test.ts',
+      'src/lib/room.test.ts',
+      'src/lib/harvest.test.ts',
+      'src/lib/rounds.test.ts',
+    ],
     // The emulator is a shared resource; parallel files would race on it.
     fileParallelism: false,
     testTimeout: 20000,

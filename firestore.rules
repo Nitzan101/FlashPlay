@@ -115,6 +115,47 @@ service cloud.firestore {
         .data.phase == 'revealed';
     }
 
+    // Milestone 5. `skipped` and `revealed` share a rank because both are
+    // terminal: what matters is that nothing ever moves back down, since a
+    // round's votes become readable at `revealed` and must not become
+    // unreadable-but-already-seen again. Mirrors RoundPhase in
+    // src/lib/model.ts.
+    function roundPhaseRank(phase) {
+      return phase == 'preview' ? 0 : (phase == 'voting' ? 1 : 2);
+    }
+
+    // Whether the gathering is inside its round loop right now - the one
+    // window DESIGN closes joining in. Written as a short-circuit so that a
+    // gathering with no game yet never reaches the second get(): a get() on a
+    // document that does not exist fails the whole evaluation rather than
+    // returning nothing.
+    function inRoundLoop(sessionId) {
+      return session(sessionId).currentGameId != null
+        && game(sessionId, session(sessionId).currentGameId).phase == 'rounds';
+    }
+
+    // Whether this round's item has already been revealed, which is what makes
+    // its author readable - so voting must already be closed. See the votes
+    // rules below. Mutation-checked on 2026-09-14: dropping the clause that
+    // uses this turned exactly "refuses a vote once the item is revealed, even
+    // if the round still says voting" red.
+    function authorExposed(sessionId, roundId) {
+      return itemRevealed(sessionId,
+        get(/databases/$(database)/documents/sessions/$(sessionId)/rounds/$(roundId)).data.itemId);
+    }
+
+    // A vote names someone who is really in this gathering, and never the
+    // voter themselves - see the votes rules below for why that is the game's
+    // rule rather than a sanity check. Both mutation-checked on 2026-09-14:
+    // each clause, removed on its own, turned exactly one assertion red
+    // ("refuses a self-vote" and "refuses a vote for somebody who is not in
+    // this gathering").
+    function validVote(sessionId, playerId) {
+      return request.resource.data.keys().hasOnly(['votedForPlayerId', 'castAt'])
+        && request.resource.data.votedForPlayerId != playerId
+        && exists(/databases/$(database)/documents/sessions/$(sessionId)/players/$(request.resource.data.votedForPlayerId));
+    }
+
     // --- the host's private store -------------------------------------------
     //
     // Contacts, groups and the accumulated facts belong to the user who owns
@@ -231,7 +272,17 @@ service cloud.firestore {
       // read the roster.
       match /players/{playerId} {
         allow read: if isPlayer(sessionId);
-        allow create: if isSignedIn() && playerId == request.auth.uid;
+
+        // DESIGN: "Joining is permitted between games and also during the
+        // submission phase, and blocked only inside the round loop." Someone
+        // arriving mid-harvest just submits too; someone arriving mid-round
+        // would become a vote option in a round they never heard, and could
+        // vote on an item they had no part in. Milestone 5 - milestone 4 read
+        // the same sentence and only implemented its first half.
+        // Mutation-checked on 2026-09-14: dropping the round-loop clause
+        // turned exactly "refuses a join once the round loop has started" red.
+        allow create: if isSignedIn() && playerId == request.auth.uid
+          && !inRoundLoop(sessionId);
         allow update: if isUser(playerId) || isHost(sessionId);
         allow delete: if isUser(playerId) || isHost(sessionId);
       }
@@ -412,7 +463,54 @@ service cloud.firestore {
       // --- rounds ---
       match /rounds/{roundId} {
         allow read: if isPlayer(sessionId);
-        allow write: if isHost(sessionId);
+
+        // A round opens in `preview`: the host sees the item before the room
+        // does, which is what the skip button acts on (DESIGN, "Who said
+        // that").
+        allow create: if isHost(sessionId)
+          && request.resource.data.phase == 'preview'
+          && request.resource.data.keys().hasOnly(['gameId', 'itemId', 'phase', 'order', 'startedAt']);
+
+        // **Phase only moves forward.** Not tidiness: the votes of a round
+        // become readable the moment it is `revealed` (below), so a host who
+        // could set `revealed` and then step back to `voting` would read
+        // every vote and still be free to change their own. Same shape as the
+        // session's own monotonic phase, and for the same reason.
+        //
+        // Both clauses mutation-checked on 2026-09-14: dropping the rank
+        // comparison turned exactly "refuses to move a revealed round back to
+        // voting" red, and dropping the itemId equality turned exactly
+        // "refuses to swap the item under a round that is already open" red.
+        //
+        // Two shapes of update, and nothing else. Moving the phase forward
+        // (and only the phase), or recording once what the round paid out -
+        // see RoundDoc.awarded: the gathering's totals are the sum of those
+        // maps, so a second write to one would pay a round twice.
+        allow update: if isHost(sessionId)
+          && request.resource.data.itemId == resource.data.itemId
+          && request.resource.data.gameId == resource.data.gameId
+          && (
+            (
+              request.resource.data.phase in ['voting', 'revealed', 'skipped']
+              && roundPhaseRank(request.resource.data.phase) > roundPhaseRank(resource.data.phase)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['phase'])
+            ) || (
+              resource.data.phase == 'revealed'
+              && request.resource.data.phase == 'revealed'
+              // Mutation-checked on 2026-09-14: dropping this turned exactly
+              // "records what the round paid, once and only once" red.
+              && !resource.data.keys().hasAny(['awarded'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['awarded'])
+            )
+          );
+
+        // A skipped round is a `phase`, not a deletion - deleting it would put
+        // the item back in the draw the host just rejected it from, and a
+        // round's votes are a subcollection that would outlive it, so
+        // delete-and-recreate would walk a phase backwards by another route.
+        // Mutation-checked on 2026-09-14: opening this to the host turned
+        // exactly "refuses to delete a round, host included" red.
+        allow delete: if false;
 
         // --- votes ---
         //
@@ -438,10 +536,28 @@ service cloud.firestore {
           // never voted has no document yet, so their write after the reveal
           // was a create, not an update, and the existing update guard never
           // saw it.
+          //
+          // Milestone 5 adds the shape, and two things the vote must be: for
+          // somebody who is actually in this gathering, and never for
+          // yourself. The second is the game's own rule made structural - the
+          // author votes too, for someone else, precisely so that abstaining
+          // or self-voting cannot mark them out (DESIGN, "Who said that").
+          //
+          // `!authorExposed` is belt and braces on ROUND_REVEAL_ORDER (see
+          // src/lib/model.ts). Revealing is two writes - close the round, then
+          // open the author - and an independent review on 2026-09-14 found
+          // that with those two in the other order, the gap between them let a
+          // player read the author off the live items listener and change
+          // their vote to match. The client order is fixed; this makes the
+          // window unexploitable even if a future change reverses it again.
           allow create: if isUser(playerId) && isPlayer(sessionId)
-            && !roundRevealed(sessionId, roundId);
+            && !roundRevealed(sessionId, roundId)
+            && !authorExposed(sessionId, roundId)
+            && validVote(sessionId, playerId);
           allow update: if isUser(playerId) && isPlayer(sessionId)
-            && !roundRevealed(sessionId, roundId);
+            && !roundRevealed(sessionId, roundId)
+            && !authorExposed(sessionId, roundId)
+            && validVote(sessionId, playerId);
           allow delete: if isHost(sessionId);
         }
       }

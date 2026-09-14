@@ -728,3 +728,76 @@ resume read (the room-code outage's lesson, applied again), error screens in
 masculine-imperative label among a set of deliberately genderless ones. The
 "rounds coming soon" placeholder also said "milestone" in Hebrew, on a screen
 real people will see at the gate run.
+
+## Decisions made in milestone 5
+
+**Scores are derived from the rounds, not incremented on the session.** Each
+round records what it paid out (`RoundDoc.awarded`, writable exactly once) and
+the gathering's totals are the sum of those maps. The obvious alternative -
+read the total, add this round's points, write it back - is a read-modify-write
+that pays twice whenever a reveal is retried, and retrying a reveal is exactly
+what the fix below made possible. The cost is that a score which did not come
+from a round's `awarded` map does not survive the next recompute; nothing
+writes one, and milestone 6's second game will record its own.
+
+**The host's "how many have voted" counter reads the roster, not the votes.**
+The votes are unreadable until the reveal, deliberately, so counting them was
+never an option - but a host who cannot tell whether the room has finished is a
+host who reveals too early. `PlayerDoc.votedRoundId` publishes that a player
+voted, never who for, which is information anyone in the room already has by
+looking up from their phone.
+
+**A skipped round is a phase, not a deletion.** Deleting it would return the
+item to the draw the host just rejected it from, and its votes subcollection
+would outlive the parent document - so delete-and-recreate would be a way to
+walk a round's phase backwards, which the monotonic rule exists to prevent. A
+skip also does not spend one of DESIGN's ten rounds: the cap is about how long
+the game runs, and a skip takes seconds.
+
+### What the milestone-5 review found
+
+Four lenses - correctness, data and security, mobile reality, the full scenario
+walkthrough - on 2026-09-14, against a milestone whose own automated suite was
+green. Nine serious findings, all fixed before the milestone closed. Three are
+worth keeping for their shape.
+
+**A gap between two writes is a state, and an attacker can sit in it.** The
+reveal wrote `items.revealed = true` first, because that is what makes the
+author readable, and `rounds.phase = 'revealed'` second. Between the two, the
+author was public while voting was still open: any player - every device runs a
+live listener on `items` - could read who wrote it and change their vote to
+match, for two points. Normally a sub-second window; indefinite if the second
+write failed or the host's phone suspended between them, which this project has
+already documented as a real occurrence. The fix reverses the order (voting
+closes first, and the intermediate state gives nothing away) and adds a rules
+clause refusing any vote once the round's item is revealed, so the ordering is
+enforced rather than trusted. **The general form: when a multi-write sequence
+crosses a security boundary, ask what is true in between, not only at the end.**
+
+**A guard that makes a step non-repeatable makes its whole sequence
+non-resumable.** `items` update requires `revealed == false`, which is right -
+it is what stops a revealed item being un-revealed. It also meant that once
+that write had landed, every retry of the reveal died on it, leaving the round
+in `voting` forever with the failed retry as the only control on the host's
+screen. This is the second time in two milestones that the same shape has
+appeared (milestone 4's stranded submission slot was the first), which is why
+it is now in CLAUDE.md's pitfalls rather than only here: **when a write can
+only happen once, the sequence containing it needs a resume path designed at
+the same time.**
+
+**A feature can be defeated by the phase you forgot to name.** The item text
+was hidden while a round was in `preview` - the host's private look, which the
+skip button exists to act on. `skipped` is not `preview`, so tapping skip
+published the item to every phone in the room, which is precisely and only what
+the preview exists to prevent. The fix is a positive rule (players see the item
+in `voting` and `revealed`, nowhere else) rather than a list of phases to hide
+it in; an exclusion list is one new enum value away from being wrong again.
+
+The other six: the game had no ending (the scoreboard vanished at the exact
+moment DESIGN wants an arc), no early exit for a room that has had enough
+(against DESIGN's "every phase needs a timeout or a host override"), listener
+errors that were never surfaced, error messages without the failing step or
+Firebase code, a write sequence that reported a landed vote as failed, and
+joining that was still open inside the round loop - DESIGN's sentence permits
+joining during submission *and* blocks it inside the round loop, and milestone
+4 had implemented only the first half. Routine findings are in BACKLOG.md.

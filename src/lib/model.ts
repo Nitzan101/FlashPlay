@@ -158,6 +158,17 @@ export interface PlayerDoc {
   /** Presence heartbeat. Disconnections across twenty phones are a certainty. */
   lastSeenAt: number
   joinedAt: number
+  /**
+   * The round this player has already voted in, or null. Milestone 5.
+   *
+   * Deliberately here, on a public document, rather than derived from the
+   * votes themselves: votes are unreadable until the reveal (a live tally
+   * would turn the round into a poll everyone follows), but the host still
+   * has to know when the room has finished voting. This publishes only
+   * *that* someone voted, which is already visible to anyone in the room, and
+   * never who for.
+   */
+  votedRoundId: string | null
 }
 
 export type GameType = 'who-said-that' | 'most-likely-to'
@@ -315,7 +326,10 @@ export interface PromptSubmissionDoc {
   submittedAt: number
 }
 
-export type RoundPhase = 'preview' | 'voting' | 'revealed'
+/** `skipped` is terminal, and only reachable from `preview` in practice - the
+ *  host looked at the item and decided the room should not hear it. It is a
+ *  phase rather than a deletion so the item is not drawn again. */
+export type RoundPhase = 'preview' | 'voting' | 'revealed' | 'skipped'
 
 export interface RoundDoc {
   gameId: string
@@ -325,7 +339,65 @@ export interface RoundDoc {
   phase: RoundPhase
   order: number
   startedAt: number
+  /**
+   * What this round paid out, by player id - written once, after the reveal.
+   *
+   * The gathering's running total is the sum of these across every round
+   * rather than a counter the host increments, which is what makes scoring
+   * survive a half-finished reveal: re-running it recomputes the same totals
+   * instead of paying twice. The rules allow this key to be written exactly
+   * once (see firestore.rules, rounds update).
+   */
+  awarded?: Record<string, number>
 }
+
+/**
+ * Ten rounds maximum, DESIGN's own number: "eleven people times two is
+ * twenty-two items, which drags." The items that never get a round are not
+ * wasted - they are kept as facts for future gatherings (milestone 7).
+ */
+export const MAX_ROUNDS = 10
+
+/**
+ * "Who said that" scoring, from DESIGN: "two points for each correct guess and
+ * one point to the writer for everyone they fooled." Cumulative across the
+ * gathering rather than per game, which is what gives the evening an arc.
+ *
+ * The author votes too, for someone else, so as not to give themselves away -
+ * their own vote is simply never scored, in either direction.
+ */
+export const POINTS_FOR_CORRECT_GUESS = 2
+export const POINTS_PER_FOOLED_VOTER = 1
+
+/**
+ * **Reveal order matters, and getting it backwards is exploitable.**
+ *
+ * Close the round first (`rounds/{roundId}.phase = 'revealed'`), and only then
+ * open the author (`items/{itemId}.revealed = true`). Then read the votes and
+ * the author, write what the round paid out onto the round, and recompute the
+ * gathering's totals.
+ *
+ * The first version of this did the two writes the other way round, because
+ * revealing the item is what makes `itemAuthors` readable and that felt like
+ * step one. An independent review on 2026-09-14 found what the gap between
+ * the two writes allows: for as long as it lasts, the author is public while
+ * voting is still open, so any player watching the items listener can read
+ * who wrote it and change their vote to match. Sub-second normally - and
+ * indefinite if the second write fails or the host's phone suspends between
+ * them. Reversed, the intermediate state is "voting closed, author still
+ * hidden", which gives nothing away. The rules also refuse a vote once the
+ * round's item is revealed, so the ordering is enforced rather than merely
+ * intended.
+ *
+ * **Every step is conditional on its own state, so a re-tap resumes.** A
+ * partial reveal used to be terminal: the item update requires
+ * `revealed == false`, so once it had landed, retrying failed forever and the
+ * round could never leave `voting` - with the only host control on screen
+ * being the retry that could not work. Same shape as milestone 4's stranded
+ * submission slot, same fix (see submitHarvestItem).
+ */
+export const ROUND_REVEAL_ORDER =
+  'rounds.phase, then items.revealed, then read votes + author, then rounds.awarded, then sessions.scores - each step skipped if already done' as const
 
 /**
  * PRIVATE until the round is revealed - the same problem as ItemAuthorDoc, and

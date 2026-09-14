@@ -22,9 +22,9 @@ superseded**. It is kept only as an archive of the planning phase; where it and
 `docs/` disagree, `docs/` wins.
 
 Milestone status lives in `docs/MILESTONES.md` - that is its only home; do not
-restate it here. Short version: milestones 0-3 are done or implemented,
-milestone 4 (the session state machine and the harvest phase) is implemented
-below - check `docs/MILESTONES.md` for exactly which gates have actually run.
+restate it here. Short version: milestones 0-5 are done or implemented -
+the harvest phase and the "who said that" round loop both have their own
+sections below - check `docs/MILESTONES.md` for which gates have actually run.
 
 **The app's canonical URL is `https://flashplay-50bde.firebaseapp.com`** - this is
 the link to share, and it is not interchangeable with the `.web.app` one. See
@@ -38,7 +38,7 @@ All verified by execution on 2026-09-04.
 - Test: `npm test` (Vitest, single run) / `npm run test:watch`
 - Security rules test: `npm run test:rules` - starts the Firestore emulator and
   runs the rules suite against it (`firestore-rules.test.ts`, `room.test.ts`,
-  `harvest.test.ts`). Needs Java (present: OpenJDK 21). Excluded from `npm
+  `harvest.test.ts`, `rounds.test.ts`). Needs Java (present: OpenJDK 21). Excluded from `npm
   test` so the everyday loop stays fast and emulator-free. **Also needs
   `.env.local` to exist**, even though these files never touch the real
   project - they import `room.ts`/`harvest.ts`, which import `firebase.ts`,
@@ -96,8 +96,15 @@ Two kinds of change are not covered by that and need more:
   contract - see `ITEM_WRITE_ORDER` in `model.ts`), `getMySubmission`,
   `advanceGamePhase`, `extendGamePhase`, `pickHarvestPromptIds`, plus the
   `useGame`/`useHarvestProgress` hooks.
+- `src/lib/rounds.ts` — milestone 5: the "who said that" round loop and
+  scoring. `openNextRound`, `openVoting`, `skipRound`, `castVote`,
+  `revealRound` (the reveal sequence - see `ROUND_REVEAL_ORDER` in
+  `model.ts`), `finishGame`, plus the `useRounds`/`useItems`/`useVotes`/
+  `useAuthor` hooks.
+- `src/Rounds.tsx` — the round screen: host preview and skip, voting on every
+  phone, the reveal with who-voted-for-whom, and the running scoreboard.
 - `src/Gathering.tsx` — routes an in-room screen off the live session/game
-  documents (lobby vs. harvest vs. "rounds not built yet"), and hosts the
+  documents (lobby, harvest, rounds, or "the second game is not built yet"), and hosts the
   presence heartbeat for the whole gathering, not just the lobby screen.
 - `src/Harvest.tsx` — the harvest phase UI: one answer per prompt, the
   advisory countdown, and the host's "give another minute" / "continue"
@@ -432,6 +439,60 @@ recovers the gathering when a real phone genuinely stops responding rather
 than merely being slow. Needs real people, the same as milestone 3's
 still-outstanding timed run - both are candidates for a single combined
 session rather than two separate ones.
+
+## Milestone 5, implemented - what a fresh session needs to know
+
+"Who said that" is built: the host opens a round, previews the item alone,
+opens voting, every phone votes, the host reveals, points land, next round.
+`src/lib/rounds.ts` and `src/Rounds.tsx`. What has not run is the gate's other
+half - real people, and whether the material is funny.
+
+**The reveal is a sequence, and its order is a security boundary.** Close the
+round first, then reveal the item, then read votes and author, then record what
+the round paid, then recompute the totals - `ROUND_REVEAL_ORDER` in `model.ts`
+states it and says why. The first version did the first two the other way
+round: for the gap between them the author was public while voting was still
+open, so any player watching the items listener could read who wrote it and
+change their vote. The rules now also refuse a vote once the round's item is
+revealed, so the ordering is enforced rather than merely intended.
+
+**Every step of the reveal is conditional, so a re-tap resumes it.** The item
+update requires `revealed == false`, so a dropped write used to make the round
+unrecoverable - and the only host control in `voting` is the reveal that could
+no longer succeed. Same shape as milestone 4's stranded submission slot. If a
+reveal lands but never scores, the host gets a "complete the reveal" button.
+
+**Scores are derived, not incremented.** Each round records what it paid in
+`RoundDoc.awarded` (writable exactly once, enforced in rules), and
+`sessions.scores` is the sum of those maps. That is what makes re-running a
+half-finished reveal harmless. A score seeded by anything other than a round's
+`awarded` will be erased by the next recompute.
+
+**Votes stay unreadable until the reveal, so the host cannot see progress -
+hence `PlayerDoc.votedRoundId`.** It publishes *that* a player voted, never who
+for, which is information the room already has by looking up. A live tally of
+the votes themselves would turn the round into a poll everyone follows.
+
+**Joining is blocked inside the round loop** (`inRoundLoop` in
+`firestore.rules`), which is DESIGN's rule and was half-implemented before:
+milestone 4 allowed joining during the harvest and never closed the other
+window. Between games is open again.
+
+Automated evidence: `npm run build`, `npm test` (54 tests - `Rounds.test.tsx`
+drives every state of the round screen), `npm run test:rules` (133 assertions:
+85 in `firestore-rules.test.ts`, 24 in `rounds.test.ts`, 16 in
+`harvest.test.ts`, 8 in `room.test.ts`). Nine of this milestone's guards are
+mutation-checked, each turning exactly the named assertion red: round-phase
+monotonicity, the round's item immutability, the self-vote refusal, the
+vote-for-a-real-player check, the vote refusal once the author is exposed,
+`awarded` being writable once, the join block inside the round loop, the
+refusal to delete a round, and the client's own resume path.
+
+**The four-lens review ran on 2026-09-14** and found nine serious defects
+between them - all fixed, all described above or in DECISIONS.md, "What the
+milestone-5 review found". Two are worth carrying forward as habits rather than
+facts: a multi-write sequence needs its resume path designed with it, and a
+gap between two writes is a state an attacker can sit in.
 
 ## Open questions carried into later milestones
 Full context in `docs/BACKLOG.md`; these two are here because they change what

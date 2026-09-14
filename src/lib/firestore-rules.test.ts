@@ -281,8 +281,11 @@ describe('votes', () => {
   it('cannot be changed after the round is revealed', async () => {
     await reveal('round')
     await assertFails(
+      // Not HOST: naming yourself is refused by validVote on its own, which
+      // would make this pass without the reveal guard doing anything - the
+      // overdetermined-assertion trap this project has been caught by before.
       updateDoc(doc(asHost(), `sessions/${SESSION}/rounds/${ROUND}/votes/${HOST}`), {
-        votedForPlayerId: HOST,
+        votedForPlayerId: PLAYER,
       }),
     )
   })
@@ -1189,6 +1192,55 @@ describe('M4 - item text is bounded, since it is public the instant it lands', (
         createdAt: 0,
       }),
     )
+  })
+})
+
+describe('M5 - joining is blocked inside the round loop, and nowhere else', () => {
+  // DESIGN: "Joining is permitted between games and also during the
+  // submission phase, and blocked only inside the round loop." Someone
+  // arriving mid-round would become a vote option in a round they never
+  // heard.
+  const joinAsOutsider = () =>
+    setDoc(doc(asOutsider(), `sessions/${SESSION}/players/${OUTSIDER}`), {
+      name: 'Late',
+      uid: OUTSIDER,
+      hasDevice: true,
+      lastSeenAt: 0,
+      joinedAt: 0,
+      votedRoundId: null,
+    })
+
+  const setGamePhase = async (phase: string) => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}/games/${GAME}`), { phase })
+    })
+  }
+
+  it('lets someone join during the harvest', async () => {
+    await assertSucceeds(joinAsOutsider())
+  })
+
+  it('refuses a join once the round loop has started', async () => {
+    await setGamePhase('rounds')
+    await assertFails(joinAsOutsider())
+  })
+
+  it('lets someone join again between games', async () => {
+    await setGamePhase('done')
+    await assertSucceeds(joinAsOutsider())
+  })
+
+  it('lets someone join a gathering that has no game yet', async () => {
+    // The rule get()s the current game, and a get() on a document that does
+    // not exist fails the whole evaluation - so a lobby with currentGameId
+    // null must short-circuit before reaching it.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}`), {
+        phase: 'lobby',
+        currentGameId: null,
+      })
+    })
+    await assertSucceeds(joinAsOutsider())
   })
 })
 

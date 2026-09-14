@@ -19,6 +19,7 @@ export default defineConfig({
       'src/lib/firestore-rules.test.ts',
       'src/lib/room.test.ts',
       'src/lib/harvest.test.ts',
+      'src/lib/rounds.test.ts',
     ],
   },
 })

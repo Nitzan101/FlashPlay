@@ -1,7 +1,10 @@
 import { useTranslation } from 'react-i18next'
 import Harvest from './Harvest'
+import LoadFailure from './LoadFailure'
+import Rounds from './Rounds'
+import Scoreboard from './Scoreboard'
 import { useGame } from './lib/harvest'
-import { usePresenceHeartbeat, useSession } from './lib/room'
+import { usePresenceHeartbeat, useRoster, useSession } from './lib/room'
 import Lobby from './Lobby'
 
 interface GatheringProps {
@@ -24,6 +27,7 @@ interface GatheringProps {
 export default function Gathering({ sessionId, roomCode, uid, isHost }: GatheringProps) {
   const { t } = useTranslation()
   usePresenceHeartbeat(sessionId, uid)
+  const { players } = useRoster(sessionId)
 
   const { session, error: sessionError } = useSession(sessionId)
   const gameId = session?.currentGameId ?? null
@@ -33,7 +37,7 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
   // no console is the only place these are ever seen, and a dead end there is
   // indistinguishable from the app being broken (milestone 3's review).
   if (sessionError) {
-    return <LoadFailure message={t('sessionLoadError')} retryLabel={t('retryButton')} />
+    return <LoadFailure message={t('sessionLoadError')} code={sessionError} />
   }
   if (!session) {
     return <p>{t('loading')}</p>
@@ -44,7 +48,7 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
   }
 
   if (gameError) {
-    return <LoadFailure message={t('gameLoadError')} retryLabel={t('retryButton')} />
+    return <LoadFailure message={t('gameLoadError')} code={gameError} />
   }
   if (!game) {
     return <p>{t('loading')}</p>
@@ -63,26 +67,26 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
     )
   }
 
-  // The round loop (game.phase 'rounds') and scoring ('done') are milestone
-  // 5 - this milestone's scope is the state machine and the harvest phase
-  // only (MILESTONES.md). Reaching here proves the transition works; there is
-  // deliberately nothing to play yet.
-  return <p className="text-neutral-500">{t('roundsComingSoon')}</p>
-}
+  if (game.phase === 'rounds') {
+    return (
+      <Rounds
+        sessionId={sessionId}
+        gameId={game.id}
+        uid={uid}
+        isHost={isHost}
+        scores={session.scores ?? {}}
+      />
+    )
+  }
 
-function LoadFailure({ message, retryLabel }: { message: string; retryLabel: string }) {
+  // The first game is over. The second one ("most likely to", built from the
+  // items this game revealed) is milestone 6 - but the scores stay on screen:
+  // ten rounds of guessing that end on a bare grey sentence is not an ending,
+  // and DESIGN wants the evening to have an arc.
   return (
-    <div className="flex flex-col items-center gap-3">
-      <p role="alert" className="text-red-600">
-        {message}
-      </p>
-      <button
-        type="button"
-        onClick={() => window.location.reload()}
-        className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2"
-      >
-        {retryLabel}
-      </button>
+    <div className="flex w-full max-w-sm flex-col items-center gap-4">
+      <Scoreboard players={players} scores={session.scores ?? {}} title={t('finalScoresTitle')} />
+      <p className="text-neutral-500">{t('gameFinishedComingSoon')}</p>
     </div>
   )
 }

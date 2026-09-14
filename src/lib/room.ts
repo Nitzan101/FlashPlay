@@ -209,6 +209,7 @@ export async function joinRoom(
     hasDevice: true,
     lastSeenAt: now,
     joinedAt: now,
+    votedRoundId: null,
   }
   await setDoc(doc(firestore, paths.player(sessionId, uid)), player)
 }

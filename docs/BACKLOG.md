@@ -276,3 +276,35 @@ claim-before-item ordering deliberately prevents.
 delete one; no UI does. Much less pressing now that a retry resumes a
 stranded slot on its own, and only reachable at all if a slot can never be
 completed (the straddle case above).
+
+## From the milestone-5 four-lens review
+
+The nine serious findings were fixed in the same pass - see DECISIONS.md, "What
+the milestone-5 review found". These were judged routine and left.
+
+**The round counter counts, but the room cannot see who it is waiting for.**
+The host gets "5 of 8 voted"; with eleven phones, knowing *which* three are
+outstanding is what actually lets them chase it. The roster already carries
+`votedRoundId`, so this is a display change, not a data one.
+
+**A player who joined mid-harvest and submitted nothing still votes.** Correct
+per DESIGN (they are in the room), but they have no stake in the round; nobody
+has decided whether that is worth distinguishing.
+
+**Round ids are derived from the round's position** (`{gameId}-r{n}`), which is
+what makes two host devices collide on one document instead of opening two
+rounds. It also makes them guessable - harmless today, since a round holds no
+secret (its votes and its item's author are protected separately), but worth
+remembering before anything secret is ever keyed by a round id.
+
+**`sessions.scores` is unconstrained for the host**, who is also a scoring
+player, and `players` update is unconstrained for its owner, so a player could
+set `votedRoundId` without voting. Both are inherent to a client-only app with
+no server to arbitrate: the host can already end the gathering, and the second
+only skews an advisory counter. Worth revisiting only if the app ever gets a
+server.
+
+**The Harvest screen has no slow-connection notice.** `Rounds.tsx` grew one (a
+Firestore write on a phone that has quietly lost its connection never settles,
+so the button sits disabled forever); `Harvest.tsx` has the same shape and did
+not get the same treatment in this pass.

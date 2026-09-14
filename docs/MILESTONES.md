@@ -90,6 +90,31 @@ choosing them.
 
 ## Status
 
+- **Milestone 5 — implemented, the review half of the gate has run.** The
+  "who said that" round loop and scoring: `openNextRound`, `openVoting`,
+  `skipRound`, `castVote`, `revealRound`, `finishGame` in `src/lib/rounds.ts`,
+  with `src/Rounds.tsx` as the one screen every device renders from the same
+  live documents. Host preview and skip, voting on every phone, reveal, and a
+  running cumulative scoreboard, all as MILESTONES' row 5 asks.
+
+  **The four-lens review found nine serious defects and all nine are fixed.**
+  Two are worth reading about rather than listing: the reveal's two writes were
+  in an order that left the author public while voting was still open (a player
+  watching the items listener could read who wrote it and change their vote),
+  and a dropped write during the reveal made the round permanently unrecoverable
+  because the only host control on that screen was the retry that could no
+  longer succeed. Also fixed: skipping an item broadcast it to every phone -
+  defeating the entire point of the host preview - and the game had no ending
+  and no early exit. Full account in DECISIONS.md, "What the milestone-5 review
+  found"; the routine findings are in BACKLOG.md.
+
+  Automated evidence: `npm run build`, `npm test` (54 tests), `npm run
+  test:rules` (133 assertions), with nine of this milestone's guards
+  mutation-checked. **Not yet run: the real-people half of the gate** - devtools
+  open on a player's phone mid-round (the emulator proves the rules refuse the
+  author and the votes; a real payload has not been inspected), and whether the
+  material is actually funny, which is the half no review can answer.
+
 - **Milestone 4 — implemented, gate not yet run.** The session state machine
   and the harvest phase: `startHarvestGame`, `submitHarvestItem`,
   `advanceGamePhase`, `extendGamePhase` in `src/lib/harvest.ts`, wired into a
