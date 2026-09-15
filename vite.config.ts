@@ -22,6 +22,7 @@ export default defineConfig({
       'src/lib/rounds.test.ts',
       'src/lib/secondGame.test.ts',
       'src/lib/memory.test.ts',
+      'src/lib/evening.test.ts',
     ],
   },
 })

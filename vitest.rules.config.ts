@@ -15,6 +15,7 @@ export default defineConfig({
       'src/lib/rounds.test.ts',
       'src/lib/secondGame.test.ts',
       'src/lib/memory.test.ts',
+      'src/lib/evening.test.ts',
     ],
     // The emulator is a shared resource; parallel files would race on it.
     fileParallelism: false,
