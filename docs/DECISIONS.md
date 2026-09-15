@@ -874,3 +874,73 @@ path exists to recover. Routine findings are in BACKLOG.md.
 an item the first game revealed" selected from a two-item pool with the real
 `Math.random`, so deleting the filter it names failed it roughly half the
 time. It now injects its randomness. Any test that picks from a pool has to.
+
+## Decisions made in milestone 7
+
+**Keeping the evening and keeping the group are two decisions, not one.** The
+evening's answers are written into the host's store automatically, at the end
+of every game and again when the gathering ends; naming the group is a separate
+offer, and it is what puts the group on the shelf for the next gathering. The
+first version made both depend on the same tap, which is what DESIGN's sentence
+about the offer coming "at the end, after the value has been demonstrated"
+seems to say - but two paragraphs earlier DESIGN also requires facts written at
+the end of each game "so an abandoned session keeps whatever was already
+played", and the two cannot both be true if the contacts to attribute them to
+only exist after the final tap. Writing before consent is made honest by
+"forget this group", which deletes the lot.
+
+**A returning group is matched by typed name, not by a tapped one.** DESIGN's
+list flow has returning people tap their name from the group's member list.
+That list is in the host's private store, and putting it where a joiner could
+read it before joining would hand every recipient of a WhatsApp link a family's
+names - the exact exposure the roster rule was tightened for in milestone 2. So
+the person types their name as before and the host's own store does the
+matching (`matchName`). What is lost is a few seconds of typing; what is kept
+is that holding the link reveals nothing. Recorded in BACKLOG.md as a real gap
+rather than a closed question.
+
+**Two people in one room who type the same name are two people.** The matcher
+maps a name to a contact, so without a guard both would land on the same
+record and one person's answers would be written as the other's. Within a
+single gathering each contact is claimed once; across gatherings, a genuine
+duplicate name still merges, which is the known cost of matching by name at
+all (BACKLOG.md).
+
+**A fact's document id is the item it came from.** That makes every write
+idempotent without a transaction, which matters because there is no server to
+deduplicate after a host whose phone dropped mid-write. The counter that
+DESIGN's selection rule depends on (`useCount`) is preserved by skipping a
+fact that already exists rather than merging over it.
+
+### What the milestone-7 review found
+
+Three lenses on 2026-09-14 and 2026-09-15, ten serious findings, all fixed. Two
+are worth keeping as habits rather than as bug reports.
+
+**A feature can be fully implemented, fully tested, and still be a no-op,
+because the data it depends on is created later than it runs.** Facts were
+written at the end of every game exactly as DESIGN asks - into a contact map
+that was always empty at that point, because contacts were created by the
+host's tap on the *last* screen. Both reviewers found it independently; the
+suite did not, because every test called `saveGroup` before `writeFactsForGame`
+and so inverted the production order. **When a test sets up its own
+preconditions, check that the product sets them up in the same order.**
+
+**A library proven in isolation says nothing about its wiring.** The
+returning-group test passed the saved group id into `ensureContacts`
+explicitly and asserted the contacts were reused. The screen that calls it in
+production passed no id at all, so every return visit forked a new group and
+overwrote the saved one on its way past. The library was right and the feature
+was broken. The fix was a test at the wiring level - render the screen, tap the
+button, assert what the call actually received.
+
+The other findings: the end-of-evening screen assumed a return visit was
+already saved and so recorded nothing; the landing page listed one unnamed
+"group" per evening ever played, all labelled identically; the count of what
+was kept reported only what the last write happened to add; the offer promised
+that nobody would have to type their name again, which is precisely the half of
+the list flow that did not survive; the memory screen could only be reached by
+running and ending a gathering, though DESIGN calls it a visible screen; and
+three `useAction` regressions (a slow delete greying every row, two missing
+"still trying" notices, an error captured but never rendered). Routine findings
+are in BACKLOG.md.

@@ -338,3 +338,44 @@ host ended early has no route back to anything, including a new gathering.
 **The scoreboard sits below a long reveal on a phone.** After a vote breakdown
 for eight people plus the awards, the standings are off-screen at the moment
 the room most wants them.
+
+## From the milestone-7 review
+
+The ten serious findings were fixed in the same pass - see DECISIONS.md, "What
+the milestone-7 review found". These were left.
+
+**Nothing reads a fact yet, so DESIGN's Test 3 cannot run.** The store fills up
+correctly - attributed, drawered, deduplicated, deletable - and no game
+consumes it: "who said that" harvests fresh material every time, and "most
+likely to" uses what this evening revealed. So "did the material accumulated in
+the first gathering improve the second" has nothing to measure, and `useCount`
+is written zero and never incremented. This is the moat the whole product
+rests on, and it is one game away: the first game whose material comes from the
+store rather than from a harvest is what turns this from storage into memory.
+
+**"Tap your name" is not built.** DESIGN's list flow has a returning person tap
+their name instead of typing it. Doing that needs the group's member list
+readable before joining, which would publish a family's names to anyone holding
+the link. Matching typed names in the host's own store gets the benefit that
+matters (their facts continue) without the exposure; the seconds of typing
+remain. A real fix needs a way for a joiner to prove they belong before
+reading anything - a per-gathering token in the link, say - which is a
+security design, not a screen.
+
+**A genuine duplicate name across gatherings still merges two people.** Two
+different Davids in the same group become one contact on the second visit.
+Within one gathering they stay separate, and the failure is visible (one
+person's answers appear under another's name on the memory screen), but there
+is no disambiguation - the same gap the roster has had since milestone 3.
+
+**`saveGroup`/`ensureContacts` is not transactional.** A connection dropped
+between writing the contacts and writing the group leaves named contacts that
+no group lists, invisible on the memory screen and unreachable by "forget this
+group". Re-running fixes it; nothing detects it.
+
+**`useGroupMemory` reads 1+2N documents sequentially** - one per contact plus
+its facts. Fine at a family's scale, slow on a phone at a hundred facts.
+
+**No undo on a deleted fact, and no grouping on the memory screen.** Dozens of
+facts render as one flat list. Deletion is immediate and permanent, which is
+the right default for a memory product but leaves no recovery from a mis-tap.

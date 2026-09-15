@@ -46,6 +46,37 @@ export interface GroupDoc {
   createdAt: number
 }
 
+/**
+ * The host's own answer to "how did that go", recorded once per gathering -
+ * DESIGN: "outcome feedback after a gathering - did it work, did it die, how
+ * many were you - is in the first version, because it is the asset no
+ * language model can generate."
+ *
+ * Lives in the host's private store, like everything else here: it is a note
+ * about their evening, not a rating anyone else can read. Document id is the
+ * session id, so answering twice corrects the answer rather than adding one.
+ */
+export interface SessionFeedbackDoc {
+  /** Did the evening work. Three answers rather than a scale: a scale invites
+   *  a shrug in the middle, and the interesting signal is the difference
+   *  between "it flew" and "it died". */
+  outcome: 'good' | 'mixed' | 'died'
+  /** How many people actually played. Counted by the host, not derived from
+   *  the roster - a phone that joined and was put down is not a player. */
+  headcount: number
+  sessionId: string
+  createdAt: number
+}
+
+/**
+ * What the app remembers about a person or a group, written from the items a
+ * gathering produced - milestone 7.
+ *
+ * **Its document id is the item id it came from.** Writing a fact is therefore
+ * idempotent: a host who ends a game twice, or whose connection dropped
+ * halfway through writing them, converges on the same set rather than
+ * accumulating duplicates. There is no server to deduplicate afterwards.
+ */
 export interface FactDoc {
   text: string
   /** Which harvest prompt produced it - this is what determined the drawer. */
@@ -84,6 +115,19 @@ export interface SessionDoc {
   groupId: string | null
   phase: SessionPhase
   currentGameId: string | null
+  /**
+   * Player uid -> the contact id in the host's private store that player's
+   * facts belong to. Written when the group is saved (or when a returning
+   * player taps their name), and it is what lets a fact be attributed at all:
+   * a guest's uid is anonymous and changes between gatherings, so the contact
+   * is the only durable identity a person has here. Empty until the host
+   * saves the group.
+   *
+   * It holds ids, not content. The store those ids point into is readable by
+   * its owner alone (firestore.rules, `users/{uid}`), so publishing the
+   * mapping to the room gives nothing away.
+   */
+  contactIds: Record<string, string>
   /** Cumulative across the whole gathering, not per game - this is what turns
    *  three games into one evening with an arc. */
   scores: Record<string, number>
@@ -441,6 +485,8 @@ export const paths = {
   contact: (uid: string, contactId: string) => `users/${uid}/contacts/${contactId}`,
   contactFacts: (uid: string, contactId: string) =>
     `users/${uid}/contacts/${contactId}/facts`,
+
+  sessionFeedback: (uid: string, sessionId: string) => `users/${uid}/feedback/${sessionId}`,
 
   groups: (uid: string) => `users/${uid}/groups`,
   group: (uid: string, groupId: string) => `users/${uid}/groups/${groupId}`,

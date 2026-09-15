@@ -57,12 +57,25 @@ vi.mock('./lib/harvest', () => ({
   extendGamePhase: vi.fn(),
 }))
 
+// App.tsx renders the host's saved groups, which listens to Firestore through
+// this module. Mocked here rather than widening the `firebase/firestore` mock:
+// the third time in this project that adding one import broke a suite that had
+// no other connection to it (see CLAUDE.md, Known pitfalls).
+const mockSavedGroups = vi.fn()
+vi.mock('./lib/memory', () => ({
+  useSavedGroups: () => mockSavedGroups(),
+}))
+
 const mockedUseAuthUser = vi.mocked(useAuthUser)
 
 afterEach(() => {
   localStorage.clear()
   window.history.pushState({}, '', '/')
   vi.clearAllMocks()
+})
+
+beforeEach(() => {
+  mockSavedGroups.mockReturnValue({ groups: [], loading: false, error: null })
 })
 
 describe('app shell', () => {
@@ -151,6 +164,46 @@ describe('creating a room', () => {
 
     await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
     expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'host-uid', 'דוד')
+  })
+
+  // Milestone 7: a second gathering with the same people continues their
+  // memory instead of starting a parallel copy of the same family.
+  it('offers the host a room for a group they already saved', async () => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockSavedGroups.mockReturnValue({
+      groups: [{ id: 'group-1', name: 'המשפחה', memberContactIds: [], createdAt: 0 }],
+      loading: false,
+      error: null,
+    })
+    mockCreateRoom.mockResolvedValue({ sessionId: 'session-2', roomCode: '4321' })
+    mockJoinRoom.mockResolvedValue(undefined)
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'המשפחה' }))
+
+    await waitFor(() => expect(mockCreateRoom).toHaveBeenCalledTimes(1))
+    expect(mockCreateRoom.mock.calls[0][3]).toBe('group-1')
+  })
+
+  it('opens a room for nobody in particular when the host has no saved groups', async () => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockCreateRoom.mockResolvedValue({ sessionId: 'session-1', roomCode: '1234' })
+    mockJoinRoom.mockResolvedValue(undefined)
+
+    render(<App />)
+    expect(screen.queryByText('הקבוצות ששמרתם')).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'פתיחת חדר' }))
+
+    await waitFor(() => expect(mockCreateRoom).toHaveBeenCalledTimes(1))
+    expect(mockCreateRoom.mock.calls[0][3]).toBeNull()
   })
 
   it('shows an error and stays put when opening a room fails', async () => {

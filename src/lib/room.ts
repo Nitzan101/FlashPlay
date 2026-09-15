@@ -146,6 +146,10 @@ export async function createRoom(
   firestore: Firestore,
   hostUid: string,
   nextCode: () => string = generateRoomCode,
+  /** A group the host has saved before, when this gathering is a return
+   *  visit. Set here so the end of the evening adds to that group's memory
+   *  rather than starting a second one (milestone 7). */
+  groupId: string | null = null,
 ): Promise<{ sessionId: string; roomCode: string }> {
   const sessionId = crypto.randomUUID()
   const now = Date.now()
@@ -153,10 +157,11 @@ export async function createRoom(
   const session: SessionDoc = {
     roomCode: '', // corrected below once a code is actually claimed
     hostUid,
-    groupId: null,
+    groupId,
     phase: 'lobby',
     currentGameId: null,
     scores: {},
+    contactIds: {},
     createdAt: now,
     expiresAt: now + ROOM_CODE_WINDOW_MS,
   }

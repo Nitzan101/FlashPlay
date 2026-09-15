@@ -6,6 +6,8 @@ import { signInAsGuest, signInWithGoogle, signOutUser, useAuthUser } from './lib
 import { db } from './lib/firebase'
 import { paths } from './lib/model'
 import { createRoom, joinRoom, resolveRoomCode } from './lib/room'
+import { useSavedGroups } from './lib/memory'
+import GroupMemory from './GroupMemory'
 
 const STORAGE_KEY = 'flashplay.session'
 
@@ -180,11 +182,11 @@ export default function App() {
     }
   }, [authLoading, user, joinCode, t])
 
-  async function handleCreateRoom() {
+  async function handleCreateRoom(groupId: string | null = null) {
     if (!user) return
     setBusy(true)
     try {
-      const { sessionId, roomCode } = await createRoom(db, user.uid)
+      const { sessionId, roomCode } = await createRoom(db, user.uid, undefined, groupId)
       // Falls back to a generic label, never the email - the roster is
       // visible to every guest, and an email address has no business in it.
       await joinRoom(db, sessionId, user.uid, user.displayName ?? t('hostFallbackName'))
@@ -264,11 +266,15 @@ export default function App() {
 
       {screen.kind === 'host-landing' &&
         (user ? (
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex w-full max-w-sm flex-col items-center gap-2">
             <p>{t('greeting', { name: user.displayName ?? user.email })}</p>
+            {/* A gathering opened for a group the host has saved adds to that
+                group's memory at the end instead of starting a second copy of
+                the same family (milestone 7). */}
+            <SavedGroups hostUid={user.uid} busy={busy} onPick={handleCreateRoom} />
             <button
               type="button"
-              onClick={() => void handleCreateRoom()}
+              onClick={() => void handleCreateRoom(null)}
               disabled={busy}
               className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
             >
@@ -333,5 +339,78 @@ export default function App() {
         />
       )}
     </main>
+  )
+}
+
+/**
+ * The host's saved groups, offered before "open a room" so that a second
+ * gathering with the same people continues their memory rather than starting
+ * a parallel one. Silent when there are none - a first-time host should not be
+ * shown an empty shelf.
+ *
+ * Each row also opens that group's memory, which is DESIGN's "visible 'what we
+ * remember about this group' screen with one-tap deletion, open to the group's
+ * owner only". Reaching it used to require running an entire gathering and
+ * ending it, which is not what "visible" means.
+ */
+function SavedGroups({
+  hostUid,
+  busy,
+  onPick,
+}: {
+  hostUid: string
+  busy: boolean
+  onPick: (groupId: string) => void
+}) {
+  const { t } = useTranslation()
+  const { groups, error } = useSavedGroups(hostUid)
+  const [showingMemoryOf, setShowingMemoryOf] = useState<string | null>(null)
+
+  if (showingMemoryOf) {
+    return (
+      <GroupMemory
+        hostUid={hostUid}
+        groupId={showingMemoryOf}
+        onClose={() => setShowingMemoryOf(null)}
+      />
+    )
+  }
+
+  if (error) {
+    return (
+      <p role="alert" className="text-xs text-red-600">
+        {t('savedGroupsLoadError')}{' '}
+        <span dir="ltr" className="font-mono">
+          ({error})
+        </span>
+      </p>
+    )
+  }
+  if (groups.length === 0) return null
+
+  return (
+    <div className="flex w-full flex-col items-center gap-2">
+      <p className="text-sm text-neutral-500">{t('savedGroupsTitle')}</p>
+      {groups.map((group) => (
+        <div key={group.id} className="flex w-full items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onPick(group.id)}
+            disabled={busy}
+            className="grow cursor-pointer rounded-md border border-neutral-300 px-4 py-3 disabled:opacity-50"
+          >
+            {group.name}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowingMemoryOf(group.id)}
+            className="shrink-0 cursor-pointer rounded-md border border-neutral-300 px-3 py-3 text-sm"
+          >
+            {t('viewMemory')}
+          </button>
+        </div>
+      ))}
+      <p className="text-xs text-neutral-500">{t('savedGroupsHint')}</p>
+    </div>
   )
 }

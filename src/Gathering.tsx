@@ -52,7 +52,16 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
   // back to a lobby that no longer means anything (session phase is
   // monotonic, so there is no way out of this state by design).
   if (session.phase === 'finished') {
-    return <Finale players={players} scores={session.scores ?? {}} />
+    return (
+      <Finale
+        sessionId={sessionId}
+        hostUid={session.hostUid}
+        isHost={isHost}
+        players={players}
+        scores={session.scores ?? {}}
+        groupId={session.groupId}
+      />
+    )
   }
 
   if (session.phase === 'lobby') {
@@ -104,6 +113,9 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
   return (
     <BetweenGames
       sessionId={sessionId}
+      hostUid={session.hostUid}
+      gameId={game.id}
+      groupId={session.groupId}
       finishedType={game.type}
       finishedOrder={game.order}
       players={players}

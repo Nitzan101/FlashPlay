@@ -22,10 +22,10 @@ superseded**. It is kept only as an archive of the planning phase; where it and
 `docs/` disagree, `docs/` wins.
 
 Milestone status lives in `docs/MILESTONES.md` - that is its only home; do not
-restate it here. Short version: milestones 0-6 are done or implemented - both
-games, the scoring and the ending are built, and the harvest, the first game
-and the second each have a section below - check `docs/MILESTONES.md` for
-which gates have actually run.
+restate it here. Short version: milestones 0-7 are done or implemented - both
+games, the scoring, the ending and what the evening leaves behind are all
+built, each with a section below - check `docs/MILESTONES.md` for which gates
+have actually run. Milestone 8 is the family session itself, not code.
 
 **The app's canonical URL is `https://flashplay-50bde.firebaseapp.com`** - this is
 the link to share, and it is not interchangeable with the `.web.app` one. See
@@ -39,7 +39,8 @@ All verified by execution on 2026-09-04.
 - Test: `npm test` (Vitest, single run) / `npm run test:watch`
 - Security rules test: `npm run test:rules` - starts the Firestore emulator and
   runs the rules suite against it (`firestore-rules.test.ts`, `room.test.ts`,
-  `harvest.test.ts`, `rounds.test.ts`). Needs Java (present: OpenJDK 21). Excluded from `npm
+  `harvest.test.ts`, `rounds.test.ts`, `secondGame.test.ts`,
+  `memory.test.ts`). Needs Java (present: OpenJDK 21). Excluded from `npm
   test` so the everyday loop stays fast and emulator-free. **Also needs
   `.env.local` to exist**, even though these files never touch the real
   project - they import `room.ts`/`harvest.ts`, which import `firebase.ts`,
@@ -110,13 +111,20 @@ Two kinds of change are not covered by that and need more:
   themselves are rounds.ts's, reused.
 - `src/SecondGame.tsx` / `src/BetweenGames.tsx` / `src/Finale.tsx` — the second
   game, the pause between games, and the evening's last screen.
+- `src/lib/memory.ts` — milestone 7: what the evening leaves behind, all of it
+  in the host's own private store. `ensureContacts`, `writeFactsForGame`,
+  `writeRemainingFacts`, `nameGroup`, `recordFeedback`, the deletion cascade
+  (`deleteFact`/`deleteContact`/`deleteGroup`), and the `useGroupMemory`/
+  `useSavedGroups`/`useGroupName` hooks.
+- `src/GroupMemory.tsx` — "what we remember about this group", owner only,
+  with per-fact and whole-group deletion.
 - `src/lib/useAction.ts` — one host tap: busy, the error with its code, and the
   "still trying" notice a write that never settles needs.
 - `src/HostButton.tsx`, `src/Scoreboard.tsx`, `src/LoadFailure.tsx` — the
   pieces every screen shares.
 - `src/Gathering.tsx` — routes an in-room screen off the live session/game
-  documents (lobby, harvest, rounds, or "the second game is not built yet"), and hosts the
-  presence heartbeat for the whole gathering, not just the lobby screen.
+  documents (lobby, harvest, either game, between games, or the finale), and
+  hosts the presence heartbeat for the whole gathering, not just the lobby.
 - `src/Harvest.tsx` — the harvest phase UI: one answer per prompt, the
   advisory countdown, and the host's "give another minute" / "continue"
   controls.
@@ -559,6 +567,65 @@ screen was built from it. **A screen copied from a reviewed screen has to be
 diffed against it, not read next to it** - which is why the slow-action
 handling now lives in `useAction` rather than in whichever file wrote it
 first.
+
+## Milestone 7, implemented - what a fresh session needs to know
+
+What the evening leaves behind is built: facts written into the host's private
+store, the outcome feedback DESIGN asks for, a "what we remember" screen with
+deletion, and a saved group that a later gathering continues.
+
+**Everything here lives under `users/{hostUid}`, which nobody else can read.**
+That rule predates this milestone (milestone 2 wrote it); milestone 7 is the
+first code that puts anything real behind it. DESIGN calls a guest siphoning a
+family's accumulated memory a severe product failure, so the private store is
+the *only* place any of this goes - the gathering document holds nothing but a
+map of player uid to contact id, which is useless without read access to the
+store those ids point into.
+
+**Contacts are created at the end of every game, not at the end of the
+evening.** The first version tied them to the host's "save the group" tap,
+which is where DESIGN puts the *offer* - and that quietly cost the thing DESIGN
+asks for two paragraphs earlier: facts written per game so that an abandoned
+session keeps what was played. With nothing to attribute to until the last
+screen, every per-game write found an empty map and wrote nothing. Two
+independent reviews found it. `ensureContacts` now runs from `BetweenGames`,
+and the end-of-evening tap only *names* the group.
+
+**Keeping the evening and keeping the group are different decisions.** The
+evening is kept automatically (the items nobody played can only be attributed
+once the session is `finished`, so the last screen is the last chance);
+naming the group is what puts it on the shelf for next time, and
+`useSavedGroups` lists only named ones. "Forget this group" deletes the lot,
+which is what makes the automatic keeping consensual rather than presumptuous.
+
+**A returning group is matched by name, not by uid.** A guest signs in
+anonymously and gets a new uid every gathering, so the contact is the only
+identity that survives - `matchName` normalises whitespace and case, and two
+people in one room who type the same name still get two contacts. DESIGN's
+"tap your name" is *not* built: it needs the member list readable before
+joining, and the roster is deliberately closed until you are in the room
+(Known pitfalls). What survived is that the host's store does the matching.
+
+**Nothing reads a fact yet.** Both first-slice games generate their own
+material, so the store accumulates and nothing consumes it. DESIGN's Test 3
+(does the second gathering benefit from the first) therefore cannot pass yet -
+that is a known gap, recorded in BACKLOG.md, not an oversight.
+
+Automated evidence: `npm run build`, `npm test` (90 tests: 14 in
+`Ending.test.tsx`, 18 in `App.test.tsx`, plus the earlier suites), `npm run
+test:rules` (173 assertions: 85 in `firestore-rules.test.ts`, 25 in
+`memory.test.ts`, 24 in `rounds.test.ts`, 16 in `harvest.test.ts`, 15 in
+`secondGame.test.ts`, 8 in `room.test.ts`). Three of this milestone's fixes are
+mutation-checked: the same-name contact split, the use-counter preservation,
+and the returning-group id reaching the between-games write - each turning
+exactly the named assertion red.
+
+**The review found ten serious defects across three lenses**, and two are worth
+carrying as habits. A feature can be "implemented" and still be a no-op if the
+data it depends on is created later than it runs - the per-game writes were
+green in tests that called them in the wrong order. And a library proven in
+isolation says nothing about its wiring: the returning-group test passed the
+group id explicitly while the screen never passed one at all.
 
 ## Open questions carried into later milestones
 Full context in `docs/BACKLOG.md`; these two are here because they change what

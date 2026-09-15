@@ -90,6 +90,30 @@ choosing them.
 
 ## Status
 
+- **Milestone 7 — implemented, the emulator half of the gate has run.** Facts
+  written into the host's private store at the end of every game, cascading
+  deletion, outcome feedback, and a saved group a later gathering continues:
+  `src/lib/memory.ts`, `src/GroupMemory.tsx`, and the end-of-evening screen.
+  The gate asks for "emulator plus the abandoned-session case", and both are
+  covered - `memory.test.ts` includes a gathering nobody saved and a
+  mid-evening write whose unrevealed authors are still unreadable.
+
+  **The three-lens review found ten serious defects, all fixed.** The worst was
+  structural rather than a bug: contacts were only created by the host's
+  end-of-evening tap, so the per-game writes DESIGN asks for - the ones that
+  make an abandoned session keep what was played - found nothing to attribute
+  to and wrote nothing, every time. A return visit was worse still: the screen
+  saw a saved group id, assumed the evening was already kept, and recorded
+  nothing at all. Both suites were green through both. Full account in
+  DECISIONS.md, "What the milestone-7 review found".
+
+  Automated evidence: `npm run build`, `npm test` (90 tests), `npm run
+  test:rules` (173 assertions), three fixes mutation-checked. **Not run, and
+  not runnable here: DESIGN's Test 3** - whether the material accumulated in
+  one gathering improves the next. Nothing reads a fact yet (both first-slice
+  games make their own material), so that test has nothing to measure; see
+  BACKLOG.md.
+
 - **Milestone 6 — implemented, the review half of the gate has run.** "Most
   likely to", cumulative scoring and the ending: `src/lib/secondGame.ts`,
   `src/SecondGame.tsx`, `src/BetweenGames.tsx`, `src/Finale.tsx`. The second
