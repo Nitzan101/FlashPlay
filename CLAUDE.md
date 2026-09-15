@@ -59,6 +59,15 @@ watch the test go red before claiming it guards anything.
 `firestore.rules` or the data model, and a rules change is only proven when the
 rule has been deleted and the matching assertion watched to go red.
 
+**The independent review is where the defects actually come from, not the
+suite.** Across milestones 4-7 the four-lens review found 2, 9, 8 and 10
+serious defects respectively - every single one of them while `npm test` and
+`npm run test:rules` were fully green. Two were features that were implemented,
+unit-tested and complete no-ops in production. Budget for the review as part of
+building a milestone, not as a formality after it, and give each lens its own
+pass: the overlap between what the correctness reader and the scenario reader
+notice is small.
+
 **Any number or file name written into these docs comes from the run, not from
 the previous milestone's text.** Three times now a coverage claim here has been
 right in total and wrong in detail - a per-file split carried forward after the

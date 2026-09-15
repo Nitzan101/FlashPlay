@@ -90,6 +90,25 @@ choosing them.
 
 ## Status
 
+**Everything that is code is built.** Milestones 0-7 are implemented and
+deployed to `https://flashplay-50bde.firebaseapp.com`; each one's four-lens
+review has run and its findings are fixed. What is left is the half no review
+can do, and it is the same list for every milestone: real people, real phones,
+in one room.
+
+- Milestone 3's timed run (three to five phones, under two minutes to everyone
+  being in) and milestone 4's kill test (one device deliberately killed
+  mid-phase) are the same evening's work and have never been run.
+- Milestone 5 needs devtools opened on a player's phone mid-round, to confirm
+  on a real payload what the emulator proves about the rules - and the only
+  question that matters, whether the material is funny.
+- Milestone 6 needs a full evening with three to five friends: does the second
+  game read as a new question.
+- Milestone 7's remaining half is DESIGN's Test 3, and it cannot run yet -
+  nothing reads a fact, so a second gathering is identical to the first. See
+  BACKLOG.md.
+- Milestone 8 **is** the family session. It is the target, not a test of it.
+
 - **Milestone 7 — implemented, the emulator half of the gate has run.** Facts
   written into the host's private store at the end of every game, cascading
   deletion, outcome feedback, and a saved group a later gathering continues:
