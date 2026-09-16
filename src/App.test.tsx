@@ -29,11 +29,13 @@ vi.mock('firebase/firestore', () => ({
 const mockCreateRoom = vi.fn()
 const mockJoinRoom = vi.fn()
 const mockResolveRoomCode = vi.fn()
+const mockLeaveRoom = vi.fn()
 
 vi.mock('./lib/room', () => ({
   createRoom: (...args: unknown[]) => mockCreateRoom(...args),
   joinRoom: (...args: unknown[]) => mockJoinRoom(...args),
   resolveRoomCode: (...args: unknown[]) => mockResolveRoomCode(...args),
+  leaveRoom: (...args: unknown[]) => mockLeaveRoom(...args),
   useRoster: () => ({ players: [], error: null }),
   usePresenceHeartbeat: () => {},
   // These tests never leave the lobby, so a fixed 'lobby' phase is enough to
@@ -223,7 +225,7 @@ describe('creating a room', () => {
   // Found during the first manual walkthrough: a browser holding a session
   // from an earlier test resumed it forever, with no screen that ever
   // cleared it.
-  it('lets the host leave the room and forget it, without touching anything else', async () => {
+  it('lets the host leave the room and forget it, after confirming', async () => {
     mockedUseAuthUser.mockReturnValue({
       user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
       loading: false,
@@ -237,9 +239,106 @@ describe('creating a room', () => {
     await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'יציאה מהחדר' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'כן, לצאת' }))
 
     expect(await screen.findByRole('button', { name: 'פתיחת חדר' })).toBeInTheDocument()
     expect(localStorage.getItem('flashplay.session')).toBeNull()
+    expect(mockLeaveRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'host-uid')
+  })
+
+  // Found in Nitzan's own manual walkthrough of the first version of this fix:
+  // a single tap left the room outright, with no way back from a mis-tap.
+  it('does not leave the room until the leave is confirmed', async () => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockCreateRoom.mockResolvedValue({ sessionId: 'session-1', roomCode: '1234' })
+    mockJoinRoom.mockResolvedValue(undefined)
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'פתיחת חדר' }))
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'יציאה מהחדר' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'להישאר' }))
+
+    expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument()
+    expect(mockLeaveRoom).not.toHaveBeenCalled()
+  })
+})
+
+describe('joining by typed code', () => {
+  // Found by the independent review of the first version of this fix: the
+  // code input had only been added to the signed-out/anonymous branch, so a
+  // registered host handed a friend's room code had no way to use it either.
+  it('is also offered to an already signed-in host', async () => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
+      loading: false,
+      redirectError: null,
+    })
+    render(<App />)
+    expect(await screen.findByLabelText('יש לך קוד לחדר?')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'הצטרפות עם קוד' })).toBeInTheDocument()
+  })
+
+
+  // `roomCodes`/`resolveRoomCode` exist precisely to turn a typed code into a
+  // session (DECISIONS.md, milestone 3) - this is the UI path that had never
+  // been wired to it. Found in Nitzan's own manual walkthrough.
+  it('lets someone without a link type the room code instead', async () => {
+    mockedUseAuthUser.mockReturnValue({ user: null, loading: false, redirectError: null })
+    const { signInAsGuest } = await import('./lib/auth')
+    vi.mocked(signInAsGuest).mockResolvedValue('guest-uid')
+    mockResolveRoomCode.mockResolvedValue('session-1')
+    mockJoinRoom.mockResolvedValue(undefined)
+
+    render(<App />)
+    fireEvent.change(screen.getByLabelText('יש לך קוד לחדר?'), { target: { value: '1234' } })
+    fireEvent.click(screen.getByRole('button', { name: 'הצטרפות עם קוד' }))
+
+    const nameField = await screen.findByLabelText('איך קוראים לך?')
+    fireEvent.change(nameField, { target: { value: 'שרה' } })
+    fireEvent.click(screen.getByRole('button', { name: 'הצטרפות' }))
+
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
+    expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'guest-uid', 'שרה')
+  })
+
+  it('shows an error for a typed code nobody has claimed', async () => {
+    mockedUseAuthUser.mockReturnValue({ user: null, loading: false, redirectError: null })
+    const { signInAsGuest } = await import('./lib/auth')
+    vi.mocked(signInAsGuest).mockResolvedValue('guest-uid')
+    mockResolveRoomCode.mockRejectedValue(new Error('room-not-found'))
+
+    render(<App />)
+    fireEvent.change(screen.getByLabelText('יש לך קוד לחדר?'), { target: { value: '9999' } })
+    fireEvent.click(screen.getByRole('button', { name: 'הצטרפות עם קוד' }))
+
+    expect(await screen.findByText('החדר לא נמצא. ייתכן שהקישור כבר לא בתוקף.')).toBeInTheDocument()
+    // The landing page itself survives the error - unlike the link path, a
+    // mistyped code should not blank the whole screen.
+    expect(screen.getByRole('button', { name: 'התחברות עם Google' })).toBeInTheDocument()
+  })
+})
+
+describe('a guest who left a room', () => {
+  // Anonymous auth gives a leaving guest a truthy `user`, which used to fall
+  // into the signed-in host dashboard: a "sign out" button for an account
+  // never signed in to, and a "create room" button firestore.rules was always
+  // going to refuse. Found in Nitzan's own manual walkthrough.
+  it('is offered sign-in, not the host dashboard', () => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'guest-uid', isAnonymous: true, displayName: null, email: null } as never,
+      loading: false,
+      redirectError: null,
+    })
+    render(<App />)
+    expect(screen.getByRole('button', { name: 'התחברות עם Google' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'פתיחת חדר' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'התנתקות' })).not.toBeInTheDocument()
   })
 })
 

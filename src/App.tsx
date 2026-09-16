@@ -5,7 +5,7 @@ import Gathering from './Gathering'
 import { signInAsGuest, signInWithGoogle, signOutUser, useAuthUser } from './lib/auth'
 import { db } from './lib/firebase'
 import { paths } from './lib/model'
-import { createRoom, joinRoom, resolveRoomCode } from './lib/room'
+import { createRoom, joinRoom, leaveRoom, resolveRoomCode } from './lib/room'
 import { useSavedGroups } from './lib/memory'
 import GroupMemory from './GroupMemory'
 
@@ -64,6 +64,27 @@ type Screen =
   | { kind: 'in-room'; sessionId: string; roomCode: string; uid: string; isHost: boolean }
   | { kind: 'error'; message: string; detail?: string }
 
+/** Shared by the join-link effect and the typed-code flow below: once a code
+ *  has resolved to a session, both paths decide the same way between resuming
+ *  a room this browser already joined and asking a first-timer for a name. */
+async function resolveJoinScreen(sessionId: string, roomCode: string, uid: string): Promise<Screen> {
+  const stored = readStoredSession()
+  if (stored?.sessionId === sessionId) {
+    // Tapping your own share link (or retyping its code) is a real thing
+    // hosts do, to check it works - this must not demote them to a guest in
+    // their own room, which is what a hardcoded `isHost: false` here used to do.
+    const sessionSnap = await getDoc(doc(db, paths.session(sessionId)))
+    return {
+      kind: 'in-room',
+      sessionId,
+      roomCode,
+      uid,
+      isHost: sessionSnap.data()?.hostUid === uid,
+    }
+  }
+  return { kind: 'guest-name-entry', sessionId, roomCode }
+}
+
 /** The friendly message is for the person; `detail` is the technical cause,
  *  shown small underneath. A failure on a phone has no console to open, so an
  *  error that does not say what went wrong cannot be diagnosed at all - which
@@ -85,6 +106,10 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [nameInput, setNameInput] = useState('')
   const [loadingIsSlow, setLoadingIsSlow] = useState(false)
+  const [confirmingLeave, setConfirmingLeave] = useState(false)
+  const [codeInput, setCodeInput] = useState('')
+  const [codeBusy, setCodeBusy] = useState(false)
+  const [codeError, setCodeError] = useState<string | null>(null)
 
   useEffect(() => {
     if (screen.kind !== 'loading') {
@@ -131,24 +156,9 @@ export default function App() {
           // first-time guest probing "am I already in?" is denied by the very
           // rule that protects the roster. That circularity is what broke the
           // first live join; see room.test.ts, which now pins it down.
-          const stored = readStoredSession()
-          if (stored?.sessionId === sessionId) {
-            // Tapping your own share link is a real thing hosts do, to check
-            // it works - this must not demote them to a guest in their own
-            // room, which is what a hardcoded `isHost: false` here used to do.
-            const sessionSnap = await getDoc(doc(db, paths.session(sessionId)))
-            if (cancelled) return
-            setScreen({
-              kind: 'in-room',
-              sessionId,
-              roomCode: joinCode,
-              uid,
-              isHost: sessionSnap.data()?.hostUid === uid,
-            })
-            return
-          }
-
-          setScreen({ kind: 'guest-name-entry', sessionId, roomCode: joinCode })
+          const nextScreen = await resolveJoinScreen(sessionId, joinCode, uid)
+          if (cancelled) return
+          setScreen(nextScreen)
         } catch (error) {
           console.error('[FlashPlay] resolving the join link failed:', error)
           if (!cancelled) {
@@ -210,17 +220,51 @@ export default function App() {
   }
 
   /**
-   * Forgets this browser's room, nothing more - the player document, the
-   * roster and the game are untouched, matching DESIGN's "leaving is allowed
-   * at any moment, an active round is never broken." There was no way to do
-   * this at all before this fix: a stored session resumes forever, with no
-   * screen that ever clears it - found during the first manual walkthrough,
-   * on a browser still holding a session from an earlier test.
+   * Forgets this browser's room and marks the player doc left, so the roster
+   * can say so - the game itself is otherwise untouched, matching DESIGN's
+   * "leaving is allowed at any moment, an active round is never broken."
+   * There was no way to do this at all before the first version of this fix:
+   * a stored session resumes forever, with no screen that ever clears it -
+   * found during the first manual walkthrough, on a browser still holding a
+   * session from an earlier test. The confirmation step and the `leftAt`
+   * write were added after Nitzan's own first manual walkthrough of *this*
+   * fix: leaving needs a step back for a mis-tap, and the room looked exactly
+   * as stale to everyone else as it had to him, just for a different reason -
+   * nothing ever recorded that a player had gone.
    */
-  function handleLeaveRoom() {
+  async function confirmLeaveRoom(sessionId: string, uid: string) {
+    try {
+      await leaveRoom(db, sessionId, uid)
+    } catch (error) {
+      // Best-effort, same reasoning as storeSession/clearStoredSession below:
+      // forgetting the room locally must not be blocked by a flaky write that
+      // only updates how this player looks to everyone else's roster.
+      console.error('[FlashPlay] leaveRoom failed:', error)
+    }
     clearStoredSession()
     window.history.pushState({}, '', '/')
+    setConfirmingLeave(false)
     setScreen({ kind: 'host-landing' })
+  }
+
+  async function handleJoinByCode() {
+    const code = codeInput.trim()
+    if (!CODE_PATTERN.test(code)) {
+      setCodeError(t('roomNotFound'))
+      return
+    }
+    setCodeBusy(true)
+    setCodeError(null)
+    try {
+      const uid = user?.uid ?? (await signInAsGuest())
+      const sessionId = await resolveRoomCode(db, code)
+      setScreen(await resolveJoinScreen(sessionId, code, uid))
+    } catch (error) {
+      console.error('[FlashPlay] joining by typed code failed:', error)
+      setCodeError(detailOf(error) === 'room-expired' ? t('roomExpired') : t('roomNotFound'))
+    } finally {
+      setCodeBusy(false)
+    }
   }
 
   async function handleJoin(sessionId: string, roomCode: string) {
@@ -288,7 +332,17 @@ export default function App() {
       )}
 
       {screen.kind === 'host-landing' &&
-        (user ? (
+        // Anonymous counts as "not really signed in" here: it is a guest
+        // identity, minted only so the rules have a subject to authorise a
+        // join against (see signInAsGuest's comment), and isRegistered() in
+        // firestore.rules refuses it as a host. Before this check, a guest
+        // who left a room landed on this exact screen with `user` truthy and
+        // fell into this branch: a "sign out" button for an account they
+        // never signed in to, and a "create room" button whose write
+        // firestore.rules was always going to refuse - surfacing as a bare
+        // permission-denied error instead of the plain "you need to sign in"
+        // this screen means to say. Found in Nitzan's own manual walkthrough.
+        (user && !user.isAnonymous ? (
           <div className="flex w-full max-w-sm flex-col items-center gap-2">
             <p>{t('greeting', { name: user.displayName ?? user.email })}</p>
             {/* A gathering opened for a group the host has saved adds to that
@@ -310,15 +364,46 @@ export default function App() {
             >
               {t('signOut')}
             </button>
+
+            {/* A registered host can also be handed someone else's room code
+                (a different family's gathering) - the review that found this
+                fix's other gaps flagged that the code input had only been
+                added to the signed-out branch, leaving a signed-in host with
+                no way to use a typed code at all. */}
+            <JoinByCode
+              codeInput={codeInput}
+              setCodeInput={setCodeInput}
+              busy={codeBusy}
+              error={codeError}
+              onSubmit={() => void handleJoinByCode()}
+            />
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => void signInWithGoogle()}
-            className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white"
-          >
-            {t('signInWithGoogle')}
-          </button>
+          <div className="flex w-full max-w-sm flex-col items-center gap-4">
+            <button
+              type="button"
+              onClick={() => void signInWithGoogle()}
+              className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white"
+            >
+              {t('signInWithGoogle')}
+            </button>
+
+            {/* The typed-code counterpart to the join link: `roomCodes` and
+                `resolveRoomCode` exist precisely to turn a typed code into a
+                session (see DECISIONS.md, "the room code stopped being the
+                session's document id"), but until this fix nothing in the UI
+                ever called it except by parsing a `/join/<code>` URL - a
+                4-digit code with nowhere to type it. Found alongside the
+                anonymous-landing bug above, same manual walkthrough. */}
+            <JoinByCode
+              codeInput={codeInput}
+              setCodeInput={setCodeInput}
+              busy={codeBusy}
+              error={codeError}
+              onSubmit={() => void handleJoinByCode()}
+              bordered
+            />
+          </div>
         ))}
 
       {screen.kind === 'guest-name-entry' && (
@@ -361,16 +446,96 @@ export default function App() {
             uid={screen.uid}
             isHost={screen.isHost}
           />
-          <button
-            type="button"
-            onClick={handleLeaveRoom}
-            className="cursor-pointer text-xs text-neutral-400 underline"
-          >
-            {t('leaveRoom')}
-          </button>
+          {confirmingLeave ? (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-neutral-500">{t('leaveRoomConfirmQuestion')}</span>
+              <button
+                type="button"
+                onClick={() => void confirmLeaveRoom(screen.sessionId, screen.uid)}
+                className="cursor-pointer text-red-600 underline"
+              >
+                {t('leaveRoomConfirmYes')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingLeave(false)}
+                className="cursor-pointer text-neutral-400 underline"
+              >
+                {t('leaveRoomConfirmNo')}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingLeave(true)}
+              className="cursor-pointer text-xs text-neutral-400 underline"
+            >
+              {t('leaveRoom')}
+            </button>
+          )}
         </>
       )}
     </main>
+  )
+}
+
+/**
+ * The typed-code counterpart to the join link, shared by both the signed-out
+ * and the signed-in-host branches of the landing screen so a room code works
+ * the same way regardless of who is holding it.
+ */
+function JoinByCode({
+  codeInput,
+  setCodeInput,
+  busy,
+  error,
+  onSubmit,
+  bordered = false,
+}: {
+  codeInput: string
+  setCodeInput: (value: string) => void
+  busy: boolean
+  error: string | null
+  onSubmit: () => void
+  bordered?: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <div
+      className={
+        bordered
+          ? 'flex w-full flex-col items-center gap-2 border-t border-neutral-200 pt-4'
+          : 'flex w-full flex-col items-center gap-2'
+      }
+    >
+      <label htmlFor="room-code-input" className="text-sm text-neutral-500">
+        {t('haveCodeIntro')}
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id="room-code-input"
+          value={codeInput}
+          onChange={(event) => setCodeInput(event.target.value)}
+          placeholder={t('roomCodePlaceholder')}
+          maxLength={4}
+          inputMode="numeric"
+          className="w-24 rounded-md border border-neutral-300 px-3 py-2 text-center"
+        />
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={busy || !CODE_PATTERN.test(codeInput.trim())}
+          className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2 disabled:opacity-50"
+        >
+          {busy ? t('joining') : t('joinByCode')}
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="text-xs text-red-600">
+          {error}
+        </p>
+      )}
+    </div>
   )
 }
 

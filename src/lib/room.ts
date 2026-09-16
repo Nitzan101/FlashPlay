@@ -215,8 +215,22 @@ export async function joinRoom(
     lastSeenAt: now,
     joinedAt: now,
     votedRoundId: null,
+    leftAt: null,
   }
   await setDoc(doc(firestore, paths.player(sessionId, uid)), player)
+}
+
+/** Records that this player chose to leave, so the roster can say so instead
+ *  of looking stale - see `leftAt` on `PlayerDoc`. Best-effort by design: the
+ *  caller forgets the room locally regardless of whether this write lands, the
+ *  same way `storeSession`/`clearStoredSession` already treat a failed
+ *  persistence write as not worth blocking on. */
+export async function leaveRoom(
+  firestore: Firestore,
+  sessionId: string,
+  uid: string,
+): Promise<void> {
+  await updateDoc(doc(firestore, paths.player(sessionId, uid)), { leftAt: Date.now() })
 }
 
 export async function touchPresence(

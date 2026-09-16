@@ -965,3 +965,88 @@ roster are untouched.
 not by itself ask "what screen should exist and doesn't." A manual walkthrough
 by someone who has never seen the product before is a fifth lens the others
 cannot replace.
+
+## The same walkthrough, continued: six more findings
+
+Immediately after the fix above shipped, the same walkthrough - now able to
+actually leave the room - surfaced six more problems in one pass, all real,
+none of them things the suite (98 tests, 174 rules assertions at the time)
+had any way to catch, because every one of them is about a screen or a path
+that was simply never built, not about a screen doing the wrong thing.
+
+**An anonymous guest who leaves is not "signed out" - and the landing screen
+treated it as if it were.** Firebase's anonymous auth (`signInAsGuest`) gives
+a guest a real, truthy `user` object with a real uid, minted only so
+firestore.rules has a subject to authorise a join against. The landing
+screen's branch on `user ? (...) : (...)` could not tell that apart from a
+registered host, so a guest who left a room landed back on the host dashboard:
+a "sign out" button for an account they never signed in to, and a "create
+room" button that `isRegistered()` in firestore.rules was always going to
+refuse - surfacing as a bare permission-denied error instead of the "you need
+to sign in" the screen was supposed to mean. The fix branches on
+`user && !user.isAnonymous` instead. **The general lesson:** a truthy
+Firebase `User` is not the same claim as "this person signed in" the moment
+anonymous auth is in play anywhere in the app; anything gating on "is someone
+signed in" has to say which kind it means.
+
+**A room code that could not be typed anywhere.** `roomCodes` and
+`resolveRoomCode` exist precisely so a *typed* code can resolve to a session
+(see "the room code stopped being the session's document id" above) - but
+until this fix the only caller was a `useEffect` parsing `/join/<code>` from
+the URL. The 4-digit code shown on every screen had nowhere to be entered, so
+it looked exactly as decorative as it in fact was. Fixed by adding a manual
+code-entry input, reusing the exact same `resolveRoomCode` →
+already-a-player? → `guest-name-entry` decision as the link path (extracted
+into `resolveJoinScreen`, shared by both). Offered on the landing screen to
+both a first-time/anonymous visitor and an already signed-in host - the
+independent review of the first version of this fix found the input had only
+been wired into the signed-out branch, leaving a registered host handed a
+friend's room code with no way to use it either.
+
+**Leaving happened on a single tap, with no way back from a mis-tap.** Fixed
+with a two-step confirm: the leave button becomes an inline "לצאת מהחדר? /
+כן, לצאת / להישאר" row, and only the explicit "yes" actually clears the
+session.
+
+**Leaving looked identical to still being there, to everyone else in the
+room.** The lobby roster is drawn from `players`, and nothing ever recorded
+that a player had gone - a stale room and an actively-left room rendered the
+same. This is a different signal from the presence dot the milestone-3 review
+already removed (see BACKLOG.md, "the milestone-3 mobile-reality and scenario
+reviews"): that dot inferred absence from a heartbeat, which a locked phone
+defeats by construction; this is the player's own explicit action, recorded
+once, on purpose. Fixed with `PlayerDoc.leftAt`, set by a new `leaveRoom()` on
+an explicit leave and cleared by `joinRoom()` on a fresh join (tapping the
+same link, or a saved group, again). The lobby roster dims a left player's row
+with a `(עזב/ה)` label and excludes them from the "N in the room" count.
+Needed no firestore.rules change: `players` update was already
+`isUser(playerId) || isHost(sessionId)` with no field-shape restriction, so a
+player could already rewrite any field of their own document - `leftAt` is
+new data, not a new permission.
+
+**Nothing said who the host was.** With a host and one guest both in the
+lobby, neither the layout nor the copy distinguished them. Fixed by passing
+`hostUid` down from `Gathering.tsx`'s session listener into `Lobby.tsx`,
+which now labels that row `(מארח/ת)`.
+
+**Not fixed, deliberately: `Rounds.tsx`/`SecondGame.tsx`'s "votes cast of N"
+still counts a player who has left.** Flagged by the same independent review
+that found the two gaps above - the identical staleness this pass fixed in
+the lobby recurs one screen later, in the round loop's voting count. Left in
+BACKLOG.md rather than fixed here: it is a display-only number (the host's own
+tap advances the round, per milestone 4's "every phase transition is an
+explicit host write, never a client-side timer" - nothing auto-completes off
+it), and touching the round loop's screens deserved its own look rather than
+riding in on this fix.
+
+**The general lesson, restated:** every one of these six is a screen or an
+input that should have existed and didn't, not a screen doing the wrong
+thing - the same shape as the leave-the-room gap that started this
+walkthrough. A suite proves that what was built works; it says nothing about
+what was never built. Automated evidence: `npm run build`, `npm test` (99
+tests: 24 in `App.test.tsx`, 3 in the new `Lobby.test.tsx`, plus the earlier
+suites), `npm run test:rules` (174 assertions, unchanged - firestore.rules
+itself did not need to change for any of this). Three guards were
+mutation-checked, each turning exactly the named assertion(s) red: the leave
+confirmation gate, the host/left roster labels together with the "N in the
+room" count, and the anonymous-vs-registered landing branch.

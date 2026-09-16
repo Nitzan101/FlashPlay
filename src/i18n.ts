@@ -43,8 +43,16 @@ export const resources = {
       memberCount: '{{count}} משתתפים בחדר',
       rosterLoadError: 'אי אפשר לטעון את רשימת המשתתפים כרגע.',
       youSuffix: '(את/ה)',
+      hostSuffix: '(מארח/ת)',
+      leftSuffix: '(עזב/ה)',
       hostFallbackName: 'המארח',
       leaveRoom: 'יציאה מהחדר',
+      leaveRoomConfirmQuestion: 'לצאת מהחדר?',
+      leaveRoomConfirmYes: 'כן, לצאת',
+      leaveRoomConfirmNo: 'להישאר',
+      haveCodeIntro: 'יש לך קוד לחדר?',
+      roomCodePlaceholder: 'קוד בן 4 ספרות',
+      joinByCode: 'הצטרפות עם קוד',
 
       // --- milestone 4: the harvest phase ---
       startGame: 'התחלת המשחק',

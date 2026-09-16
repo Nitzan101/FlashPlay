@@ -65,7 +65,15 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
   }
 
   if (session.phase === 'lobby') {
-    return <Lobby sessionId={sessionId} roomCode={roomCode} uid={uid} isHost={isHost} />
+    return (
+      <Lobby
+        sessionId={sessionId}
+        roomCode={roomCode}
+        uid={uid}
+        isHost={isHost}
+        hostUid={session.hostUid}
+      />
+    )
   }
 
   if (gameError) {

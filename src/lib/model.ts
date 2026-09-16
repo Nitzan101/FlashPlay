@@ -213,6 +213,20 @@ export interface PlayerDoc {
    * never who for.
    */
   votedRoundId: string | null
+  /**
+   * When this player explicitly left the room, or null. Distinct from
+   * `lastSeenAt`: a locked phone lets the heartbeat go stale too, and the
+   * milestone-3 review deliberately removed a presence dot built on that
+   * signal, since it read "everyone left" during ordinary steady state (see
+   * BACKLOG.md, "the milestone-3 mobile-reality and scenario reviews"). This
+   * field is only ever set by the player's own explicit "leave the room" tap
+   * - never inferred from a stale heartbeat - so it says something a timer
+   * cannot: that they chose to go, not just that their screen is off.
+   * Cleared (`null`) again on a fresh join via `joinRoom`, which is how a
+   * returning player - tapping the same link or a saved group - shows up as
+   * present again.
+   */
+  leftAt: number | null
 }
 
 export type GameType = 'who-said-that' | 'most-likely-to'

@@ -9,11 +9,16 @@ interface LobbyProps {
   roomCode: string
   uid: string
   isHost: boolean
+  hostUid: string
 }
 
-export default function Lobby({ sessionId, roomCode, uid, isHost }: LobbyProps) {
+export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: LobbyProps) {
   const { t } = useTranslation()
   const { players, error } = useRoster(sessionId)
+  // "In the room" means present, not merely having joined at some point -
+  // otherwise a player who explicitly left still counts, and the number on
+  // screen looks exactly as stale as the roster row itself used to.
+  const activeCount = players.filter((player) => !player.leftAt).length
 
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [startState, setStartState] = useState<'idle' | 'busy' | 'error'>('idle')
@@ -73,7 +78,7 @@ export default function Lobby({ sessionId, roomCode, uid, isHost }: LobbyProps) 
       )}
 
       <p className="text-neutral-600">
-        {players.length === 1 ? t('memberCountOne') : t('memberCount', { count: players.length })}
+        {activeCount === 1 ? t('memberCountOne') : t('memberCount', { count: activeCount })}
       </p>
 
       {error && (
@@ -96,8 +101,10 @@ export default function Lobby({ sessionId, roomCode, uid, isHost }: LobbyProps) 
       <ul className="flex w-full flex-col gap-1">
         {players.map((player) => (
           <li key={player.id} className="min-w-0 truncate">
-            <span>{player.name}</span>
+            <span className={player.leftAt ? 'text-neutral-400' : undefined}>{player.name}</span>
             {player.id === uid && <span className="text-neutral-500"> {t('youSuffix')}</span>}
+            {player.id === hostUid && <span className="text-neutral-500"> {t('hostSuffix')}</span>}
+            {player.leftAt && <span className="text-neutral-400"> {t('leftSuffix')}</span>}
           </li>
         ))}
       </ul>

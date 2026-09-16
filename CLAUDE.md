@@ -88,8 +88,13 @@ Two kinds of change are not covered by that and need more:
 - `src/main.tsx` — entry; mounts App, imports i18n and Tailwind.
 - `src/i18n.ts` — i18next setup. Hebrew is the only shipped locale.
 - `src/App.tsx` — app shell and the room flow's state machine: host sign-in and
-  room creation, guest join-by-link, resuming a stored session on refresh.
+  room creation, guest join-by-link or by typed code (`resolveJoinScreen`,
+  shared by both), leaving a room (two-step confirm), resuming a stored
+  session on refresh.
 - `src/Lobby.tsx` — the live member list + room code, shown once in a room.
+  Labels the host (`hostUid` prop) and a player who has explicitly left
+  (`PlayerDoc.leftAt`), and excludes a left player from the "N in the room"
+  count.
 - `src/lib/firebase.ts` — reads config from `VITE_FIREBASE_*` env vars, exports
   `firebaseApp`, `auth` and `db`. Throws on load if a var is missing.
 - `src/lib/auth.ts` — `signInWithGoogle` (redirect, not popup — see comment),
@@ -99,9 +104,11 @@ Two kinds of change are not covered by that and need more:
   Single source of truth for document shapes; `firestore.rules` mirrors it by
   hand and the two are kept in step by the emulator tests.
 - `src/lib/room.ts` — room creation, joining, presence: `createRoom`,
-  `resolveRoomCode`, `joinRoom`, `useRoster`, `usePresenceHeartbeat`,
-  `useSession` (live session-document listener - milestone 4's screens are
-  driven by this, not by App.tsx's one-off getDoc calls).
+  `resolveRoomCode`, `joinRoom`, `leaveRoom` (records `PlayerDoc.leftAt`;
+  cleared again by `joinRoom` on a fresh join), `useRoster`,
+  `usePresenceHeartbeat`, `useSession` (live session-document listener -
+  milestone 4's screens are driven by this, not by App.tsx's one-off getDoc
+  calls).
 - `src/lib/harvest.ts` — milestone 4: the session state machine and the
   harvest phase. `startHarvestGame`, `submitHarvestItem` (the three-write
   contract - see `ITEM_WRITE_ORDER` in `model.ts`), `getMySubmission`,
@@ -165,6 +172,17 @@ and why. Do not move it back. The vault keeps only the career-facing note at
 so there is no reason to co-locate them.
 
 ## Known pitfalls
+- **A truthy Firebase `user` does not mean "signed in" once anonymous auth is
+  in play anywhere in the app.** `signInAsGuest()` mints a real, truthy `User`
+  object with a real uid - it exists only so the rules have a subject to
+  authorise a join against, not to mean the person made an account. Any UI
+  gating on "is someone signed in" (a dashboard, a "sign out" button, a
+  registered-only action) has to check `!user.isAnonymous` too, or an
+  anonymous guest sees the same screen a real host does - and any action on it
+  that requires `isRegistered()` in firestore.rules then fails as a raw
+  permission-denied error instead of the plain "sign in first" the screen
+  should have shown. Found on `App.tsx`'s host-landing screen, 2026-09-16 -
+  see DECISIONS.md, "the same walkthrough, continued".
 - `import.meta.url` is not a `file:` URL under Vitest — reading a project file
   from a test needs `resolve(process.cwd(), ...)`, not `new URL(...)`.
 - `tsconfig.app.json` needs `"node"` and `"vitest/globals"` in `types`, or

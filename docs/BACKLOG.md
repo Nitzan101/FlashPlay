@@ -379,3 +379,33 @@ its facts. Fine at a family's scale, slow on a phone at a hundred facts.
 **No undo on a deleted fact, and no grouping on the memory screen.** Dozens of
 facts render as one flat list. Deletion is immediate and permanent, which is
 the right default for a memory product but leaves no recovery from a mis-tap.
+
+---
+
+## From Nitzan's manual walkthrough (round two)
+
+**`Rounds.tsx`/`SecondGame.tsx`'s "votes cast of N" still counts a player who
+has left the room.** The same staleness the lobby roster had (DECISIONS.md,
+"the same walkthrough, continued") recurs one screen later: `players.length`
+is the raw roster, not filtered by `PlayerDoc.leftAt`. Display-only - nothing
+auto-advances off this count, the host's own tap does - so not urgent, but the
+fix belongs with a proper look at the round loop's screens rather than riding
+in on the lobby fix that found it.
+
+**A visual design pass.** Nitzan's own words, first manual walkthrough:
+generic, "not appealing to the eye." Every screen in this app so far has been
+built for correctness first - default Tailwind spacing, no real typography or
+colour decisions, no motion. Deliberately sequenced *after* the functional bugs
+found in the same walkthrough are fixed (his own ordering: fix what's broken,
+then make it look like something, then add features) - not started yet.
+
+**A social/relationship layer, once the basics are solid.** Also from the same
+walkthrough: accounts that hold information about yourself, and relationships
+to other people - friends, family - beyond a single evening's contacts. This is
+a materially different shape from milestone 7's per-host private store (which
+holds facts about *other* people, owned by the host who ran the gathering, not
+a person's own profile or a graph between multiple people's accounts) and would
+need its own design pass: what a "friendship" even means here, who can see
+what, whether it's still one-sided ownership or a real bidirectional graph.
+Explicitly not scoped or started - flagged here only so it is not lost, per
+Nitzan's own request.
