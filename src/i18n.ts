@@ -44,6 +44,7 @@ export const resources = {
       rosterLoadError: 'אי אפשר לטעון את רשימת המשתתפים כרגע.',
       youSuffix: '(את/ה)',
       hostFallbackName: 'המארח',
+      leaveRoom: 'יציאה מהחדר',
 
       // --- milestone 4: the harvest phase ---
       startGame: 'התחלת המשחק',

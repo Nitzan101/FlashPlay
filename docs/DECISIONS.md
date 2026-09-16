@@ -944,3 +944,24 @@ running and ending a gathering, though DESIGN calls it a visible screen; and
 three `useAction` regressions (a slow delete greying every row, two missing
 "still trying" notices, an error captured but never rendered). Routine findings
 are in BACKLOG.md.
+
+## Found in Nitzan's own manual walkthrough
+
+**There was no way to leave a room, at all.** A stored session resumes
+forever on refresh (`readStoredSession`/`storeSession` in `App.tsx`), and no
+screen ever cleared it - not a bug in any single milestone, since every
+milestone's review reads the code that exists rather than asking what screen
+is missing entirely. Found immediately on the first manual walkthrough: a
+browser still holding a session from an earlier test round could not get back
+to the landing page by any means in the product itself. Fixed with a small
+"leave the room" control that clears the stored session and nothing else -
+DESIGN already permits this ("leaving is allowed at any moment, an active
+round is never broken"), so no rule or player state needed to change, only a
+way to trigger the client-side forgetting that already existed for a fresh
+device. `App.test.tsx` pins it down and confirms the player document and the
+roster are untouched.
+
+**The general lesson:** four-lens review reads the screens that exist; it does
+not by itself ask "what screen should exist and doesn't." A manual walkthrough
+by someone who has never seen the product before is a fifth lens the others
+cannot replace.

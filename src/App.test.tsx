@@ -219,6 +219,28 @@ describe('creating a room', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('אי אפשר לפתוח חדר כרגע.')
   })
+
+  // Found during the first manual walkthrough: a browser holding a session
+  // from an earlier test resumed it forever, with no screen that ever
+  // cleared it.
+  it('lets the host leave the room and forget it, without touching anything else', async () => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockCreateRoom.mockResolvedValue({ sessionId: 'session-1', roomCode: '1234' })
+    mockJoinRoom.mockResolvedValue(undefined)
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'פתיחת חדר' }))
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'יציאה מהחדר' }))
+
+    expect(await screen.findByRole('button', { name: 'פתיחת חדר' })).toBeInTheDocument()
+    expect(localStorage.getItem('flashplay.session')).toBeNull()
+  })
 })
 
 describe('joining by a link', () => {

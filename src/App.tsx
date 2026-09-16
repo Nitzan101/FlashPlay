@@ -34,6 +34,15 @@ function storeSession(session: StoredSession): void {
   }
 }
 
+function clearStoredSession(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // Best-effort - a refresh will resume the old room, which is the same
+    // failure mode as storeSession's, not a new one.
+  }
+}
+
 const CODE_PATTERN = /^\d{4}$/
 
 /** A join link is `/join/<code>`, with `?code=<code>` as a fallback for
@@ -200,6 +209,20 @@ export default function App() {
     }
   }
 
+  /**
+   * Forgets this browser's room, nothing more - the player document, the
+   * roster and the game are untouched, matching DESIGN's "leaving is allowed
+   * at any moment, an active round is never broken." There was no way to do
+   * this at all before this fix: a stored session resumes forever, with no
+   * screen that ever clears it - found during the first manual walkthrough,
+   * on a browser still holding a session from an earlier test.
+   */
+  function handleLeaveRoom() {
+    clearStoredSession()
+    window.history.pushState({}, '', '/')
+    setScreen({ kind: 'host-landing' })
+  }
+
   async function handleJoin(sessionId: string, roomCode: string) {
     const name = nameInput.trim()
     if (!name) return
@@ -331,12 +354,21 @@ export default function App() {
       )}
 
       {screen.kind === 'in-room' && (
-        <Gathering
-          sessionId={screen.sessionId}
-          roomCode={screen.roomCode}
-          uid={screen.uid}
-          isHost={screen.isHost}
-        />
+        <>
+          <Gathering
+            sessionId={screen.sessionId}
+            roomCode={screen.roomCode}
+            uid={screen.uid}
+            isHost={screen.isHost}
+          />
+          <button
+            type="button"
+            onClick={handleLeaveRoom}
+            className="cursor-pointer text-xs text-neutral-400 underline"
+          >
+            {t('leaveRoom')}
+          </button>
+        </>
       )}
     </main>
   )
