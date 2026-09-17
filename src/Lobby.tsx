@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import EmojiPicker from './EmojiPicker'
 import { pickHarvestPromptIds, startHarvestGame } from './lib/harvest'
 import { db } from './lib/firebase'
-import { MIN_PLAYERS_TO_START } from './lib/model'
-import { useRoster } from './lib/room'
+import { MIN_PLAYERS_TO_START, type PlayerDoc } from './lib/model'
+import { renamePlayer, useRoster } from './lib/room'
+import { useAction } from './lib/useAction'
 
 interface LobbyProps {
   sessionId: string
@@ -23,6 +25,14 @@ export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: Lob
 
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [startState, setStartState] = useState<'idle' | 'busy' | 'error'>('idle')
+  // Editing is self-service only: firestore.rules lets the host update any
+  // player row, but the name half of a rename is guarded by claiming a slot
+  // in playerNames, which only the row's own uid may claim - so editing
+  // someone else's name here would either silently skip that guard (reopening
+  // the exact "two players, one name" bug this project already fixed once) or
+  // fail outright. Host-editable identity for a participant with no device of
+  // their own is real, deferred work - see BACKLOG.md.
+  const [editingSelf, setEditingSelf] = useState(false)
   const joinUrl = `${window.location.origin}/join/${roomCode}`
 
   async function startGame() {
@@ -103,16 +113,37 @@ export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: Lob
           signal for this screen. See BACKLOG.md, "presence UI". */}
       <ul className="flex w-full flex-col gap-1 rounded-xl border border-line bg-surface/60 p-2">
         {players.map((player) => (
-          <li key={player.id} className="min-w-0 truncate px-1 py-0.5">
-            <span className={player.leftAt ? 'text-muted' : undefined}>{player.name}</span>
-            {player.id === uid && <span className="text-accent-2"> {t('youSuffix')}</span>}
-            {player.id === hostUid && (
-              <span className="font-semibold text-accent-3"> {t('hostSuffix')}</span>
+          <li key={player.id} className="flex min-w-0 items-center justify-between gap-2 px-1 py-0.5">
+            <span className="min-w-0 truncate">
+              {player.emoji && <span className="me-1">{player.emoji}</span>}
+              <span className={player.leftAt ? 'text-muted' : undefined}>{player.name}</span>
+              {player.id === uid && <span className="text-accent-2"> {t('youSuffix')}</span>}
+              {player.id === hostUid && (
+                <span className="font-semibold text-accent-3"> {t('hostSuffix')}</span>
+              )}
+              {player.leftAt && <span className="text-muted italic"> {t('leftSuffix')}</span>}
+            </span>
+            {player.id === uid && !editingSelf && (
+              <button
+                type="button"
+                onClick={() => setEditingSelf(true)}
+                className="shrink-0 cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+              >
+                {t('editMyNameEmoji')}
+              </button>
             )}
-            {player.leftAt && <span className="text-muted italic"> {t('leftSuffix')}</span>}
           </li>
         ))}
       </ul>
+
+      {editingSelf && (
+        <SelfIdentityEditor
+          sessionId={sessionId}
+          uid={uid}
+          current={players.find((p) => p.id === uid)}
+          onDone={() => setEditingSelf(false)}
+        />
+      )}
 
       <p className="text-muted">{isHost ? t('lobbyWaitingHost') : t('lobbyWaitingGuest')}</p>
 
@@ -140,6 +171,70 @@ export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: Lob
             </p>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Self-only rename/re-emoji, opened from a player's own roster row. See the
+ *  comment on `editingSelf` above for why this cannot yet edit anyone else's
+ *  row. */
+function SelfIdentityEditor({
+  sessionId,
+  uid,
+  current,
+  onDone,
+}: {
+  sessionId: string
+  uid: string
+  current: (PlayerDoc & { id: string }) | undefined
+  onDone: () => void
+}) {
+  const { t } = useTranslation()
+  const [name, setName] = useState(current?.name ?? '')
+  const [emoji, setEmoji] = useState(current?.emoji ?? null)
+  const save = useAction()
+
+  return (
+    <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 p-3">
+      <input
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        maxLength={40}
+        className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
+      />
+      <EmojiPicker value={emoji} onChange={setEmoji} label={t('pickEmojiLabel')} />
+      <div className="flex w-full items-center gap-2">
+        <button
+          type="button"
+          disabled={save.busy || !name.trim()}
+          onClick={() =>
+            void save.run(async () => {
+              await renamePlayer(db, sessionId, uid, name.trim(), emoji)
+              onDone()
+            })
+          }
+          className="grow cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+        >
+          {save.busy ? t('savingProfile') : t('saveNameEmoji')}
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          className="cursor-pointer rounded-xl px-3 py-2 text-sm text-muted"
+        >
+          {t('addGroupCancel')}
+        </button>
+      </div>
+      {save.error && (
+        <p role="alert" className="text-xs text-danger">
+          {save.error === 'name-taken' ? t('nameTaken') : t('nameEmojiSaveError')}{' '}
+          {save.error !== 'name-taken' && (
+            <span dir="ltr" className="font-mono">
+              ({save.error})
+            </span>
+          )}
+        </p>
       )}
     </div>
   )

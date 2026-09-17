@@ -40,7 +40,8 @@ All verified by execution on 2026-09-04.
 - Security rules test: `npm run test:rules` - starts the Firestore emulator and
   runs the rules suite against it (`firestore-rules.test.ts`, `room.test.ts`,
   `harvest.test.ts`, `rounds.test.ts`, `secondGame.test.ts`,
-  `memory.test.ts`). Needs Java (present: OpenJDK 21). Excluded from `npm
+  `memory.test.ts`, `evening.test.ts`, `profile.test.ts`). Needs Java
+  (present: OpenJDK 21). Excluded from `npm
   test` so the everyday loop stays fast and emulator-free. **Also needs
   `.env.local` to exist**, even though these files never touch the real
   project - they import `room.ts`/`harvest.ts`, which import `firebase.ts`,
@@ -107,10 +108,18 @@ Two kinds of change are not covered by that and need more:
   `resolveRoomCode`, `joinRoom` (now also claims a `PlayerNameDoc` slot via the
   internal `reserveName`, so two different uids cannot hold the same display
   name in one session - see model.ts), `leaveRoom` (records `PlayerDoc.leftAt`;
-  cleared again by `joinRoom` on a fresh join), `useRoster`,
-  `usePresenceHeartbeat`, `useSession` (live session-document listener -
-  milestone 4's screens are driven by this, not by App.tsx's one-off getDoc
-  calls).
+  cleared again by `joinRoom` on a fresh join), `renamePlayer` (self-service
+  rename/re-emoji - re-claims the `playerNames` slot, does not just overwrite
+  the field), `setPlayerEmoji` (join-time emoji application, no slot involved),
+  `useRoster`, `usePresenceHeartbeat`, `useSession` (live session-document
+  listener - milestone 4's screens are driven by this, not by App.tsx's
+  one-off getDoc calls).
+- `src/lib/profile.ts` — a registered host's own default name/emoji, at
+  `users/{uid}` itself (`UserDoc`, unused since milestone 2 until this).
+  `useUserProfile`, `saveUserProfile` (preserves the original `createdAt`
+  across edits).
+- `src/EmojiPicker.tsx` — the fixed `EMOJI_PALETTE` (model.ts) grid, shared by
+  the host's profile editor, the join form, and the lobby's self-edit.
 - `src/lib/harvest.ts` — milestone 4: the session state machine and the
   harvest phase. `startHarvestGame`, `submitHarvestItem` (the three-write
   contract - see `ITEM_WRITE_ORDER` in `model.ts`), `getMySubmission`,
@@ -130,12 +139,21 @@ Two kinds of change are not covered by that and need more:
 - `src/SecondGame.tsx` / `src/BetweenGames.tsx` / `src/Finale.tsx` — the second
   game, the pause between games, and the evening's last screen.
 - `src/lib/memory.ts` — milestone 7: what the evening leaves behind, all of it
-  in the host's own private store. `ensureContacts`, `writeFactsForGame`,
-  `writeRemainingFacts`, `nameGroup`, `recordFeedback`, the deletion cascade
-  (`deleteFact`/`deleteContact`/`deleteGroup`), and the `useGroupMemory`/
-  `useSavedGroups`/`useGroupName` hooks.
-- `src/GroupMemory.tsx` — "what we remember about this group", owner only,
-  with per-fact and whole-group deletion.
+  in the host's own private store. `ensureContacts`, `createGroup` (a group
+  made before any gathering, from the room picker - starts with no members),
+  `writeFactsForGame`, `writeRemainingFacts`, `nameGroup`, `recordFeedback`,
+  the deletion cascade (`deleteFact`/`deleteContact`/`deleteGroup`), and the
+  `useGroupMemory` (returns `members: RememberedMember[]`, each with their own
+  `facts`, plus a separate `groupFacts` array - grouped by person, not one flat
+  list), `useSavedGroups`/`useGroupName` hooks.
+- `src/RoomPicker.tsx` — the landing screen's room chooser: "a new room" or one
+  of the host's saved groups, as a visible selection separate from the "open
+  a room" tap itself, plus creating a new (empty) group.
+- `src/GroupDetails.tsx` — a saved group's details, owner only: per-person
+  facts (including "nothing recorded yet"), group-wide facts, inline renaming,
+  per-fact and whole-group deletion, both behind a confirm step. Named
+  `GroupDetails` rather than the milestone-7 original `GroupMemory` once it
+  stopped being read-only.
 - `src/lib/useAction.ts` — one host tap: busy, the error with its code, and the
   "still trying" notice a write that never settles needs.
 - `src/HostButton.tsx`, `src/Scoreboard.tsx`, `src/LoadFailure.tsx` — the
@@ -182,6 +200,14 @@ and why. Do not move it back. The vault keeps only the career-facing note at
 so there is no reason to co-locate them.
 
 ## Known pitfalls
+- **A new emulator-backed test file must be registered in two separate config
+  files, not one.** `vite.config.ts`'s `exclude` keeps it out of plain
+  `npm test` (which has no emulator); `vitest.rules.config.ts`'s `include`
+  is what actually runs it under `npm run test:rules`. Adding only one half
+  either makes `npm test` fail with `ECONNREFUSED` (ran, no emulator) or makes
+  the new tests silently never run at all (present, but not in either list).
+  Check both whenever a new `src/lib/*.test.ts` needs the emulator. Found
+  2026-09-17 adding `profile.test.ts`.
 - **Gating a client read on document A's state to satisfy a rule that checks
   document B is a race the emulator cannot show you.** `revealRound()` writes
   a round's `phase` and its item's `revealed` flag as two separate awaited

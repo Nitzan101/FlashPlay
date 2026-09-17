@@ -26,6 +26,7 @@ import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { HARVEST_PROMPTS } from '../content/prompts'
 import {
+  createGroup,
   deleteContact,
   deleteFact,
   deleteGroup,
@@ -141,6 +142,21 @@ const roster = [
   { id: HOST, name: 'Host' },
   { id: PLAYER, name: 'דוד' },
 ]
+
+describe('createGroup', () => {
+  // The room picker's own use case: a group made before any gathering, so it
+  // has to start empty rather than inheriting whatever ensureContacts would
+  // otherwise assume about an evening that has not happened yet.
+  it('creates an empty, named group the host can immediately open a room for', async () => {
+    const groupId = await createGroup(asHost(), HOST, 'החברים')
+
+    const group = (await getDoc(doc(asHost(), paths.group(HOST, groupId)))).data() as
+      | GroupDoc
+      | undefined
+    expect(group?.name).toBe('החברים')
+    expect(group?.memberContactIds).toEqual([])
+  })
+})
 
 describe('ensureContacts', () => {
   it('turns the room into contacts and points the gathering at the group', async () => {

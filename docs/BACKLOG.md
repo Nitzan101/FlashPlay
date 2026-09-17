@@ -418,3 +418,61 @@ need its own design pass: what a "friendship" even means here, who can see
 what, whether it's still one-sided ownership or a real bidirectional graph.
 Explicitly not scoped or started - flagged here only so it is not lost, per
 Nitzan's own request.
+
+## From the room-picker/identity conversation, 2026-09-17
+
+Nitzan asked how identity actually works today (per-host store, matched
+across gatherings by name alone, `ContactDoc.claimedByUid` defined but never
+read or written) and sequenced the answer: UI fixes first (done this round -
+see DECISIONS.md, "the room picker and group details"), the identity layer
+second. These are that second half, not started:
+
+**Host-editable identity for a participant without their own device.**
+Nitzan asked for the host to be able to edit *other* participants' name and
+emoji, not just their own. `PlayerDoc`'s `hasDevice: boolean` already models
+"a participant added by name who holds no phone. The host acts for them" -
+but nothing sets it to `false` anywhere; no such participant can currently be
+added at all. This round built only the self-service half (a player edits
+their own name/emoji - `renamePlayer` in `room.ts`), deliberately: the
+`playerNames` uniqueness slot can only ever be claimed by `request.auth.uid`
+naming *themselves* (firestore.rules), so a host renaming someone else's row
+cannot go through that same guard without either skipping it (reopening the
+exact "two players, one name" bug fixed on 2026-09-16) or needing a
+rules change. The coherent shape is probably: a no-device player's `uid` is
+some host-owned placeholder rather than a real auth identity, and the name
+slot is claimed by the host on that player's behalf specifically because they
+have no auth session of their own to claim it with. Needs its own design
+pass before touching firestore.rules.
+
+**Upgrading an anonymous guest to a registered identity mid-gathering,
+without losing their place in the game.** Asked directly: "is it possible for
+a participant to sign in while playing, so their info gets saved and linked
+to them?" Answer given: yes, in principle - Firebase can link a Google
+credential onto an already-signed-in anonymous account without changing its
+uid, so nothing about the live round breaks. What still has no answer is the
+other half: contacts live under the *host's* private store, which the
+now-registered guest still cannot write to, so "linked to them" cannot mean
+"they can see their own facts" without a design decision about whether a
+person ever gets to see what a host has recorded about them at all - a
+question DESIGN has not addressed anywhere.
+
+**The host linking a currently-playing anonymous person to a previously-known
+character.** Asked directly, for the case matching-by-name cannot handle: a
+returning person who types a different name this time. Proposed shape,
+agreed as the right direction but not built: a screen listing the host's
+known contacts (from `useSavedGroups`/`ensureContacts`'s existing data) beside
+the players currently in the room, letting the host draw the connection by
+hand. This is the same underlying capability as the item above (something
+external assigning a `PlayerDoc` to a `ContactDoc`), so the two probably
+share one mechanism once designed together rather than being built twice.
+
+**Whether to require Google sign-in to play at all, closing all three gaps at
+once.** Asked and answered: no. It would not even fully close them - contacts
+stay per-host by design, so a stable identity alone does not remove the need
+for the host to link one - and the cost is real: WhatsApp's in-app browser on
+Android has historically blocked Google OAuth from an embedded WebView (see
+CLAUDE.md, "Open questions carried into later milestones" - Android is
+already untested for this exact reason), so requiring sign-in to play risks
+locking out half a room on the phone most likely to be in it. The chosen
+direction is host-driven linking (the item above) plus optional sign-in for
+whoever wants a saved identity, not a requirement to play.

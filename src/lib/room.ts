@@ -282,6 +282,46 @@ export async function leaveRoom(
   await updateDoc(doc(firestore, paths.player(sessionId, uid)), { leftAt: Date.now() })
 }
 
+/** Applies a chosen emoji to a player document that already exists - the
+ *  join-time counterpart to renamePlayer below, used right after joinRoom so
+ *  a first-time join can carry an emoji without joinRoom itself needing to
+ *  know about it (every existing caller and test of joinRoom stays valid).
+ *  Best-effort by design, like touchPresence: a failed cosmetic write must
+ *  not undo an otherwise successful join. */
+export async function setPlayerEmoji(
+  firestore: Firestore,
+  sessionId: string,
+  uid: string,
+  emoji: string | null,
+): Promise<void> {
+  await updateDoc(doc(firestore, paths.player(sessionId, uid)), { emoji })
+}
+
+/**
+ * Changes how the caller's own player document names them - the self-service
+ * half of DESIGN's "editable name and emoji". Only ever the caller's own
+ * document: firestore.rules lets a player update their own row freely, but
+ * the *name* half is gated by a second thing this function also does -
+ * claiming the new name in `playerNames`, the same slot joinRoom claims on
+ * first join (see PlayerNameDoc). Skipping that here would let a rename
+ * collide with someone already using the new name, reopening the exact
+ * ambiguity the slot exists to prevent.
+ *
+ * Renaming to the name already held is a no-op in reserveName (same uid holds
+ * the slot already), so calling this to change only the emoji costs nothing
+ * extra beyond one read.
+ */
+export async function renamePlayer(
+  firestore: Firestore,
+  sessionId: string,
+  uid: string,
+  name: string,
+  emoji: string | null,
+): Promise<void> {
+  await reserveName(firestore, sessionId, uid, name)
+  await updateDoc(doc(firestore, paths.player(sessionId, uid)), { name, emoji })
+}
+
 export async function touchPresence(
   firestore: Firestore,
   sessionId: string,

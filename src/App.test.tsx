@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import './i18n'
-import { useAuthUser } from './lib/auth'
+import { signOutUser, useAuthUser } from './lib/auth'
 
 vi.mock('./lib/auth', () => ({
   signInWithGoogle: vi.fn(),
@@ -36,6 +36,7 @@ vi.mock('./lib/room', () => ({
   joinRoom: (...args: unknown[]) => mockJoinRoom(...args),
   resolveRoomCode: (...args: unknown[]) => mockResolveRoomCode(...args),
   leaveRoom: (...args: unknown[]) => mockLeaveRoom(...args),
+  setPlayerEmoji: vi.fn().mockResolvedValue(undefined),
   useRoster: () => ({ players: [], error: null }),
   usePresenceHeartbeat: () => {},
   // These tests never leave the lobby, so a fixed 'lobby' phase is enough to
@@ -63,12 +64,38 @@ vi.mock('./lib/harvest', () => ({
 // this module. Mocked here rather than widening the `firebase/firestore` mock:
 // the third time in this project that adding one import broke a suite that had
 // no other connection to it (see CLAUDE.md, Known pitfalls).
+// A registered host's own default identity - see src/lib/profile.ts. Mocked
+// for the same reason ./lib/memory is: this suite has no real Firestore.
+const mockUserProfile = vi.fn()
+const mockSaveUserProfile = vi.fn()
+vi.mock('./lib/profile', () => ({
+  useUserProfile: () => mockUserProfile(),
+  saveUserProfile: (...args: unknown[]) => mockSaveUserProfile(...args) as unknown,
+}))
+
 const mockSavedGroups = vi.fn()
+const mockCreateGroup = vi.fn()
 vi.mock('./lib/memory', () => ({
   useSavedGroups: () => mockSavedGroups(),
+  createGroup: (...args: unknown[]) => mockCreateGroup(...args) as unknown,
+  // GroupDetails reaches for these; the landing screen only renders it once
+  // the host taps into a group, but the mock factory has to list every export
+  // its consumers import regardless (CLAUDE.md, Known pitfalls - this has now
+  // bitten three times).
+  useGroupMemory: () => ({
+    groupName: '',
+    members: [],
+    groupFacts: [],
+    loading: false,
+    error: null,
+  }),
+  deleteFact: vi.fn(),
+  deleteGroup: vi.fn(),
+  nameGroup: vi.fn(),
 }))
 
 const mockedUseAuthUser = vi.mocked(useAuthUser)
+const mockSignOutUser = vi.mocked(signOutUser)
 
 afterEach(() => {
   localStorage.clear()
@@ -78,6 +105,7 @@ afterEach(() => {
 
 beforeEach(() => {
   mockSavedGroups.mockReturnValue({ groups: [], loading: false, error: null })
+  mockUserProfile.mockReturnValue({ displayName: '', emoji: null, loading: false })
 })
 
 describe('app shell', () => {
@@ -168,9 +196,9 @@ describe('creating a room', () => {
     expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'host-uid', 'דוד')
   })
 
-  // Milestone 7: a second gathering with the same people continues their
-  // memory instead of starting a parallel copy of the same family.
-  it('offers the host a room for a group they already saved', async () => {
+  /** The signed-in host with one saved group - the state every room-picker
+   *  test below starts from. */
+  function signedInWithOneGroup() {
     mockedUseAuthUser.mockReturnValue({
       user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
       loading: false,
@@ -183,12 +211,37 @@ describe('creating a room', () => {
     })
     mockCreateRoom.mockResolvedValue({ sessionId: 'session-2', roomCode: '4321' })
     mockJoinRoom.mockResolvedValue(undefined)
+  }
+
+  // Milestone 7: a second gathering with the same people continues their
+  // memory instead of starting a parallel copy of the same family.
+  it('opens a room for the saved group the host selected', async () => {
+    signedInWithOneGroup()
 
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'המשפחה' }))
+    // Two steps, not one: picking the group only moves the selection. The
+    // first version made every group its own "open a room" button, so there
+    // was no way to see which gathering you were about to start.
+    fireEvent.click(await screen.findByRole('radio', { name: /המשפחה/ }))
+    expect(screen.getByRole('radio', { name: /המשפחה/ })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'פתיחת חדר' }))
 
     await waitFor(() => expect(mockCreateRoom).toHaveBeenCalledTimes(1))
     expect(mockCreateRoom.mock.calls[0][3]).toBe('group-1')
+  })
+
+  it('defaults to a new room, so a host who ignores the list gets no group', async () => {
+    signedInWithOneGroup()
+
+    render(<App />)
+    expect(await screen.findByRole('radio', { name: /חדר חדש/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'פתיחת חדר' }))
+
+    await waitFor(() => expect(mockCreateRoom).toHaveBeenCalledTimes(1))
+    expect(mockCreateRoom.mock.calls[0][3]).toBeNull()
   })
 
   it('opens a room for nobody in particular when the host has no saved groups', async () => {
@@ -201,11 +254,56 @@ describe('creating a room', () => {
     mockJoinRoom.mockResolvedValue(undefined)
 
     render(<App />)
-    expect(screen.queryByText('הקבוצות ששמרתם')).not.toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: 'פתיחת חדר' }))
 
     await waitFor(() => expect(mockCreateRoom).toHaveBeenCalledTimes(1))
     expect(mockCreateRoom.mock.calls[0][3]).toBeNull()
+  })
+
+  it('lets the host add a group before ever playing with those people', async () => {
+    signedInWithOneGroup()
+    mockCreateGroup.mockResolvedValue('group-new')
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '+ הוספת קבוצה' }))
+    fireEvent.change(screen.getByPlaceholderText('שם הקבוצה (למשל: המשפחה)'), {
+      target: { value: 'החברים' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'הוספה' }))
+
+    await waitFor(() => expect(mockCreateGroup).toHaveBeenCalledTimes(1))
+    expect(mockCreateGroup.mock.calls[0][2]).toBe('החברים')
+  })
+
+  // The details screen used to render from inside the saved-groups list, so
+  // these two stayed on screen underneath it - one of which signs the host out.
+  it('hides sign-out and the room-code field while a group is being inspected', async () => {
+    signedInWithOneGroup()
+
+    render(<App />)
+    // Proves the absence below is caused by the details screen rather than by
+    // a mistyped query: both controls are on the landing screen to begin with.
+    expect(await screen.findByRole('button', { name: 'התנתקות' })).toBeInTheDocument()
+    expect(screen.getByLabelText('יש לך קוד לחדר?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים' }))
+
+    expect(screen.queryByRole('button', { name: 'התנתקות' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('יש לך קוד לחדר?')).not.toBeInTheDocument()
+    // But opening a room for this very group stays available from here.
+    expect(screen.getByRole('button', { name: 'פתיחת חדר לקבוצה הזאת' })).toBeInTheDocument()
+  })
+
+  it('asks before signing the host out', async () => {
+    signedInWithOneGroup()
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'התנתקות' }))
+
+    expect(screen.getByText('בטוח שברצונך להתנתק?')).toBeInTheDocument()
+    expect(mockSignOutUser).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'כן, להתנתק' }))
+    expect(mockSignOutUser).toHaveBeenCalledTimes(1)
   })
 
   it('shows an error and stays put when opening a room fails', async () => {

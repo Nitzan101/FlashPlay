@@ -153,10 +153,37 @@ export async function ensureContacts(
   return contactIds
 }
 
+/**
+ * A group made before any gathering, from the host's own room picker.
+ *
+ * Every other group in this store is born as a side effect of an evening (see
+ * ensureContacts), which meant a host could only ever have groups for people
+ * they had already played with - there was no way to set one up in advance
+ * and no way to add one they had simply forgotten to name. It starts empty:
+ * the first gathering opened for it fills in its members.
+ *
+ * Returns the new group's id, so the caller can select it immediately.
+ */
+export async function createGroup(
+  firestore: Firestore,
+  hostUid: string,
+  name: string,
+): Promise<string> {
+  const groupId = crypto.randomUUID()
+  await step('create-group', () =>
+    setDoc(doc(firestore, paths.group(hostUid, groupId)), {
+      name,
+      memberContactIds: [],
+      createdAt: Date.now(),
+    } satisfies GroupDoc),
+  )
+  return groupId
+}
+
 /** The host's end-of-evening offer: keep this group, under this name, so the
  *  next gathering with these people continues their memory instead of
  *  starting a parallel one. Everything it names already exists - see
- *  ensureContacts. */
+ *  ensureContacts. Also how the details screen renames one. */
 export async function nameGroup(
   firestore: Firestore,
   hostUid: string,
@@ -405,9 +432,30 @@ export interface RememberedFact {
   who: string
 }
 
+/**
+ * One person in the group, with everything remembered about them.
+ *
+ * **The grouping is the point, not a convenience.** This used to come back as
+ * one flat list of "who: text" lines, which reads fine at three facts and
+ * becomes an undifferentiated wall at ten - the screen's whole job is
+ * answering "what do we know about each person", and a flat list makes that a
+ * scanning exercise. A member with nothing recorded is still listed, for the
+ * same reason: "we know nothing about דוד yet" is itself an answer, and
+ * dropping the row makes it look like דוד is not in the group at all.
+ */
+export interface RememberedMember {
+  contactId: string
+  name: string
+  facts: RememberedFact[]
+}
+
 export interface GroupMemory {
   groupName: string
-  facts: RememberedFact[]
+  members: RememberedMember[]
+  /** Facts about the group as a whole rather than about one person - a
+   *  separate drawer in the store (see FactDrawer), so a separate section on
+   *  screen rather than scattered among the people. */
+  groupFacts: RememberedFact[]
   loading: boolean
   error: string | null
 }
@@ -422,14 +470,15 @@ export interface GroupMemory {
 export function useGroupMemory(hostUid: string | null, groupId: string | null): GroupMemory {
   const [state, setState] = useState<GroupMemory>({
     groupName: '',
-    facts: [],
+    members: [],
+    groupFacts: [],
     loading: true,
     error: null,
   })
 
   useEffect(() => {
     if (!hostUid || !groupId) {
-      setState({ groupName: '', facts: [], loading: false, error: null })
+      setState({ groupName: '', members: [], groupFacts: [], loading: false, error: null })
       return
     }
     let cancelled = false
@@ -438,34 +487,41 @@ export function useGroupMemory(hostUid: string | null, groupId: string | null): 
       const groupSnap = await getDoc(doc(db, paths.group(uid, id)))
       const group = groupSnap.data() as GroupDoc | undefined
       const contactNames: Record<string, string> = {}
-      const facts: RememberedFact[] = []
+      const members: RememberedMember[] = []
 
       for (const contactId of group?.memberContactIds ?? []) {
         const contactSnap = await getDoc(doc(db, paths.contact(uid, contactId)))
         const contact = contactSnap.data() as ContactDoc | undefined
-        contactNames[contactId] = contact?.name ?? ''
+        const name = contact?.name ?? ''
+        contactNames[contactId] = name
         const contactFacts = await getDocs(collection(db, paths.contactFacts(uid, contactId)))
-        for (const factDoc of contactFacts.docs) {
-          facts.push({
+        members.push({
+          contactId,
+          name,
+          facts: contactFacts.docs.map((factDoc) => ({
             path: factDoc.ref.path,
             text: (factDoc.data() as FactDoc).text,
-            who: contactNames[contactId],
-          })
-        }
+            who: name,
+          })),
+        })
       }
+      // By name, so the list does not reshuffle between visits: member ids come
+      // back in whatever order the group document happens to hold them, which
+      // changes every time a gathering appends someone.
+      members.sort((a, b) => a.name.localeCompare(b.name, 'he'))
 
-      const groupFacts = await getDocs(collection(db, paths.groupFacts(uid, id)))
-      for (const factDoc of groupFacts.docs) {
+      const groupFactsSnap = await getDocs(collection(db, paths.groupFacts(uid, id)))
+      const groupFacts = groupFactsSnap.docs.map((factDoc) => {
         const fact = factDoc.data() as FactDoc
-        facts.push({
+        return {
           path: factDoc.ref.path,
           text: fact.text,
           who: contactNames[fact.authorContactId] ?? '',
-        })
-      }
+        }
+      })
 
       if (!cancelled) {
-        setState({ groupName: group?.name ?? '', facts, loading: false, error: null })
+        setState({ groupName: group?.name ?? '', members, groupFacts, loading: false, error: null })
       }
     }
 

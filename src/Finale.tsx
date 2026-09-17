@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import GroupMemory from './GroupMemory'
+import GroupDetails from './GroupDetails'
 import HostButton from './HostButton'
 import Scoreboard from './Scoreboard'
 import { db } from './lib/firebase'
@@ -88,8 +88,10 @@ export default function Finale({
   const groupKept = named || savedName !== ''
 
   if (showMemory) {
+    // No `onOpenRoom` here on purpose: a room is already open, and this is the
+    // screen that ends it.
     return (
-      <GroupMemory
+      <GroupDetails
         hostUid={hostUid}
         groupId={groupId ?? sessionId}
         onClose={() => setShowMemory(false)}

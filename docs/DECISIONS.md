@@ -1183,3 +1183,86 @@ Not done in this pass, intentionally: GroupMemory's fact list is minimally
 restyled (borders/text only, per the "small pass, not a rewrite" scope);
 richer visual treatment for individual screens (illustration, motion, confetti
 accents like the mockup's) is future work if wanted, not assumed.
+
+## The room picker and group details, 2026-09-17
+
+A further round of manual-walkthrough feedback, sequenced explicitly by
+Nitzan as "UI fixes first, identity second" (the identity half is in
+BACKLOG.md, "From the room-picker/identity conversation"). This entry covers
+the UI half, all built and verified this round.
+
+**The landing screen became a chooser, not a shelf of shortcuts.** The old
+`SavedGroups` list put every saved group's "open a room" button directly above
+a second, generic "open a room" button - two controls doing the same action
+for different targets, with nothing on screen naming which gathering a tap
+was about to start. `RoomPicker` (new) makes the selection a first-class,
+visible state (a radio group, "new room" selected by default) separate from
+the act of opening it - pick a row, see it marked, then tap once to open.
+Groups can also be created here, before ever playing with those people
+(`createGroup` in `memory.ts`) - every other group before this was born only
+as a side effect of an evening (`ensureContacts`), so there was no way to set
+one up in advance.
+
+**`GroupMemory` was renamed `GroupDetails` and restructured around people, not
+facts.** The screen used to be one flat "who: text" line per fact, legible at
+three facts and an undifferentiated wall at ten - and the question the screen
+exists to answer ("what do we know about each person") is inherently
+per-person. `useGroupMemory` now returns `members: RememberedMember[]` (each
+with its own `facts`) plus a separate `groupFacts` array, and the screen
+renders one card per person - including a person with nothing recorded yet,
+which says so ("טרם נשמר מידע") rather than silently omitting the row, since a
+missing row reads as "not in the group" rather than "nothing known yet". The
+screen also gained inline renaming (`nameGroup`, reused) and a per-fact delete
+confirmation - deleting a fact used to be one tap with no way back, the same
+class of problem the whole-group wipe had already been given a confirmation
+for.
+
+**The details screen now owns the landing page while it is open, instead of
+rendering inside the saved-groups list.** The old nesting left sign-out and
+the room-code field live underneath a group's details, so inspecting a
+group's memory sat one careless tap away from ending the session entirely.
+Mutation-checked: removing the `detailsOf` guard reddened exactly "hides
+sign-out and the room-code field while a group is being inspected" and
+nothing else.
+
+**Sign-out and leave-room both gained a confirm step, and leave-room a real
+control instead of a bare underlined link.** Both are one tap away from
+losing a live session; a confirmation was already the house style for delete
+actions (`deleteGroup`, `deleteFact`) and was simply missing here. The
+leave-room button's own restyle - a quiet outlined pill rather than plain
+underlined text - was asked for directly: "כפתור היציאה מהחדר לא הכי נחמד".
+
+**Editable identity, self-service only: a display name and one of twelve
+emoji.** `EMOJI_PALETTE` (`model.ts`) is a fixed set rather than a full emoji
+keyboard, matching "colourful and fun" rather than opening a search field for
+something nobody needs to search. Three places use it: a registered host's
+own default profile (`UserDoc.emoji`, new - `UserDoc` had existed unused since
+milestone 2), applied automatically when they open a room of their own; the
+guest join form; and a self-edit control in the lobby's own roster row
+(`renamePlayer` in `room.ts`). **Renaming has to re-claim the `playerNames`
+slot, not just overwrite the `name` field** - skipping that would silently
+reopen the exact "two players sharing a name" bug fixed on 2026-09-16, since
+the slot is what makes a display name structurally unique within a session.
+Mutation-checked: removing the `reserveName` call inside `renamePlayer`
+reddened exactly the two assertions checking that the new name is actually
+claimed, and nothing else. Editing *another* participant's identity was
+explicitly cut from this round - see BACKLOG.md for why it needs a rules-level
+design decision the self-service case does not.
+
+**A new emulator-backed test file needs registering in two configs, not
+one.** `profile.test.ts` (new, for `saveUserProfile`) was invisible to
+`npm run test:rules` until added to `vitest.rules.config.ts`'s hardcoded
+`include` list, and then broke plain `npm test` by running against a
+nonexistent emulator until added to `vite.config.ts`'s `exclude` list too -
+the two configs are two different allow/deny lists over the same directory,
+not one shared list. Worth checking both immediately whenever a new
+`*.test.ts` file needs the emulator, rather than being surprised by whichever
+one was missed.
+
+Evidence: `npm run build`, `npm test` (115, up from 107 - all new coverage,
+nothing pre-existing changed), `npm run test:rules` (190 assertions, up from
+186 - `room.test.ts` gained `renamePlayer`/`setPlayerEmoji` coverage,
+`memory.test.ts` gained `createGroup`, and the new `profile.test.ts`). No
+`firestore.rules` changes were needed anywhere in this round - `players`
+update and the whole `users/{uid}` subtree were already owner-writable
+broadly enough for everything built here.

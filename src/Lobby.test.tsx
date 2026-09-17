@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import Lobby from './Lobby'
 import './i18n'
 import type { PlayerDoc } from './lib/model'
@@ -13,8 +13,19 @@ vi.mock('./lib/harvest', () => ({
 }))
 
 let players: (PlayerDoc & { id: string })[] = []
+const mockRenamePlayer = vi.fn().mockResolvedValue(undefined)
 vi.mock('./lib/room', () => ({
   useRoster: () => ({ players, error: null }),
+  renamePlayer: (...args: unknown[]) => mockRenamePlayer(...args) as unknown,
+  // useAction() (used by the self-edit form) reaches for this - see
+  // CLAUDE.md, Known pitfalls: a mock factory must list every export its
+  // consumers import, even transitively.
+  errorCode: (error: unknown) =>
+    error && typeof error === 'object' && 'code' in error
+      ? (error as { code: string }).code
+      : error instanceof Error
+        ? error.message
+        : String(error),
 }))
 
 function player(id: string, overrides: Partial<PlayerDoc> = {}): PlayerDoc & { id: string } {
@@ -31,7 +42,56 @@ function player(id: string, overrides: Partial<PlayerDoc> = {}): PlayerDoc & { i
   }
 }
 
+afterEach(() => {
+  mockRenamePlayer.mockClear()
+})
+
 describe('Lobby', () => {
+  it('shows a player\'s chosen emoji next to their name', () => {
+    players = [player('host-uid', { name: 'דוד', emoji: '🦄' })]
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+
+    expect(screen.getByText('דוד').closest('li')).toHaveTextContent('🦄')
+  })
+
+  it('offers editing only on the current player\'s own row', () => {
+    players = [player('host-uid', { name: 'דוד' }), player('guest-uid', { name: 'שרה' })]
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+
+    const editButtons = screen.getAllByRole('button', { name: 'עריכת השם/הסמל שלי' })
+    expect(editButtons).toHaveLength(1)
+  })
+
+  it('renames the current player through renamePlayer, not any other row', async () => {
+    players = [player('host-uid', { name: 'דוד' }), player('guest-uid', { name: 'שרה' })]
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'עריכת השם/הסמל שלי' }))
+    const nameInput = screen.getByDisplayValue('דוד')
+    fireEvent.change(nameInput, { target: { value: 'דויד' } })
+    fireEvent.click(screen.getByRole('radio', { name: /🦄/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'שמירה' }))
+
+    await waitFor(() => expect(mockRenamePlayer).toHaveBeenCalledWith(
+      expect.anything(),
+      's1',
+      'host-uid',
+      'דויד',
+      '🦄',
+    ))
+  })
+
+  it('shows a taken-name error inline rather than a raw error code', async () => {
+    players = [player('host-uid', { name: 'דוד' })]
+    mockRenamePlayer.mockRejectedValueOnce(new Error('name-taken'))
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'עריכת השם/הסמל שלי' }))
+    fireEvent.click(screen.getByRole('button', { name: 'שמירה' }))
+
+    expect(await screen.findByText('השם הזה כבר תפוס בחדר הזה - אפשר לנסות שם אחר.')).toBeInTheDocument()
+  })
+
   // Found in Nitzan's own manual walkthrough: with a host and a guest in the
   // room, nothing on screen said which one was the host.
   it('labels the host in the roster', () => {

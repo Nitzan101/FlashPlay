@@ -18,7 +18,7 @@ import { doc, getDoc, getDocs, collection, setDoc, type Firestore } from 'fireba
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { createRoom, joinRoom, resolveRoomCode } from './room'
+import { createRoom, joinRoom, renamePlayer, resolveRoomCode, setPlayerEmoji } from './room'
 import { ROOM_CODE_WINDOW_MS, type RoomCodeDoc } from './model'
 
 const PROJECT_ID = 'demo-flashplay-room'
@@ -248,5 +248,58 @@ describe('joinRoom', () => {
       const roster = await getDocs(collection(asGuest(), `sessions/${sessionId}/players`))
       expect(roster.docs.map((d) => d.data().uid).sort()).toEqual([GUEST, OTHER_GUEST].sort())
     })
+  })
+})
+
+describe('setPlayerEmoji', () => {
+  it('applies an emoji to a player who has already joined', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'שרה')
+
+    await setPlayerEmoji(asGuest(), sessionId, GUEST, '🦄')
+
+    const own = await getDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`))
+    expect(own.data()?.emoji).toBe('🦄')
+  })
+})
+
+describe('renamePlayer', () => {
+  it('changes the caller\'s own name and emoji, and claims the new name', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'שרה')
+
+    await renamePlayer(asGuest(), sessionId, GUEST, 'שרון', '🔥')
+
+    const own = await getDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`))
+    expect(own.data()?.name).toBe('שרון')
+    expect(own.data()?.emoji).toBe('🔥')
+    // The new name is genuinely claimed, not just displayed - a second player
+    // trying to take it must be refused the same way joinRoom refuses it.
+    const nameSlot = await getDoc(doc(asGuest(), `sessions/${sessionId}/playerNames/שרון`))
+    expect(nameSlot.data()?.uid).toBe(GUEST)
+  })
+
+  it('refuses to rename into a name someone else in the session already holds', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'שרה')
+    await joinRoom(asOtherGuest(), sessionId, OTHER_GUEST, 'דנה')
+
+    await expect(renamePlayer(asOtherGuest(), sessionId, OTHER_GUEST, 'שרה', null)).rejects.toThrow(
+      'name-taken',
+    )
+    // Refused before the emoji half ever lands - a partial rename would leave
+    // the roster showing a name this player never actually secured.
+    const other = await getDoc(doc(asGuest(), `sessions/${sessionId}/players/${OTHER_GUEST}`))
+    expect(other.data()?.name).toBe('דנה')
+  })
+
+  it('changing only the emoji is a no-op on the name slot, not a re-claim', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'שרה')
+
+    await expect(renamePlayer(asGuest(), sessionId, GUEST, 'שרה', '🌟')).resolves.toBeUndefined()
+    const own = await getDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`))
+    expect(own.data()?.emoji).toBe('🌟')
+    expect(own.data()?.name).toBe('שרה')
   })
 })

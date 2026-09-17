@@ -27,8 +27,23 @@ export type FactDrawer = 'personal' | 'group'
 
 export interface UserDoc {
   displayName: string
+  /** The registered host's own default look, offered when they join a room of
+   *  their own (see EMOJI_PALETTE). Optional because every profile predates
+   *  this field - absent means "never chosen one", not "chose none". */
+  emoji?: string | null
   createdAt: number
 }
+
+/**
+ * A small, fixed set rather than a full emoji keyboard - DESIGN's own
+ * "colourful and fun" brief, applied to identity rather than to a text field
+ * nobody needs to search. Fixed also means a player's emoji is always one of
+ * these twelve, which keeps the roster legible instead of accumulating
+ * whatever flag or obscure glyph a phone's picker happens to offer first.
+ */
+export const EMOJI_PALETTE = [
+  '😊', '😎', '🦄', '🔥', '🎉', '🐙', '🌈', '⚡', '🍕', '🎲', '🦊', '🌟',
+] as const
 
 /** A person the owning user knows. Per-user by design: two hosts who know the
  *  same person hold separate records, which is what stops this becoming a
@@ -227,6 +242,15 @@ export interface PlayerDoc {
    * present again.
    */
   leftAt: number | null
+  /** Chosen from EMOJI_PALETTE, shown next to the name everywhere the name
+   *  appears. Optional for the same reason UserDoc.emoji is: every player
+   *  document written before this field existed has none, and that means
+   *  "never picked one", not "picked nothing" - the roster falls back to the
+   *  bare name. Self-service only for now: a player sets their own (join, or
+   *  a later edit in the lobby - see renamePlayer). The host editing another
+   *  participant's identity is deferred - see BACKLOG.md, "host-editable
+   *  identity for participants without their own device". */
+  emoji?: string | null
 }
 
 /**

@@ -5,9 +5,12 @@ import Gathering from './Gathering'
 import { signInAsGuest, signInWithGoogle, signOutUser, useAuthUser } from './lib/auth'
 import { db } from './lib/firebase'
 import { paths } from './lib/model'
-import { createRoom, joinRoom, leaveRoom, resolveRoomCode } from './lib/room'
-import { useSavedGroups } from './lib/memory'
-import GroupMemory from './GroupMemory'
+import { createRoom, joinRoom, leaveRoom, resolveRoomCode, setPlayerEmoji } from './lib/room'
+import { saveUserProfile, useUserProfile } from './lib/profile'
+import GroupDetails from './GroupDetails'
+import RoomPicker from './RoomPicker'
+import EmojiPicker from './EmojiPicker'
+import { useAction } from './lib/useAction'
 
 const STORAGE_KEY = 'flashplay.session'
 
@@ -102,6 +105,10 @@ const LOADING_TIMEOUT_MS = 8_000
 export default function App() {
   const { t } = useTranslation()
   const { user, loading: authLoading, redirectError } = useAuthUser()
+  // Anonymous users get nothing here - the store this reads is per registered
+  // account, and a guest's uid is a new one every gathering anyway (see
+  // matchName in memory.ts).
+  const profile = useUserProfile(user && !user.isAnonymous ? user.uid : null)
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' })
   const [busy, setBusy] = useState(false)
   const [nameInput, setNameInput] = useState('')
@@ -111,6 +118,15 @@ export default function App() {
   const [codeInput, setCodeInput] = useState('')
   const [codeBusy, setCodeBusy] = useState(false)
   const [codeError, setCodeError] = useState<string | null>(null)
+  // A group's details take over the whole landing screen rather than replacing
+  // part of it. They used to be rendered from inside the saved-groups list, so
+  // the sign-out button and the "got a room code?" field stayed visible
+  // underneath - two controls that have nothing to do with the group being
+  // inspected, one of which throws away the session.
+  const [detailsOf, setDetailsOf] = useState<string | null>(null)
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [joinEmoji, setJoinEmoji] = useState<string | null>(null)
 
   useEffect(() => {
     if (screen.kind !== 'loading') {
@@ -209,7 +225,19 @@ export default function App() {
       const { sessionId, roomCode } = await createRoom(db, user.uid, undefined, groupId)
       // Falls back to a generic label, never the email - the roster is
       // visible to every guest, and an email address has no business in it.
-      await joinRoom(db, sessionId, user.uid, user.displayName ?? t('hostFallbackName'))
+      await joinRoom(
+        db,
+        sessionId,
+        user.uid,
+        profile.displayName.trim() || user.displayName || t('hostFallbackName'),
+      )
+      if (profile.emoji) {
+        // Best-effort, same as touchPresence: a cosmetic write failing here
+        // must not undo an otherwise successful join.
+        await setPlayerEmoji(db, sessionId, user.uid, profile.emoji).catch((error: unknown) => {
+          console.error('[FlashPlay] applying the saved emoji failed:', error)
+        })
+      }
       storeSession({ sessionId, roomCode })
       setScreen({ kind: 'in-room', sessionId, roomCode, uid: user.uid, isHost: true })
     } catch (error) {
@@ -279,6 +307,11 @@ export default function App() {
     try {
       const uid = user?.uid ?? (await signInAsGuest())
       await joinRoom(db, sessionId, uid, name)
+      if (joinEmoji) {
+        await setPlayerEmoji(db, sessionId, uid, joinEmoji).catch((error: unknown) => {
+          console.error('[FlashPlay] applying the chosen emoji failed:', error)
+        })
+      }
       storeSession({ sessionId, roomCode })
       setScreen({ kind: 'in-room', sessionId, roomCode, uid, isHost: false })
     } catch (error) {
@@ -360,41 +393,98 @@ export default function App() {
         // permission-denied error instead of the plain "you need to sign in"
         // this screen means to say. Found in Nitzan's own manual walkthrough.
         (user && !user.isAnonymous ? (
-          <div className="flex w-full max-w-sm flex-col items-center gap-2">
-            <p>{t('greeting', { name: user.displayName ?? user.email })}</p>
-            {/* A gathering opened for a group the host has saved adds to that
-                group's memory at the end instead of starting a second copy of
-                the same family (milestone 7). */}
-            <SavedGroups hostUid={user.uid} busy={busy} onPick={handleCreateRoom} />
-            <button
-              type="button"
-              onClick={() => void handleCreateRoom(null)}
-              disabled={busy}
-              className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
-            >
-              {busy ? t('creatingRoom') : t('createRoom')}
-            </button>
-            <button
-              type="button"
-              onClick={() => void signOutUser()}
-              className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
-            >
-              {t('signOut')}
-            </button>
-
-            {/* A registered host can also be handed someone else's room code
-                (a different family's gathering) - the review that found this
-                fix's other gaps flagged that the code input had only been
-                added to the signed-out branch, leaving a signed-in host with
-                no way to use a typed code at all. */}
-            <JoinByCode
-              codeInput={codeInput}
-              setCodeInput={setCodeInput}
-              busy={codeBusy}
-              error={codeError}
-              onSubmit={() => void handleJoinByCode()}
+          detailsOf ? (
+            /* The details screen owns the landing page while it is open -
+               nothing else renders alongside it. */
+            <GroupDetails
+              hostUid={user.uid}
+              groupId={detailsOf}
+              onClose={() => setDetailsOf(null)}
+              onOpenRoom={() => void handleCreateRoom(detailsOf)}
+              onDeleted={() => setDetailsOf(null)}
             />
-          </div>
+          ) : (
+            <div className="flex w-full max-w-sm flex-col items-center gap-3">
+              <p>
+                {profile.emoji && <span className="me-1">{profile.emoji}</span>}
+                {t('greeting', { name: user.displayName ?? user.email })}
+              </p>
+
+              {editingProfile ? (
+                <ProfileEditor
+                  uid={user.uid}
+                  fallbackName={user.displayName ?? ''}
+                  profile={profile}
+                  onDone={() => setEditingProfile(false)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditingProfile(true)}
+                  className="cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+                >
+                  {t('editProfileButton')}
+                </button>
+              )}
+
+              {/* A gathering opened for a group the host has saved adds to that
+                  group's memory at the end instead of starting a second copy of
+                  the same family (milestone 7). */}
+              <RoomPicker
+                hostUid={user.uid}
+                busy={busy}
+                onOpenRoom={(groupId) => void handleCreateRoom(groupId)}
+                onShowDetails={setDetailsOf}
+              />
+
+              {/* A registered host can also be handed someone else's room code
+                  (a different family's gathering) - the review that found this
+                  fix's other gaps flagged that the code input had only been
+                  added to the signed-out branch, leaving a signed-in host with
+                  no way to use a typed code at all. */}
+              <JoinByCode
+                codeInput={codeInput}
+                setCodeInput={setCodeInput}
+                busy={codeBusy}
+                error={codeError}
+                onSubmit={() => void handleJoinByCode()}
+                bordered
+              />
+
+              {/* Signing out is not destructive, but it is one tap from
+                  losing a half-set-up evening and it sits under the same
+                  thumb as everything else here. */}
+              {confirmingSignOut ? (
+                <div className="flex w-full flex-col items-center gap-2 border-t border-line pt-4">
+                  <p className="text-sm">{t('signOutConfirm')}</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void signOutUser()}
+                      className="cursor-pointer rounded-xl border border-danger/50 px-4 py-2 text-sm text-danger"
+                    >
+                      {t('signOutYes')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingSignOut(false)}
+                      className="cursor-pointer rounded-xl px-4 py-2 text-sm text-muted"
+                    >
+                      {t('signOutNo')}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingSignOut(true)}
+                  className="cursor-pointer text-sm text-muted underline decoration-dotted underline-offset-4"
+                >
+                  {t('signOut')}
+                </button>
+              )}
+            </div>
+          )
         ) : (
           <div className="flex w-full max-w-sm flex-col items-center gap-4">
             <button
@@ -453,6 +543,7 @@ export default function App() {
               {nameError}
             </p>
           )}
+          <EmojiPicker value={joinEmoji} onChange={setJoinEmoji} label={t('pickEmojiLabel')} />
           <button
             type="submit"
             disabled={busy || !nameInput.trim()}
@@ -471,29 +562,35 @@ export default function App() {
             uid={screen.uid}
             isHost={screen.isHost}
           />
+          {/* Deliberately quiet, and deliberately not a bare underlined link:
+              leaving is a real action that deserves a real control, but it
+              must never compete with the host's game buttons for attention.
+              Asked for directly - "כפתור היציאה מהחדר לא הכי נחמד". */}
           {confirmingLeave ? (
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-muted">{t('leaveRoomConfirmQuestion')}</span>
-              <button
-                type="button"
-                onClick={() => void confirmLeaveRoom(screen.sessionId, screen.uid)}
-                className="cursor-pointer text-danger underline"
-              >
-                {t('leaveRoomConfirmYes')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmingLeave(false)}
-                className="cursor-pointer text-muted underline"
-              >
-                {t('leaveRoomConfirmNo')}
-              </button>
+            <div className="mt-2 flex w-full max-w-xs flex-col items-center gap-3 rounded-2xl border border-danger/40 bg-surface/80 p-4">
+              <p className="text-sm font-medium">{t('leaveRoomConfirmQuestion')}</p>
+              <div className="flex w-full items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void confirmLeaveRoom(screen.sessionId, screen.uid)}
+                  className="grow cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger"
+                >
+                  {t('leaveRoomConfirmYes')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingLeave(false)}
+                  className="grow cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
+                >
+                  {t('leaveRoomConfirmNo')}
+                </button>
+              </div>
             </div>
           ) : (
             <button
               type="button"
               onClick={() => setConfirmingLeave(true)}
-              className="cursor-pointer text-xs text-muted underline"
+              className="mt-2 cursor-pointer rounded-full border border-line px-4 py-1.5 text-xs text-muted"
             >
               {t('leaveRoom')}
             </button>
@@ -501,6 +598,86 @@ export default function App() {
         </>
       )}
     </main>
+  )
+}
+
+/**
+ * The registered host's own default name and emoji - saved once, offered on
+ * every future join (see handleCreateRoom, which applies `profile.emoji`
+ * without asking again). Google's own name is the fallback the field starts
+ * from, not a value this screen can lose: leaving the field untouched and
+ * saving keeps using it, since `saveUserProfile` writes exactly what is on
+ * screen.
+ */
+function ProfileEditor({
+  uid,
+  fallbackName,
+  profile,
+  onDone,
+}: {
+  uid: string
+  fallbackName: string
+  profile: { displayName: string; emoji: string | null }
+  onDone: () => void
+}) {
+  const { t } = useTranslation()
+  const [name, setName] = useState(profile.displayName || fallbackName)
+  const [emoji, setEmoji] = useState(profile.emoji)
+  const save = useAction()
+  const [saved, setSaved] = useState(false)
+
+  return (
+    <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 p-3">
+      <input
+        value={name}
+        onChange={(event) => {
+          setName(event.target.value)
+          setSaved(false)
+        }}
+        placeholder={t('profileNamePlaceholder')}
+        maxLength={40}
+        className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
+      />
+      <EmojiPicker
+        value={emoji}
+        onChange={(value) => {
+          setEmoji(value)
+          setSaved(false)
+        }}
+        label={t('pickEmojiLabel')}
+      />
+      <div className="flex w-full items-center gap-2">
+        <button
+          type="button"
+          disabled={save.busy || !name.trim()}
+          onClick={() =>
+            void save.run(async () => {
+              await saveUserProfile(db, uid, { displayName: name.trim(), emoji })
+              setSaved(true)
+            })
+          }
+          className="grow cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+        >
+          {save.busy ? t('savingProfile') : t('saveProfile')}
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          className="cursor-pointer rounded-xl px-3 py-2 text-sm text-muted"
+        >
+          {t('addGroupCancel')}
+        </button>
+      </div>
+      {saved && <p className="text-xs text-accent-3">{t('profileSaved')}</p>}
+      {save.error && (
+        <p role="alert" className="text-xs text-danger">
+          {t('profileSaveError')}{' '}
+          <span dir="ltr" className="font-mono">
+            ({save.error})
+          </span>
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -564,75 +741,3 @@ function JoinByCode({
   )
 }
 
-/**
- * The host's saved groups, offered before "open a room" so that a second
- * gathering with the same people continues their memory rather than starting
- * a parallel one. Silent when there are none - a first-time host should not be
- * shown an empty shelf.
- *
- * Each row also opens that group's memory, which is DESIGN's "visible 'what we
- * remember about this group' screen with one-tap deletion, open to the group's
- * owner only". Reaching it used to require running an entire gathering and
- * ending it, which is not what "visible" means.
- */
-function SavedGroups({
-  hostUid,
-  busy,
-  onPick,
-}: {
-  hostUid: string
-  busy: boolean
-  onPick: (groupId: string) => void
-}) {
-  const { t } = useTranslation()
-  const { groups, error } = useSavedGroups(hostUid)
-  const [showingMemoryOf, setShowingMemoryOf] = useState<string | null>(null)
-
-  if (showingMemoryOf) {
-    return (
-      <GroupMemory
-        hostUid={hostUid}
-        groupId={showingMemoryOf}
-        onClose={() => setShowingMemoryOf(null)}
-      />
-    )
-  }
-
-  if (error) {
-    return (
-      <p role="alert" className="text-xs text-danger">
-        {t('savedGroupsLoadError')}{' '}
-        <span dir="ltr" className="font-mono">
-          ({error})
-        </span>
-      </p>
-    )
-  }
-  if (groups.length === 0) return null
-
-  return (
-    <div className="flex w-full flex-col items-center gap-2">
-      <p className="text-sm text-muted">{t('savedGroupsTitle')}</p>
-      {groups.map((group) => (
-        <div key={group.id} className="flex w-full items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onPick(group.id)}
-            disabled={busy}
-            className="grow cursor-pointer rounded-xl border border-accent-2 px-4 py-3 text-accent-2 disabled:opacity-50"
-          >
-            {group.name}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowingMemoryOf(group.id)}
-            className="shrink-0 cursor-pointer rounded-xl border border-line px-3 py-3 text-sm text-muted"
-          >
-            {t('viewMemory')}
-          </button>
-        </div>
-      ))}
-      <p className="text-xs text-muted">{t('savedGroupsHint')}</p>
-    </div>
-  )
-}
