@@ -197,6 +197,10 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
           <p className="text-xs text-neutral-500">
             {myVote ? t('changeVoteHint') : t('everyoneVotesHint')}
           </p>
+          {/* Game 2 already explained its scoring during voting
+              (majorityScoringHint) - this game had a rule and no explanation
+              of it anywhere on screen. Asked for directly, 2026-09-16. */}
+          <p className="text-xs text-neutral-500">{t('firstGameScoringHint')}</p>
           {voter.slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
           {voter.error && (
             <p role="alert" className="text-xs text-red-600">
@@ -232,6 +236,10 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
               {t('votedForLine', { voter: nameOf(voterId), target: nameOf(votedForPlayerId) })}
             </p>
           ))}
+          {/* Repeated here on purpose: the hint shown during voting is gone by
+              now, and this is the screen where the points actually appear -
+              same reasoning as SecondGame.tsx's majorityScoringReminder. */}
+          <p className="text-xs text-neutral-500">{t('firstGameScoringReminder')}</p>
           {Object.entries(awarded).map(([playerId, points]) => (
             <p key={playerId} className="text-sm font-medium">
               {t('awardedLine', { name: nameOf(playerId), points })}

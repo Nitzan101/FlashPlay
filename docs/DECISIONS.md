@@ -1127,6 +1127,15 @@ flag), `playerNames`' self-uid requirement, its never-updatable property,
 rule allowing it), the inline "name taken" UI path, and the minimum-player
 gate on starting a game.
 
+**One more, asked for directly rather than found**: "who said that" had a
+real scoring rule and explained it nowhere on screen, while "most likely to"
+(built after it, copied from it) explains its own rule twice - once during
+voting, once at the reveal. Nitzan asked directly after a confusing reveal:
+"הניקוד הוא לפי מי שהצביע, נכון? ...שזה יותר ברור ונעים לראות." Given the
+same two-hint treatment as the second game (`firstGameScoringHint` during
+voting, `firstGameScoringReminder` at the reveal, both in `src/i18n.ts`) -
+purely additive, no logic changed, `npm test` 107 tests.
+
 **The general lesson for this whole session**: every defect since the very
 first "no way to leave a room" report has been found by a real person doing a
 real thing the four-lens review and the suite were never going to think to

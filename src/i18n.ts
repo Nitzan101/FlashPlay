@@ -95,6 +95,13 @@ export const resources = {
       votesCastOf: 'הצביעו {{count}} מתוך {{total}}',
       everyoneVotesHint: 'גם מי שכתב/ה מצביע/ה, כדי לא להסגיר את עצמו/ה',
       changeVoteHint: 'אפשר לשנות עד לחשיפה',
+      // Game 2 already had a during-voting hint and a during-reveal reminder
+      // (majorityScoringHint/majorityScoringReminder below) - game 1 had
+      // neither, even though it is the one with an actual scoring rule to
+      // explain. Asked for directly: "הניקוד הוא לפי מי שהצביע... שזה יותר
+      // ברור ונעים לראות."
+      firstGameScoringHint: 'ניחוש נכון שווה 2 נקודות - ומי שכתב/ה מרוויח/ה נקודה על כל מי שהוטעה',
+      firstGameScoringReminder: '2 נקודות לכל ניחוש נכון, נקודה לכותב/ת על כל מי שהוטעה',
       revealRound: 'חשיפה',
       revealingRound: 'חושפים...',
       authorWas: 'זה נכתב על ידי {{name}}',

@@ -161,6 +161,33 @@ describe('Rounds', () => {
     expect(mockCastVote.mock.calls[1][4]).toBe(PLAYER)
   })
 
+  // Asked for directly, 2026-09-16: game 2 already explained its scoring
+  // during voting and again at the reveal; game 1 had a rule and never said
+  // it anywhere on screen.
+  it('explains the scoring rule during voting', async () => {
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('voting')], error: null })
+    renderRounds(false)
+
+    expect(
+      await screen.findByText('ניחוש נכון שווה 2 נקודות - ומי שכתב/ה מרוויח/ה נקודה על כל מי שהוטעה'),
+    ).toBeInTheDocument()
+  })
+
+  it('repeats the scoring rule at the reveal, next to the points it just paid', () => {
+    mockRounds.mockReturnValue({
+      loading: false,
+      rounds: [round('revealed', { awarded: { [HOST]: 2 } })],
+      error: null,
+    })
+    mockAuthor.mockReturnValue({ authorPlayerId: PLAYER, error: null })
+
+    renderRounds(true, { [HOST]: 2 })
+
+    expect(
+      screen.getByText('2 נקודות לכל ניחוש נכון, נקודה לכותב/ת על כל מי שהוטעה'),
+    ).toBeInTheDocument()
+  })
+
   it('resumes a vote already cast, so a reload shows what was chosen', async () => {
     mockRounds.mockReturnValue({ loading: false, rounds: [round('voting')], error: null })
     mockGetMyVote.mockResolvedValue(HOST)
