@@ -62,6 +62,47 @@ export interface GroupDoc {
 }
 
 /**
+ * A one-time, hand-off copy of a saved group, so one host can give another
+ * everything they know about a group - asked for directly: "לשלוח חדר לאדם
+ * אחר כך שכשיפתח אותו הוא יישמר אצלו במשתמש עם מידע זהה... זה לא מסונכרן ואם
+ * יהיו שינויים בהמשך כל אחד ימשיך בשלו."
+ *
+ * **A copy, never a link.** The two private stores stay completely separate
+ * afterwards - which is the only reason this fits the architecture at all:
+ * `users/{uid}` is owner-only in both directions (firestore.rules), so
+ * neither host can read or write the other's store, and a *live* shared group
+ * would need exactly the cross-account access DESIGN rules out. Staging the
+ * payload here, in its own top-level collection, is what lets each side touch
+ * only their own data.
+ *
+ * **Bearer-token, like a join link.** Its id is an unguessable
+ * `crypto.randomUUID()`, `get`-only and never listable, so a share can be
+ * handed to someone but not discovered - and it expires
+ * (`GROUP_SHARE_WINDOW_MS`), so a link forwarded into a chat months ago
+ * stops working.
+ *
+ * **Facts travel as plain text, deliberately.** `useCount` and `sessionId` on
+ * the sender's own `FactDoc`s point at *their* gatherings and mean nothing in
+ * the recipient's account; carrying them over would be worse than dropping
+ * them. What crosses is what a person would actually recognise: the group's
+ * name, who is in it, and what is remembered about each of them.
+ */
+export interface GroupShareDoc {
+  fromUid: string
+  groupName: string
+  contacts: { name: string; facts: string[] }[]
+  groupFacts: string[]
+  createdAt: number
+  expiresAt: number
+}
+
+/** How long a share link stays usable. Far longer than a room code's twelve
+ *  hours - this is something a person forwards and the other side opens when
+ *  they get round to it - but not forever, so a link that leaks out of a chat
+ *  eventually stops being a way into a family's memory. */
+export const GROUP_SHARE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
  * The host's own answer to "how did that go", recorded once per gathering -
  * DESIGN: "outcome feedback after a gathering - did it work, did it die, how
  * many were you - is in the first version, because it is the asset no
@@ -200,7 +241,29 @@ export interface SessionDoc {
    * reclaimed on its own - see `RoomCodeDoc` and `ROOM_CODE_WINDOW_MS`.
    */
   roomCode: string
+  /**
+   * Whoever currently runs the room's controls - transferable, unlike
+   * `originalHostUid` below. Everything that gates a UI *action* (starting a
+   * game, opening voting, revealing, ending the evening) checks this field,
+   * via `isHost()` in firestore.rules and the live `session.hostUid === uid`
+   * check in `Gathering.tsx`.
+   */
   hostUid: string
+  /**
+   * Whoever opened the room, immutable for the life of the session - see
+   * firestore.rules, the `sessions` update rule. This, not `hostUid`, is what
+   * every write into the private store (`ensureContacts`, `writeFactsForGame`,
+   * `writeProfileFacts`, and `GroupDetails`'s own reads) keys off, so a room
+   * handed to someone else mid-evening (see `transferHost` in `room.ts`)
+   * still banks everything into the account that actually opened it - not
+   * into whoever happened to be holding the controls when the evening ended.
+   *
+   * Optional only because every session created before this field existed has
+   * none - readers fall back to `hostUid` (`session.originalHostUid ??
+   * session.hostUid`), which is exactly correct for a session that has never
+   * been transferred.
+   */
+  originalHostUid?: string
   /** Null at a first gathering, before the group has been saved. */
   groupId: string | null
   phase: SessionPhase
@@ -653,6 +716,10 @@ export const paths = {
 
   roomCodes: () => `roomCodes`,
   roomCode: (code: string) => `roomCodes/${code}`,
+
+  // No collection-level helper on purpose: a share is `get`-only by its
+  // unguessable id, never listed - see GroupShareDoc.
+  groupShare: (shareId: string) => `groupShares/${shareId}`,
 
   players: (sessionId: string) => `sessions/${sessionId}/players`,
   player: (sessionId: string, playerId: string) =>

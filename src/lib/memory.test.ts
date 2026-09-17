@@ -33,8 +33,11 @@ import {
   deleteFact,
   deleteGroup,
   ensureContacts,
+  importSharedGroup,
+  linkPlayerToContact,
   matchName,
   nameGroup,
+  shareGroup,
   recordFeedback,
   writeFactsForGame,
   writeProfileFacts,
@@ -54,6 +57,7 @@ const PROJECT_ID = 'demo-flashplay-memory'
 const SESSION = 'session1'
 const GAME = 'game1'
 const HOST = 'host-uid'
+const OTHER_HOST = 'other-host-uid'
 const PLAYER = 'player-uid'
 const PROMPT = HARVEST_PROMPTS[0].id
 
@@ -141,11 +145,70 @@ const asPlayer = () =>
   testEnv
     .authenticatedContext(PLAYER, { firebase: { sign_in_provider: 'anonymous' } })
     .firestore() as unknown as Firestore
+/** A second registered host, for the share/import handover - a share is only
+ *  meaningful between two separate accounts. */
+const asOtherHost = () =>
+  testEnv
+    .authenticatedContext(OTHER_HOST, { firebase: { sign_in_provider: 'google.com' } })
+    .firestore() as unknown as Firestore
 
 const roster = [
   { id: HOST, name: 'Host' },
   { id: PLAYER, name: 'דוד' },
 ]
+
+// The manual override for exactly what matchName() cannot do: a returning
+// person who typed a different name this time - see LinkPlayers.tsx.
+describe('linkPlayerToContact', () => {
+  it('records the link on the session, without disturbing anyone else’s', async () => {
+    const first = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+
+    await linkPlayerToContact(asHost(), SESSION, 'someone-new', first[PLAYER])
+
+    const session = (await getDoc(doc(asHost(), paths.session(SESSION)))).data() as SessionDoc
+    expect(session.contactIds['someone-new']).toBe(first[PLAYER])
+    expect(session.contactIds[HOST]).toBe(first[HOST])
+  })
+
+  // The whole point: without this, ensureContacts' next pass - which runs at
+  // the end of every game - would recompute the map purely by name and throw
+  // the host's correction away.
+  it('survives the next ensureContacts pass, instead of being overwritten by name-matching', async () => {
+    const first = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    const davidsContact = first[PLAYER]
+
+    // Same person, back under a new anonymous uid and a name that matches
+    // nothing the group knows - so name-matching alone would mint them a
+    // brand-new contact and start their memory over.
+    const returning = [{ id: 'new-uid', name: 'Ella' }]
+    await linkPlayerToContact(asHost(), SESSION, 'new-uid', davidsContact)
+
+    const after = await ensureContacts(asHost(), HOST, SESSION, returning, SESSION)
+
+    expect(after['new-uid']).toBe(davidsContact)
+  })
+
+  it('still gives an unlinked, unmatched player their own fresh contact', async () => {
+    await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+
+    const after = await ensureContacts(
+      asHost(),
+      HOST,
+      SESSION,
+      [{ id: 'stranger-uid', name: 'מישהו חדש לגמרי' }],
+      SESSION,
+    )
+
+    expect(after['stranger-uid']).toBeDefined()
+    expect(Object.values(after)).toHaveLength(1)
+  })
+
+  it('refuses a guest linking players to contacts', async () => {
+    await expect(
+      linkPlayerToContact(asPlayer(), SESSION, PLAYER, 'whatever-contact'),
+    ).rejects.toThrow()
+  })
+})
 
 describe('createGroup', () => {
   // The room picker's own use case: a group made before any gathering, so it
@@ -396,6 +459,96 @@ describe('writeProfileFacts', () => {
       collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
     )
     expect(facts.docs[0].data().text).toBe('שאלה מותאמת: תשובה')
+  })
+})
+
+// Handing a whole saved group to a different host: a one-time copy staged in
+// `groupShares`, because neither account can reach into the other's store.
+describe('shareGroup and importSharedGroup', () => {
+  it("copies the group, its people and their facts into the other host's own store", async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await addManualFact(asHost(), HOST, contactIds[PLAYER], 'אוהב פיצה אננס')
+    await addManualGroupFact(asHost(), HOST, SESSION, 'תמיד מאחרים')
+
+    const shareId = await shareGroup(asHost(), HOST, SESSION)
+    const newGroupId = await importSharedGroup(asOtherHost(), OTHER_HOST, shareId)
+
+    const group = (
+      await getDoc(doc(asOtherHost(), paths.group(OTHER_HOST, newGroupId)))
+    ).data() as GroupDoc
+    expect(group.name).toBe('המשפחה')
+    expect(group.memberContactIds).toHaveLength(roster.length)
+
+    const names: string[] = []
+    const facts: string[] = []
+    for (const contactId of group.memberContactIds) {
+      const contact = (
+        await getDoc(doc(asOtherHost(), paths.contact(OTHER_HOST, contactId)))
+      ).data() as ContactDoc
+      names.push(contact.name)
+      const contactFacts = await getDocs(
+        collection(asOtherHost(), paths.contactFacts(OTHER_HOST, contactId)),
+      )
+      facts.push(...contactFacts.docs.map((d) => (d.data() as FactDoc).text))
+    }
+    expect(names.sort()).toEqual(['Host', 'דוד'])
+    expect(facts).toContain('אוהב פיצה אננס')
+
+    const groupFacts = await getDocs(
+      collection(asOtherHost(), paths.groupFacts(OTHER_HOST, newGroupId)),
+    )
+    expect(groupFacts.docs.map((d) => (d.data() as FactDoc).text)).toEqual(['תמיד מאחרים'])
+  })
+
+  // The headline promise: a copy, not a link. Whatever either side does
+  // afterwards must not reach the other.
+  it('leaves the two copies completely independent afterwards', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    const shareId = await shareGroup(asHost(), HOST, SESSION)
+    const newGroupId = await importSharedGroup(asOtherHost(), OTHER_HOST, shareId)
+
+    // The sender adds something new after sharing.
+    await addManualFact(asHost(), HOST, contactIds[PLAYER], 'נוסף אחרי השיתוף')
+
+    const imported = (
+      await getDoc(doc(asOtherHost(), paths.group(OTHER_HOST, newGroupId)))
+    ).data() as GroupDoc
+    const allImportedFacts: string[] = []
+    for (const contactId of imported.memberContactIds) {
+      const contactFacts = await getDocs(
+        collection(asOtherHost(), paths.contactFacts(OTHER_HOST, contactId)),
+      )
+      allImportedFacts.push(...contactFacts.docs.map((d) => (d.data() as FactDoc).text))
+    }
+    expect(allImportedFacts).not.toContain('נוסף אחרי השיתוף')
+    // And the new copy uses its own contact ids, so sharing the same group
+    // twice - or back again - can never merge two accounts' records.
+    expect(imported.memberContactIds).not.toContain(contactIds[PLAYER])
+  })
+
+  it('refuses to share a group the caller does not own', async () => {
+    await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await expect(shareGroup(asOtherHost(), HOST, SESSION)).rejects.toThrow()
+  })
+
+  it('refuses an expired share', async () => {
+    await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    const shareId = await shareGroup(asHost(), HOST, SESSION)
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), paths.groupShare(shareId)), {
+        expiresAt: Date.now() - 1000,
+      })
+    })
+
+    await expect(importSharedGroup(asOtherHost(), OTHER_HOST, shareId)).rejects.toThrow(
+      'share-expired',
+    )
+  })
+
+  it('refuses importing a share that does not exist', async () => {
+    await expect(
+      importSharedGroup(asOtherHost(), OTHER_HOST, 'no-such-share'),
+    ).rejects.toThrow('share-not-found')
   })
 })
 

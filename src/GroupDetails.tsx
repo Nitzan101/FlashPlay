@@ -9,6 +9,7 @@ import {
   deleteFact,
   deleteGroup,
   nameGroup,
+  shareGroup,
   useGroupMemory,
   type RememberedFact,
 } from './lib/memory'
@@ -61,11 +62,14 @@ export default function GroupDetails({
   const remove = useAction()
   const rename = useAction()
   const addFact = useAction()
+  const share = useAction()
   // Which person's (or the group's, keyed '') add-a-fact box is open - at
   // most one at a time, so opening a new one does not leave a half-typed note
   // behind in another.
   const [addingTo, setAddingTo] = useState<string | null>(null)
   const [factInput, setFactInput] = useState('')
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
   const [deleted, setDeleted] = useState<string[]>([])
   // Which row is being deleted, so one slow delete does not grey out every
   // other row's button with no explanation.
@@ -280,6 +284,59 @@ export default function GroupDetails({
             ({addFact.error})
           </span>
         </p>
+      )}
+
+      {/* Handing the whole group to another host - a one-time copy, never a
+          live link, so both sides carry on independently afterwards. See
+          GroupShareDoc in model.ts for why it works this way. */}
+      {!wiped && !loading && (
+        <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 p-3">
+          {shareUrl ? (
+            <>
+              <p className="text-start text-xs text-muted">{t('shareGroupReady')}</p>
+              <code
+                dir="ltr"
+                className="w-full break-all rounded-xl border border-line bg-surface px-3 py-2 text-center text-xs text-ink select-all"
+              >
+                {shareUrl}
+              </code>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(shareUrl)
+                    .then(() => setShareCopied(true))
+                    .catch(() => setShareCopied(false))
+                }}
+                className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2"
+              >
+                {shareCopied ? t('linkCopied') : t('copyLink')}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={share.busy}
+              onClick={() =>
+                void share.run(async () => {
+                  const shareId = await shareGroup(db, hostUid, groupId)
+                  setShareUrl(`${window.location.origin}/share/${shareId}`)
+                })
+              }
+              className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-sm text-accent-2 disabled:opacity-40"
+            >
+              {share.busy ? t('sharingGroup') : t('shareGroupButton')}
+            </button>
+          )}
+          {share.error && (
+            <p role="alert" className="text-xs text-danger">
+              {t('shareGroupError')}{' '}
+              <span dir="ltr" className="font-mono">
+                ({share.error})
+              </span>
+            </p>
+          )}
+        </div>
       )}
 
       {/* Deleting the group takes its facts and its contacts with it -

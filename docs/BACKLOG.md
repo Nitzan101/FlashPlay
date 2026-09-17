@@ -489,3 +489,31 @@ already untested for this exact reason), so requiring sign-in to play risks
 locking out half a room on the phone most likely to be in it. The chosen
 direction is host-driven linking (the item above) plus optional sign-in for
 whoever wants a saved identity, not a requirement to play.
+
+
+## Still deferred after the 2026-09-17 build-out, and why
+
+Two of the three identity items above were built (host-driven linking, and
+the room/group hand-over work - see DECISIONS.md, "Handing a room over, and
+handing a group over"). These two were not, deliberately, because each needs
+a decision rather than an implementation:
+
+**A participant who holds no phone, whose identity the host edits for them.**
+`PlayerDoc.hasDevice` still models it and nothing still sets it to `false`.
+Building it means inventing a host-owned placeholder identity - a player
+document whose uid belongs to nobody, that the host writes on behalf of - and
+that is a new *kind* of subject in the security rules, not a new screen. The
+`playerNames` uniqueness slot can only be claimed by `request.auth.uid`
+naming themselves, so a host claiming a name for someone else needs a
+deliberate carve-out, and a carve-out in the one rule that stops two people
+sharing a name is exactly the sort of thing that should not be added in a
+hurry. Unblocked by nothing but a design pass.
+
+**Whether a person ever gets to see what a host has recorded about them.**
+This is the real blocker behind "sign in mid-game and have your information
+follow you", and behind offering a returning player their own past answers as
+a starting point. DESIGN has never addressed it, and it is a values question
+before it is a technical one: the entire private store exists on the premise
+that what a host remembers about their guests is *the host's*, and a guest
+reading it - even only their own row - is a different product promise than
+the one currently made. Left alone on purpose until it is decided out loud.

@@ -18,7 +18,14 @@ import { doc, getDoc, getDocs, collection, setDoc, type Firestore } from 'fireba
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { createRoom, joinRoom, renamePlayer, resolveRoomCode, setPlayerEmoji } from './room'
+import {
+  createRoom,
+  joinRoom,
+  renamePlayer,
+  resolveRoomCode,
+  setPlayerEmoji,
+  transferHost,
+} from './room'
 import { ROOM_CODE_WINDOW_MS, type RoomCodeDoc } from './model'
 
 const PROJECT_ID = 'demo-flashplay-room'
@@ -313,5 +320,56 @@ describe('renamePlayer', () => {
     const own = await getDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`))
     expect(own.data()?.emoji).toBe('🌟')
     expect(own.data()?.name).toBe('שרה')
+  })
+})
+
+describe('transferHost', () => {
+  it("moves hostUid to the target, leaving originalHostUid pointing at whoever opened the room", async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'שרה')
+
+    await transferHost(asHost(), sessionId, GUEST)
+
+    const session = await getDoc(doc(asGuest(), `sessions/${sessionId}`))
+    expect(session.data()?.hostUid).toBe(GUEST)
+    expect(session.data()?.originalHostUid).toBe(HOST)
+  })
+
+  // The actual point of the field split: control moves, but the new host
+  // still cannot write into the room's true owner's private store - only
+  // that owner's own uid ever can (firestore.rules, users/{uid}).
+  it("does not let the new active host write into the true owner's private store", async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'שרה')
+    await transferHost(asHost(), sessionId, GUEST)
+
+    await expect(
+      setDoc(doc(asGuest(), `users/${HOST}/contacts/some-contact`), {
+        name: 'x',
+        claimedByUid: null,
+        createdAt: 0,
+      }),
+    ).rejects.toThrow()
+  })
+
+  it('lets the new active host run the controls, e.g. transferring again', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+    // HOST also has to actually join as a player - createRoom only creates
+    // the session document, the same as the real app's own flow (App.tsx
+    // calls joinRoom separately right after) - otherwise HOST is not a valid
+    // transfer target at all, by the same existence check this block proves.
+    await joinRoom(asHost(), sessionId, HOST, 'המארח')
+    await joinRoom(asGuest(), sessionId, GUEST, 'שרה')
+    await transferHost(asHost(), sessionId, GUEST)
+
+    await expect(transferHost(asGuest(), sessionId, HOST)).resolves.toBeUndefined()
+  })
+
+  it('refuses a transfer initiated by the old host after they are no longer the active one', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'שרה')
+    await transferHost(asHost(), sessionId, GUEST)
+
+    await expect(transferHost(asHost(), sessionId, HOST)).rejects.toThrow()
   })
 })

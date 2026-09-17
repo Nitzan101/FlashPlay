@@ -240,6 +240,44 @@ export const resources = {
       addFactPlaceholder: 'מה כדאי לזכור?',
       addFactSave: 'שמירה',
       addFactError: 'אי אפשר לשמור כרגע.',
+
+      // --- host leave flow: close the room or hand it to someone else ---
+      leaveRoomHostQuestion: 'את/ה המארח/ת - מה לעשות עם החדר?',
+      closeRoomForEveryone: 'סגירת החדר לכולם',
+      transferHostOption: 'העברת הניהול למישהו אחר',
+      closeRoomConfirm: 'לסגור את החדר לכולם? הערב יסתיים, אבל כל המידע שנאסף יישמר.',
+      closeRoomYes: 'כן, לסגור',
+      closingRoom: 'סוגרים...',
+      closeRoomError: 'אי אפשר לסגור את החדר כרגע.',
+      pickTransferTarget: 'למי להעביר את הניהול?',
+      noOtherPlayersToTransfer: 'אין עוד משתתפים בחדר להעביר אליהם',
+      confirmTransferTo: 'להעביר את הניהול ל{{name}}?',
+      transferLeaveWarning:
+        'אם תעבירו ותצאו, המידע מהערב הזה לא יישמר אצלכם אלא אם תישארו בחדר עד סופו',
+      transferAndLeave: 'העברה ויציאה',
+      transferAndStay: 'העברה והישארות',
+      transferringHost: 'מעבירים...',
+      transferError: 'אי אפשר להעביר כרגע.',
+      backToOptions: 'חזרה',
+
+      // --- host links a returning player to someone the group already knows ---
+      linkPlayersTitle: 'מישהו כאן שכבר מוכר לקבוצה?',
+      linkPlayersHint:
+        'אם מישהו נרשם הפעם בשם אחר, אפשר לקשר אותו למי שהקבוצה כבר מכירה כדי שהמידע יישמר עליו ולא על מישהו חדש',
+      linkPlayerError: 'אי אפשר לקשר כרגע.',
+
+      // --- handing a saved group to another host ---
+      shareGroupButton: 'שיתוף הקבוצה עם מישהו',
+      sharingGroup: 'מכינים...',
+      shareGroupReady: 'הקישור מוכן - מי שיפתח אותו יקבל עותק משלו של הקבוצה',
+      shareGroupError: 'אי אפשר לשתף כרגע.',
+      sharedGroupOffer: 'שיתפו איתך קבוצה. לשמור עותק אצלך?',
+      importSharedGroup: 'שמירת הקבוצה אצלי',
+      importingSharedGroup: 'שומרים...',
+      sharedGroupImported: 'הקבוצה נשמרה אצלך - מכאן היא שלך לגמרי',
+      sharedGroupGone: 'הקישור הזה כבר לא בתוקף. אפשר לבקש קישור חדש.',
+      importSharedGroupError: 'אי אפשר לשמור את הקבוצה כרגע.',
+      shareNeedsSignIn: 'שיתפו איתך קבוצה - צריך להתחבר כדי לשמור אותה',
       forgetGroup: 'למחוק הכל על הקבוצה',
       forgetGroupConfirm: 'למחוק את כל מה שאנחנו זוכרים על הקבוצה הזאת?',
       forgetGroupYes: 'כן, למחוק',

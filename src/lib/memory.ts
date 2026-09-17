@@ -40,10 +40,13 @@ import { PROFILE_QUESTIONS } from '../content/profileQuestions'
 import { db } from './firebase'
 import { errorCode, step } from './room'
 import {
+  GROUP_SHARE_WINDOW_MS,
   paths,
+  ROOM_CODE_CLOCK_SKEW_MARGIN_MS,
   type ContactDoc,
   type FactDoc,
   type GroupDoc,
+  type GroupShareDoc,
   type ItemAuthorDoc,
   type ItemDoc,
   type ProfileAnswerDoc,
@@ -89,10 +92,15 @@ export async function ensureContacts(
   name = '',
 ): Promise<Record<string, string>> {
   const groupId = existingGroupId ?? sessionId
-  const groupSnap = await step('read-group', () =>
-    getDoc(doc(firestore, paths.group(hostUid, groupId))),
-  )
+  const [groupSnap, sessionSnap] = await Promise.all([
+    step('read-group', () => getDoc(doc(firestore, paths.group(hostUid, groupId)))),
+    step('read-session', () => getDoc(doc(firestore, paths.session(sessionId)))),
+  ])
   const existingGroup = groupSnap.data() as GroupDoc | undefined
+  // Whatever the host has already drawn by hand (`linkPlayerToContact`) for
+  // this exact session, if anything - see the loop below for why this wins
+  // over name-matching rather than being overwritten by it.
+  const manualLinks = (sessionSnap.data() as SessionDoc | undefined)?.contactIds ?? {}
 
   // Who this group already knows, by name. A returning guest signs in
   // anonymously and gets a NEW uid every gathering, so the name is the only
@@ -112,14 +120,32 @@ export async function ensureContacts(
   // one's record - the exact wrong-match failure matchName's comment claims
   // cannot happen.
   const taken = new Set<string>()
+
+  // A host-drawn link (see linkPlayerToContact) wins over name-matching,
+  // deliberately: it exists specifically to correct the case name-matching
+  // gets wrong - a returning person who typed a different name this time.
+  // Resolved in its own pass, first, so the loop below never second-guesses
+  // it by matching that same player onto a *different* contact by name.
   for (const player of players) {
+    const linked = manualLinks[player.id]
+    if (linked) {
+      contactIds[player.id] = linked
+      taken.add(linked)
+    }
+  }
+
+  for (const player of players) {
+    if (contactIds[player.id]) continue // already resolved via a manual link
     const matched = byName[matchName(player.name)]
     const contactId = matched && !taken.has(matched) ? matched : crypto.randomUUID()
     taken.add(contactId)
     contactIds[player.id] = contactId
+  }
+
+  for (const player of players) {
     await step('write-contact', () =>
       setDoc(
-        doc(firestore, paths.contact(hostUid, contactId)),
+        doc(firestore, paths.contact(hostUid, contactIds[player.id])),
         {
           name: player.name,
           // A guest's anonymous uid is not a claim on anything - DESIGN's
@@ -181,6 +207,37 @@ export async function createGroup(
     } satisfies GroupDoc),
   )
   return groupId
+}
+
+/**
+ * The host draws, by hand, the connection `matchName()` cannot: a returning
+ * person who typed a different name this time, so nothing in `ensureContacts`
+ * would ever match them to who they actually are. Asked for directly - "האם
+ * אפשר לחשוב על דרך בה תוך כדי המשחק המנהד יכול לקשר בין דמות קיימת... לבין
+ * דמות שכרגע משחקת" - and proposed then as "a screen listing the host's known
+ * contacts beside the players currently in the room."
+ *
+ * Writes straight into `SessionDoc.contactIds` - already a host-writable
+ * field (the `sessions` update rule has no per-field shape check), so this
+ * needs no rules change of its own. What *did* need a change is
+ * `ensureContacts`, which used to recompute the whole map by name-matching
+ * every time it ran and would otherwise clobber this on its very next
+ * pass - see its own comment on why a manual link is now read first and
+ * always wins.
+ *
+ * Dot-notation (`contactIds.${playerId}`) updates one entry without a
+ * read-modify-write race against another link happening at the same moment,
+ * or against a concurrent `ensureContacts` run.
+ */
+export async function linkPlayerToContact(
+  firestore: Firestore,
+  sessionId: string,
+  playerId: string,
+  contactId: string,
+): Promise<void> {
+  await step('link-player-to-contact', () =>
+    updateDoc(doc(firestore, paths.session(sessionId)), { [`contactIds.${playerId}`]: contactId }),
+  )
 }
 
 /** The host's end-of-evening offer: keep this group, under this name, so the
@@ -410,6 +467,136 @@ export async function writeProfileFacts(
     }
   }
   return kept
+}
+
+/**
+ * Packs a saved group into a one-time, shareable copy and returns its id -
+ * the sending half of "send a room to someone else so it is saved in their
+ * account with identical information."
+ *
+ * Reads only the sender's own store and writes only to `groupShares`; the
+ * recipient's side (`importSharedGroup`) reads that and writes only to their
+ * own store. Neither ever touches the other's, which is what makes this
+ * possible at all under the owner-only rule on `users/{uid}`.
+ *
+ * **What crosses is everything the group knows, people included.** That is
+ * the point of the feature as asked for, and worth being deliberate about:
+ * these are facts about third parties who agreed to play an evening, not to
+ * have their profile forwarded onward. The sender decides; the recipient can
+ * then edit or delete any of it in their own copy, exactly as they can with
+ * anything else in their store.
+ */
+export async function shareGroup(
+  firestore: Firestore,
+  hostUid: string,
+  groupId: string,
+): Promise<string> {
+  const groupSnap = await step('read-group', () =>
+    getDoc(doc(firestore, paths.group(hostUid, groupId))),
+  )
+  const group = groupSnap.data() as GroupDoc | undefined
+  if (!group) throw new Error('group-not-found')
+
+  const contacts: GroupShareDoc['contacts'] = []
+  for (const contactId of group.memberContactIds) {
+    const contactSnap = await getDoc(doc(firestore, paths.contact(hostUid, contactId)))
+    const contact = contactSnap.data() as ContactDoc | undefined
+    if (!contact) continue
+    const factsSnap = await getDocs(collection(firestore, paths.contactFacts(hostUid, contactId)))
+    contacts.push({
+      name: contact.name,
+      facts: factsSnap.docs.map((factDoc) => (factDoc.data() as FactDoc).text),
+    })
+  }
+
+  const groupFactsSnap = await getDocs(collection(firestore, paths.groupFacts(hostUid, groupId)))
+  const shareId = crypto.randomUUID()
+  const now = Date.now()
+  await step('write-group-share', () =>
+    setDoc(doc(firestore, paths.groupShare(shareId)), {
+      fromUid: hostUid,
+      groupName: group.name,
+      contacts,
+      groupFacts: groupFactsSnap.docs.map((factDoc) => (factDoc.data() as FactDoc).text),
+      createdAt: now,
+      // Short of the ceiling the rule enforces, for the same clock-skew
+      // reason room codes already document - a device running slightly fast
+      // would otherwise have every share it creates refused outright.
+      expiresAt: now + GROUP_SHARE_WINDOW_MS - ROOM_CODE_CLOCK_SKEW_MARGIN_MS,
+    } satisfies GroupShareDoc),
+  )
+  return shareId
+}
+
+/**
+ * The receiving half: writes a fresh, independent copy of a shared group into
+ * this user's own store and returns its new group id. Nothing links the two
+ * copies afterwards - both sides edit their own from here, which is exactly
+ * what was asked for ("זה לא מסונכרן... כל אחד ימשיך בשלו").
+ *
+ * A brand-new group and brand-new contact ids, deliberately: reusing the
+ * sender's ids would silently merge two accounts' records the moment the same
+ * group were shared twice, or shared back.
+ */
+export async function importSharedGroup(
+  firestore: Firestore,
+  toUid: string,
+  shareId: string,
+): Promise<string> {
+  const shareSnap = await step('read-group-share', () =>
+    getDoc(doc(firestore, paths.groupShare(shareId))),
+  )
+  const share = shareSnap.data() as GroupShareDoc | undefined
+  if (!share) throw new Error('share-not-found')
+  if (share.expiresAt < Date.now()) throw new Error('share-expired')
+
+  const groupId = crypto.randomUUID()
+  const memberContactIds: string[] = []
+
+  for (const contact of share.contacts) {
+    const contactId = crypto.randomUUID()
+    memberContactIds.push(contactId)
+    await step('write-imported-contact', () =>
+      setDoc(doc(firestore, paths.contact(toUid, contactId)), {
+        name: contact.name,
+        claimedByUid: null,
+        createdAt: Date.now(),
+      } satisfies ContactDoc),
+    )
+    for (const text of contact.facts) {
+      await step('write-imported-fact', () =>
+        setDoc(doc(firestore, `${paths.contactFacts(toUid, contactId)}/${crypto.randomUUID()}`), {
+          text,
+          authorContactId: contactId,
+          useCount: 0,
+          sessionId: '',
+          createdAt: Date.now(),
+        } satisfies FactDoc),
+      )
+    }
+  }
+
+  await step('write-imported-group', () =>
+    setDoc(doc(firestore, paths.group(toUid, groupId)), {
+      name: share.groupName,
+      memberContactIds,
+      createdAt: Date.now(),
+    } satisfies GroupDoc),
+  )
+
+  for (const text of share.groupFacts) {
+    await step('write-imported-group-fact', () =>
+      setDoc(doc(firestore, `${paths.groupFacts(toUid, groupId)}/${crypto.randomUUID()}`), {
+        text,
+        authorContactId: '',
+        useCount: 0,
+        sessionId: '',
+        createdAt: Date.now(),
+      } satisfies FactDoc),
+    )
+  }
+
+  return groupId
 }
 
 /** A free-form note the host writes about one person directly, any time, from

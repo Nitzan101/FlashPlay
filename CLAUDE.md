@@ -127,7 +127,8 @@ can reach.
   the field), `setPlayerEmoji` (join-time emoji application, no slot involved),
   `useRoster`, `usePresenceHeartbeat`, `useSession` (live session-document
   listener - milestone 4's screens are driven by this, not by App.tsx's
-  one-off getDoc calls).
+  one-off getDoc calls), `transferHost` (moves `hostUid` only, never
+  `originalHostUid` - see both fields in model.ts).
 - `src/lib/profile.ts` — a registered host's own default name/emoji, at
   `users/{uid}` itself (`UserDoc`, unused since milestone 2 until this).
   `useUserProfile`, `saveUserProfile` (preserves the original `createdAt`
@@ -178,7 +179,12 @@ can reach.
   editable up to the moment the evening ends, unlike a harvest fact),
   `addManualFact`/`addManualGroupFact` (the host's own free-form note, no
   question or game behind it - milestone 8), `nameGroup`, `recordFeedback`,
-  the deletion cascade (`deleteFact`/`deleteContact`/`deleteGroup`), and the
+  `linkPlayerToContact` (the host's manual override for a returning person
+  name-matching cannot recognise - `ensureContacts` resolves these first and
+  never overwrites one), `shareGroup`/`importSharedGroup` (a one-time copy of
+  a whole group into another host's account, staged through
+  `groupShares/{id}` - see GroupShareDoc), the deletion cascade
+  (`deleteFact`/`deleteContact`/`deleteGroup`), and the
   `useGroupMemory` (returns `members: RememberedMember[]`, each with their own
   `facts`, plus a separate `groupFacts` array - grouped by person, not one flat
   list; takes an optional `refreshToken` to force a re-read after a manual add,
@@ -199,10 +205,26 @@ can reach.
 - `src/Gathering.tsx` — routes an in-room screen off the live session/game
   documents (lobby, harvest, either game, between games, or the finale), and
   hosts the presence heartbeat for the whole gathering, not just the lobby.
+  **Computes `isHost` live from `session.hostUid`, and never takes it as a
+  prop** - App.tsx used to decide it once at screen-resolution time, which
+  made a host transfer invisible to the new host's own client. Distinguishes
+  the *active* host (runs the controls) from the *original* one (owns the
+  memory) - see `SessionDoc.hostUid`/`originalHostUid`.
+- `src/LinkPlayers.tsx` — host-only, lobby-only: links a player whose typed
+  name matches nothing the group knows to whoever they actually are
+  (`linkPlayerToContact`). The manual override for the one case `matchName`
+  structurally cannot handle.
 - `src/Harvest.tsx` — the harvest phase UI: one answer per prompt, the
   advisory countdown, and the host's "give another minute" / "continue"
   controls.
 - `src/lib/canonicalHost.ts` — bounces the `.web.app` twin to the auth domain.
+  Read its comment before touching anything about domains.
+- **Leaving a room** lives in `App.tsx`'s own `LeaveRoomControl`: an ordinary
+  player just confirms, while the *active* host chooses between closing the
+  room for everyone (which runs the full end-of-evening collection first, so
+  an early close keeps everything) and handing it to another participant
+  (`transferHost`). A transfer moves control only - see the two host fields on
+  `SessionDoc`, and DECISIONS.md, "Handing a room over".
   Read its comment before touching anything about domains.
 - `src/test/setup.ts` — Vitest setup (jest-dom matchers).
 - `index.html` — declares `lang="he" dir="rtl"`.

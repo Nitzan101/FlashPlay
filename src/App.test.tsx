@@ -31,18 +31,32 @@ const mockJoinRoom = vi.fn()
 const mockResolveRoomCode = vi.fn()
 const mockLeaveRoom = vi.fn()
 
+// Both App.tsx (the leave-flow's own host/roster check) and Gathering.tsx
+// read this session live now, in place of the one-off, never-updating
+// isHost App.tsx used to compute at screen-resolution time - see
+// Gathering.tsx's own comment on why a static value could not reflect a
+// host transfer. Customisable per test, defaulting to a session hosted by
+// whichever uid a given test happens to sign in as being irrelevant to
+// prove - most tests here only care that SOME session renders the lobby.
+const mockUseSession = vi.fn()
+const mockUseRoster = vi.fn()
+const mockTransferHost = vi.fn().mockResolvedValue(undefined)
 vi.mock('./lib/room', () => ({
   createRoom: (...args: unknown[]) => mockCreateRoom(...args),
   joinRoom: (...args: unknown[]) => mockJoinRoom(...args),
   resolveRoomCode: (...args: unknown[]) => mockResolveRoomCode(...args),
   leaveRoom: (...args: unknown[]) => mockLeaveRoom(...args),
   setPlayerEmoji: vi.fn().mockResolvedValue(undefined),
-  useRoster: () => ({ players: [], error: null }),
+  transferHost: (...args: unknown[]) => mockTransferHost(...args) as unknown,
+  useRoster: () => mockUseRoster(),
   usePresenceHeartbeat: () => {},
-  // These tests never leave the lobby, so a fixed 'lobby' phase is enough to
-  // route Gathering.tsx there - milestone 4's own screen (Harvest, driven by
-  // useGame) is exercised in Harvest.test.tsx instead.
-  useSession: () => ({ session: { phase: 'lobby', currentGameId: null }, error: null }),
+  useSession: () => mockUseSession(),
+  errorCode: (error: unknown) =>
+    error && typeof error === 'object' && 'code' in error
+      ? (error as { code: string }).code
+      : error instanceof Error
+        ? error.message
+        : String(error),
 }))
 
 // Gathering.tsx (and, through it, Lobby.tsx and Harvest.tsx) import from
@@ -87,6 +101,11 @@ vi.mock('./lib/profileQuestions', () => ({
 
 const mockSavedGroups = vi.fn()
 const mockCreateGroup = vi.fn()
+const mockEnsureContacts = vi.fn().mockResolvedValue({})
+const mockWriteRemainingFacts = vi.fn().mockResolvedValue(0)
+const mockWriteProfileFacts = vi.fn().mockResolvedValue(0)
+const mockImportSharedGroup = vi.fn().mockResolvedValue('new-group')
+const mockEndGathering = vi.fn().mockResolvedValue(undefined)
 vi.mock('./lib/memory', () => ({
   useSavedGroups: () => mockSavedGroups(),
   createGroup: (...args: unknown[]) => mockCreateGroup(...args) as unknown,
@@ -104,6 +123,17 @@ vi.mock('./lib/memory', () => ({
   deleteFact: vi.fn(),
   deleteGroup: vi.fn(),
   nameGroup: vi.fn(),
+  // Reached by the leave-flow's "close the room" action - see
+  // LeaveRoomControl, which keeps the evening before ending it so closing
+  // early is as safe as reaching the last screen normally.
+  ensureContacts: (...args: unknown[]) => mockEnsureContacts(...args) as unknown,
+  writeRemainingFacts: (...args: unknown[]) => mockWriteRemainingFacts(...args) as unknown,
+  writeProfileFacts: (...args: unknown[]) => mockWriteProfileFacts(...args) as unknown,
+  importSharedGroup: (...args: unknown[]) => mockImportSharedGroup(...args) as unknown,
+}))
+
+vi.mock('./lib/secondGame', () => ({
+  endGathering: (...args: unknown[]) => mockEndGathering(...args) as unknown,
 }))
 
 const mockedUseAuthUser = vi.mocked(useAuthUser)
@@ -119,6 +149,17 @@ beforeEach(() => {
   mockSavedGroups.mockReturnValue({ groups: [], loading: false, error: null })
   mockUserProfile.mockReturnValue({ displayName: '', emoji: null, loading: false })
   mockCustomQuestions.mockReturnValue({ questions: [], loading: false, error: null })
+  // These tests never leave the lobby, so a fixed 'lobby' phase is enough to
+  // route Gathering.tsx there - milestone 4's own screen (Harvest, driven by
+  // useGame) is exercised in Harvest.test.tsx instead. hostUid deliberately
+  // does not match any test's signed-in uid by default, since most tests
+  // here do not care who the active host is - the ones that do override
+  // this per test.
+  mockUseSession.mockReturnValue({
+    session: { phase: 'lobby', currentGameId: null, hostUid: 'nobody-in-particular' },
+    error: null,
+  })
+  mockUseRoster.mockReturnValue({ players: [], error: null })
 })
 
 describe('app shell', () => {
@@ -576,6 +617,13 @@ describe('joining by a link', () => {
     })
     mockResolveRoomCode.mockResolvedValue('session-1')
     mockGetDoc.mockResolvedValue({ data: () => ({ hostUid: 'host-uid' }) })
+    // Gathering.tsx now derives isHost live from this, not from the one-off
+    // getDoc above - see its own comment on why a static value could not
+    // reflect a host transfer.
+    mockUseSession.mockReturnValue({
+      session: { phase: 'lobby', currentGameId: null, hostUid: 'host-uid' },
+      error: null,
+    })
 
     render(<App />)
 
@@ -623,5 +671,86 @@ describe('joining by a link', () => {
 
     render(<App />)
     expect(await screen.findByRole('button', { name: 'ניסיון נוסף' })).toBeInTheDocument()
+  })
+})
+
+// Asked for directly: "כאשר מנהל בוחר לצאת מהחדר... שתהיה לו האפשרות לבחור
+// לסגור את החדר לכולם או להעביר את האירוח למשתמש לבחירתו."
+describe('the host leaving a room', () => {
+  function asHostInRoom(others: { id: string; name: string; leftAt: number | null }[] = []) {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockCreateRoom.mockResolvedValue({ sessionId: 'session-1', roomCode: '1234' })
+    mockJoinRoom.mockResolvedValue(undefined)
+    mockUseSession.mockReturnValue({
+      session: {
+        phase: 'lobby',
+        currentGameId: null,
+        hostUid: 'host-uid',
+        originalHostUid: 'host-uid',
+        groupId: null,
+        contactIds: {},
+      },
+      error: null,
+    })
+    mockUseRoster.mockReturnValue({
+      players: [{ id: 'host-uid', name: 'דוד', leftAt: null }, ...others],
+      error: null,
+    })
+  }
+
+  async function enterRoom() {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'פתיחת חדר' }))
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'יציאה מהחדר' }))
+  }
+
+  it('offers closing or handing over, not just a plain yes/no', async () => {
+    asHostInRoom()
+    await enterRoom()
+
+    expect(await screen.findByRole('button', { name: 'סגירת החדר לכולם' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'העברת הניהול למישהו אחר' })).toBeInTheDocument()
+  })
+
+  it('ends the gathering when the host closes the room', async () => {
+    asHostInRoom()
+    await enterRoom()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'סגירת החדר לכולם' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'כן, לסגור' }))
+
+    await waitFor(() => expect(mockEndGathering).toHaveBeenCalledTimes(1))
+    // ...and the evening is kept first, so closing early is exactly as safe
+    // as reaching the last screen normally.
+    expect(mockWriteRemainingFacts).toHaveBeenCalled()
+    expect(mockWriteProfileFacts).toHaveBeenCalled()
+    expect(mockLeaveRoom).toHaveBeenCalled()
+  })
+
+  it('hands the room to a chosen participant', async () => {
+    asHostInRoom([{ id: 'guest-uid', name: 'שרה', leftAt: null }])
+    await enterRoom()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'העברת הניהול למישהו אחר' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'שרה' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'העברה ויציאה' }))
+
+    await waitFor(() => expect(mockTransferHost).toHaveBeenCalledTimes(1))
+    expect(mockTransferHost.mock.calls[0][2]).toBe('guest-uid')
+    expect(mockEndGathering).not.toHaveBeenCalled()
+  })
+
+  it('says so when there is nobody to hand the room to', async () => {
+    asHostInRoom()
+    await enterRoom()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'העברת הניהול למישהו אחר' }))
+
+    expect(await screen.findByText('אין עוד משתתפים בחדר להעביר אליהם')).toBeInTheDocument()
   })
 })

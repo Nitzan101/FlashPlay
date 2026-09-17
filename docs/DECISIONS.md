@@ -1428,3 +1428,79 @@ reddened exactly the two tests written against the new behaviour and nothing
 else. Also recorded in BACKLOG.md: a returning player's past answers are not
 yet offered back to them in a new gathering - a concrete instance of the
 identity-linking work already deferred, not a new gap.
+
+
+## Handing a room over, and handing a group over, 2026-09-17
+
+The last two of the three things raised in the room-picker/identity
+conversation, built after the guided-question work they were deferred behind.
+The third - a phone-less participant the host acts for, and whether a person
+ever gets to see what a host recorded about them - is still deferred, on
+purpose: both need a product decision rather than an implementation, and
+inventing one quietly is exactly the failure this project's own review
+discipline exists to prevent. See BACKLOG.md.
+
+**`hostUid` now means "who runs the controls"; `originalHostUid` means "whose
+memory this evening belongs to".** They start equal and only the first can
+ever move (`transferHost` in room.ts). That split is not cosmetic: every
+write into the private store goes to `users/{originalHostUid}/...`, which
+firestore.rules lets only that exact uid write - so "the host" in the sense
+of who may start a game and "the host" in the sense of whose account banks
+the evening are genuinely different questions once a room can change hands,
+and conflating them would have silently sent an evening's facts into the
+wrong account, or nowhere.
+
+**The consequence nobody would guess from the feature description: only the
+true owner's own client can ever collect facts.** A delegate host tapping
+"start the next game" cannot write into the owner's store, full stop. So
+`BetweenGames` now also collects from the owner's *own* client, independently
+of who holds the controls, and `Finale` treats "host" as the original owner
+rather than the active one. As long as the owner is still in the room - even
+with no controls at all - everything is kept exactly as before. If they
+transfer *and leave*, this evening's facts are not kept, and the transfer
+confirmation says so in as many words rather than letting it be a surprise.
+
+**Closing a room runs the whole end-of-evening collection first**, then ends
+it - a room closed early is exactly as safe as one that reached the last
+screen normally, which is the same lesson the profile-answer fix learned
+earlier the same day.
+
+**`isHost` is computed live now, in `Gathering.tsx`, not passed down from
+App.tsx.** It used to be decided once when a screen was first resolved and
+handed down as a static boolean - which meant a transfer was invisible to the
+*new* host's own client until they happened to reload. This was a real bug
+introduced by the transfer feature and fixed as part of it, not a cleanup.
+
+**Sharing a group is a copy, never a link** - "זה לא מסונכרן ואם יהיו
+שינויים בהמשך כל אחד ימשיך בשלו", as asked for. It has to be: `users/{uid}`
+is owner-only in both directions, so neither host can read or write the
+other's store, and a live shared group would need precisely the cross-account
+access DESIGN rules out. A `groupShares/{id}` document stages the payload
+between them - created by the sender, read once by the recipient, who then
+writes a fresh copy with new ids into their own store. Bearer-token shaped
+like a join link (unguessable id, `get` only, never listable), expiring after
+a week, and never editable once created so a link cannot turn into different
+content behind someone's back.
+
+**What crosses in a share is everything the group knows, people included -
+stated rather than hidden.** These are facts about third parties who agreed
+to play an evening, not to have their profile forwarded on. The decision made
+here is that the sender decides and the recipient can then prune their own
+copy, which is the only workable shape for a feature described as "send a
+room to someone so it is saved with them" - but it is a real disclosure, and
+it is the one part of this round worth revisiting if it ever feels wrong in
+practice.
+
+**A host can now correct what name-matching cannot** (`linkPlayerToContact`,
+`LinkPlayers.tsx`): a returning person who typed a different name this time
+is linked by hand to whoever the group already knows. This needed one change
+beyond the UI - `ensureContacts` used to recompute the whole uid-to-contact
+map by name on every run, which would have thrown any manual link away at the
+end of the very next game; manual links are now resolved first and win.
+
+Evidence: `npm run build`, `npx tsc -b`, `npm test` (130, up from 126),
+`npm run test:rules` (242, up from 217). Four guards mutation-checked in this
+round, each reddening exactly its own named assertion: the transfer target
+having to be a real player in the room, `originalHostUid` immutability, a
+share's expiry ceiling, and `ensureContacts` respecting a manual link rather
+than overwriting it.

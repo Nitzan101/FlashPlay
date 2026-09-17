@@ -165,6 +165,9 @@ export async function createRoom(
   const session: SessionDoc = {
     roomCode: '', // corrected below once a code is actually claimed
     hostUid,
+    // Equal to hostUid at creation, and never changed again even if hosting
+    // is transferred later - see the field's own comment in model.ts.
+    originalHostUid: hostUid,
     groupId,
     phase: 'lobby',
     currentGameId: null,
@@ -288,6 +291,28 @@ export async function leaveRoom(
   uid: string,
 ): Promise<void> {
   await updateDoc(doc(firestore, paths.player(sessionId, uid)), { leftAt: Date.now() })
+}
+
+/**
+ * Hands the room's controls to someone already in it - what the leaving
+ * host's "transfer instead of closing" choice calls. Only `hostUid` moves;
+ * `originalHostUid` (whose private store the evening still banks into) never
+ * does - see both fields' own comments in model.ts, and firestore.rules'
+ * `sessions` update rule, which is what actually enforces the target being a
+ * real player and the original owner staying fixed, not this function.
+ *
+ * The caller still has to call `leaveRoom` themselves afterwards if they are
+ * actually leaving - transferring and leaving are two separate writes, so a
+ * host can also use this to hand off control while staying in the room.
+ */
+export async function transferHost(
+  firestore: Firestore,
+  sessionId: string,
+  newHostUid: string,
+): Promise<void> {
+  await step('transfer-host', () =>
+    updateDoc(doc(firestore, paths.session(sessionId)), { hostUid: newHostUid }),
+  )
 }
 
 /** Applies a chosen emoji to a player document that already exists - the

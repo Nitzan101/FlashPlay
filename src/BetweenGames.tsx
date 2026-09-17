@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import HostButton from './HostButton'
 import Scoreboard from './Scoreboard'
@@ -10,7 +10,16 @@ import { useAction } from './lib/useAction'
 
 interface BetweenGamesProps {
   sessionId: string
+  /** The evening's true owner (`SessionDoc.originalHostUid`, falling back to
+   *  `hostUid` for a session predating that field) - NOT necessarily whoever
+   *  is currently running the room's controls. Everything written here lands
+   *  in `users/{hostUid}/...`, which only its own owner can ever write to
+   *  (firestore.rules) - see the comment on the collection effect below for
+   *  why that matters once hosting can be transferred. */
   hostUid: string
+  /** This viewer's own uid - only used to tell whether they happen to be the
+   *  evening's true owner, for the same reason. */
+  uid: string
   /** The game that just finished - its facts are written here, at the end of
    *  that game rather than at the end of the evening, so a gathering that is
    *  abandoned halfway keeps whatever was actually played (DESIGN). */
@@ -40,6 +49,7 @@ interface BetweenGamesProps {
 export default function BetweenGames({
   sessionId,
   hostUid,
+  uid,
   gameId,
   groupId,
   finishedType,
@@ -53,6 +63,7 @@ export default function BetweenGames({
   // Ending the evening cannot be undone - the session's phase is monotonic -
   // and it is the only button on the screen, so it asks first.
   const [confirmingEnd, setConfirmingEnd] = useState(false)
+  const collectedAsFallback = useRef(false)
 
   const nextIsSecondGame = finishedType === 'who-said-that'
 
@@ -75,7 +86,9 @@ export default function BetweenGames({
    * been saved the moment its own "שמירה" was tapped. Found by Nitzan asking
    * directly, 2026-09-17.
    */
-  async function keepThisGame() {
+  // Stable identity so the fallback effect below can depend on it honestly
+  // rather than suppressing the dependency.
+  const keepThisGame = useCallback(async () => {
     try {
       await ensureContacts(db, hostUid, sessionId, players, groupId)
       await writeFactsForGame(db, hostUid, sessionId, gameId)
@@ -85,7 +98,38 @@ export default function BetweenGames({
       // whatever this missed, and the writes are idempotent.
       console.error('[FlashPlay] keeping this game failed:', errorCode(caught), caught)
     }
-  }
+  }, [hostUid, sessionId, players, groupId, gameId])
+
+  /**
+   * The fallback path for a transferred room: `keepThisGame()` above already
+   * runs from the *active* host's own tap, but that write only ever succeeds
+   * when the tapper is also the evening's true owner - `users/{hostUid}/...`
+   * accepts writes from that exact uid alone (firestore.rules), never from
+   * "whoever currently runs this room". Once hosting can move
+   * (`transferHost`), those two people can differ, and the active host's tap
+   * would then fail this write on every attempt, silently (caught above,
+   * "never block the room").
+   *
+   * So the true owner's *own* client collects independently, the moment they
+   * see this screen, regardless of whether they still hold the controls.
+   * Skipped whenever `isHost` is also true, since that is the untransferred,
+   * overwhelmingly common case already covered by the tap above - this only
+   * ever fires for someone who is the owner but not currently the active
+   * host.
+   *
+   * A limitation this does not solve, worth stating plainly rather than
+   * hiding: if the true owner transfers hosting *and leaves* before the
+   * evening reaches this screen or the final one again, nobody's client is
+   * ever in a position to write into their store, and this game's facts are
+   * not kept. There is no way around that within "only the owner can write
+   * their own memory" - the room's own leave-flow warns about this
+   * explicitly when offering the transfer (see App.tsx).
+   */
+  useEffect(() => {
+    if (isHost || uid !== hostUid || collectedAsFallback.current) return
+    collectedAsFallback.current = true
+    void keepThisGame()
+  }, [isHost, uid, hostUid, keepThisGame])
 
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-4">

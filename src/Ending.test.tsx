@@ -65,6 +65,7 @@ describe('BetweenGames', () => {
       <BetweenGames
         sessionId="s1"
         hostUid="host"
+        uid="guest"
         gameId="game1"
         groupId={null}
         finishedType="who-said-that"
@@ -89,6 +90,7 @@ describe('BetweenGames', () => {
       <BetweenGames
         sessionId="s1"
         hostUid="host"
+        uid="host"
         gameId="game1"
         groupId="g1"
         finishedType="who-said-that"
@@ -110,6 +112,7 @@ describe('BetweenGames', () => {
       <BetweenGames
         sessionId="s1"
         hostUid="host"
+        uid="host"
         gameId="game1"
         groupId={null}
         finishedType="who-said-that"
@@ -132,6 +135,7 @@ describe('BetweenGames', () => {
       <BetweenGames
         sessionId="s1"
         hostUid="host"
+        uid="host"
         gameId="game1"
         groupId={null}
         finishedType="most-likely-to"
@@ -163,6 +167,7 @@ describe('the evening leaves something behind', () => {
       <BetweenGames
         sessionId="s1"
         hostUid="host"
+        uid="host"
         gameId="game1"
         groupId={null}
         finishedType="who-said-that"
@@ -195,6 +200,7 @@ describe('the evening leaves something behind', () => {
       <BetweenGames
         sessionId="s1"
         hostUid="host"
+        uid="host"
         gameId="game1"
         groupId={null}
         finishedType="who-said-that"

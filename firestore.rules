@@ -194,6 +194,31 @@ service cloud.firestore {
       }
     }
 
+    // --- handing a saved group to another host --------------------------------
+    //
+    // A one-time copy, staged here because neither host can reach into the
+    // other's private store (users/{uid} is owner-only both ways) - see
+    // GroupShareDoc in src/lib/model.ts for the whole reasoning, including
+    // why the payload is flattened rather than copied wholesale.
+    //
+    // Same bearer-token shape as a join link: `get` for anyone signed in who
+    // was handed the (unguessable) id, and never `list`, so a share can be
+    // received but not discovered. Only its own creator can make or remove
+    // one, and it carries an expiry the creator cannot set beyond the
+    // window - asked for short of the ceiling by the client, for the same
+    // clock-skew reason room codes already document
+    // (ROOM_CODE_CLOCK_SKEW_MARGIN_MS in model.ts).
+    match /groupShares/{shareId} {
+      allow get: if isSignedIn();
+      allow create: if isRegistered()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.expiresAt <= request.time.toMillis() + 604800000;
+      // Never editable: a share someone already opened must not be able to
+      // change underneath them into different content at the same link.
+      allow update: if false;
+      allow delete: if isSignedIn() && resource.data.fromUid == request.auth.uid;
+    }
+
     // --- the room-code lookup ------------------------------------------------
     //
     // Maps the short human-facing code to a session's real (unguessable) id.
@@ -263,13 +288,28 @@ service cloud.firestore {
       // own product rules.
       allow create: if isRegistered() && request.resource.data.hostUid == request.auth.uid;
 
-      // Phase never goes backwards, and the host never changes. The first
-      // guard is what stops the host peeking at authorship mid-game (they
-      // would have to end the gathering to do it); the second stops a host
-      // locking themselves out of their own room by mistake.
+      // Phase never goes backwards - what stops the host peeking at
+      // authorship mid-game (they would have to end the gathering to do it).
+      //
+      // `hostUid` (who runs the controls) may change, but only to someone
+      // already sitting in the room - see `transferHost` in `room.ts`. That
+      // existence check is what stops a host locking the room out of itself
+      // by mistake (typo a uid and nobody, including them, controls it any
+      // more) the same way outright immutability used to.
+      //
+      // `originalHostUid` (whose private store the evening banks into) never
+      // changes at all, transfer or not - see the field's own comment in
+      // model.ts. `.get(..., null)` on both sides tolerates a session written
+      // before this field existed, where it is genuinely absent rather than
+      // merely unequal - a bare field read there throws instead of denying
+      // cleanly (see CLAUDE.md, "A rules get() on a document that does not
+      // exist fails the whole evaluation" - the same shape of pitfall, for a
+      // missing field rather than a missing document).
       allow update: if isHost(sessionId)
         && phaseRank(request.resource.data.phase) >= phaseRank(resource.data.phase)
-        && request.resource.data.hostUid == resource.data.hostUid;
+        && request.resource.data.get('originalHostUid', null) == resource.data.get('originalHostUid', null)
+        && (request.resource.data.hostUid == resource.data.hostUid
+            || exists(/databases/$(database)/documents/sessions/$(sessionId)/players/$(request.resource.data.hostUid)));
 
       // Deleting a session does NOT delete its subcollections - the players,
       // items and author claims survive, becoming orphaned garbage rather

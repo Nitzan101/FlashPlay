@@ -13,7 +13,6 @@ interface GatheringProps {
   sessionId: string
   roomCode: string
   uid: string
-  isHost: boolean
 }
 
 /**
@@ -22,11 +21,32 @@ interface GatheringProps {
  * load - so a phase change the host makes shows up on every other device the
  * instant it happens, not on their next refresh.
  *
+ * **Whether this viewer is the host is computed here, live, not passed in as
+ * a prop.** App.tsx used to decide `isHost` once, at the moment a screen was
+ * first resolved, and hand it down as a static value - which meant a host
+ * transfer (`transferHost` in room.ts) was invisible to the *new* host's own
+ * client: `session.hostUid` changed, but the boolean built from it at load
+ * time never did, so their screen kept showing them as an ordinary player
+ * until they happened to reload. Deriving it from the same live `session`
+ * this component already reads fixes that for free.
+ *
+ * **Two different "host" questions, not one.** `isActiveHost` -
+ * `session.hostUid === uid` - is who currently runs the room's controls, and
+ * gates every operational action (starting a game, opening voting, ending
+ * the evening). `isOriginalHost` - `(session.originalHostUid ?? hostUid) ===
+ * uid` - is who the evening's memory actually belongs to, and never changes
+ * even after a transfer (see `SessionDoc.originalHostUid`). Only the second
+ * one can ever succeed at writing into `users/{uid}/...` at all
+ * (firestore.rules), so `BetweenGames`/`Finale` key their private-store work
+ * off it, independently of who is currently holding the controls - see the
+ * comment on `BetweenGames`'s own collection effect for what that protects
+ * against.
+ *
  * The presence heartbeat lives here, one level above Lobby/Harvest, so it
  * keeps running across the whole gathering rather than stopping the moment
  * the host leaves the lobby screen.
  */
-export default function Gathering({ sessionId, roomCode, uid, isHost }: GatheringProps) {
+export default function Gathering({ sessionId, roomCode, uid }: GatheringProps) {
   const { t } = useTranslation()
   usePresenceHeartbeat(sessionId, uid)
   const { players, error: rosterError } = useRoster(sessionId)
@@ -48,6 +68,10 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
     return <p>{t('loading')}</p>
   }
 
+  const isActiveHost = session.hostUid === uid
+  const originalHostUid = session.originalHostUid ?? session.hostUid
+  const isOriginalHost = originalHostUid === uid
+
   // The evening is over: the last screen is the standings, not a redirect
   // back to a lobby that no longer means anything (session phase is
   // monotonic, so there is no way out of this state by design).
@@ -55,8 +79,8 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
     return (
       <Finale
         sessionId={sessionId}
-        hostUid={session.hostUid}
-        isHost={isHost}
+        hostUid={originalHostUid}
+        isHost={isOriginalHost}
         players={players}
         scores={session.scores ?? {}}
         groupId={session.groupId}
@@ -70,9 +94,12 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
         sessionId={sessionId}
         roomCode={roomCode}
         uid={uid}
-        isHost={isHost}
+        isHost={isActiveHost}
         hostUid={session.hostUid}
         customQuestions={session.customQuestions ?? []}
+        originalHostUid={originalHostUid}
+        groupId={session.groupId}
+        contactIds={session.contactIds ?? {}}
       />
     )
   }
@@ -92,7 +119,7 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
         promptIds={game.promptIds}
         phaseEndsAt={game.phaseEndsAt}
         uid={uid}
-        isHost={isHost}
+        isHost={isActiveHost}
       />
     )
   }
@@ -103,7 +130,7 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
         sessionId={sessionId}
         gameId={game.id}
         uid={uid}
-        isHost={isHost}
+        isHost={isActiveHost}
         scores={session.scores ?? {}}
       />
     ) : (
@@ -111,7 +138,7 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
         sessionId={sessionId}
         gameId={game.id}
         uid={uid}
-        isHost={isHost}
+        isHost={isActiveHost}
         scores={session.scores ?? {}}
       />
     )
@@ -122,14 +149,15 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
   return (
     <BetweenGames
       sessionId={sessionId}
-      hostUid={session.hostUid}
+      hostUid={originalHostUid}
+      uid={uid}
       gameId={game.id}
       groupId={session.groupId}
       finishedType={game.type}
       finishedOrder={game.order}
       players={players}
       scores={session.scores ?? {}}
-      isHost={isHost}
+      isHost={isActiveHost}
     />
   )
 }

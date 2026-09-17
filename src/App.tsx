@@ -5,7 +5,24 @@ import Gathering from './Gathering'
 import { signInAsGuest, signInWithGoogle, signOutUser, useAuthUser } from './lib/auth'
 import { db } from './lib/firebase'
 import { paths } from './lib/model'
-import { createRoom, joinRoom, leaveRoom, resolveRoomCode, setPlayerEmoji } from './lib/room'
+import {
+  createRoom,
+  errorCode,
+  joinRoom,
+  leaveRoom,
+  resolveRoomCode,
+  setPlayerEmoji,
+  transferHost,
+  useRoster,
+  useSession,
+} from './lib/room'
+import {
+  ensureContacts,
+  importSharedGroup,
+  writeProfileFacts,
+  writeRemainingFacts,
+} from './lib/memory'
+import { endGathering } from './lib/secondGame'
 import { saveUserProfile, useUserProfile } from './lib/profile'
 import {
   addCustomQuestion,
@@ -66,6 +83,18 @@ function readJoinCodeFromUrl(): string | null {
   return fromQuery && CODE_PATTERN.test(fromQuery) ? fromQuery : null
 }
 
+/** A shared-group link is `/share/<uuid>` - the handing-over half of
+ *  `shareGroup`/`importSharedGroup`. Validated to the shape a uuid actually
+ *  has rather than passed through raw, for the same reason `?code=` is: an
+ *  unvalidated value reaching a Firestore path fails inside the SDK instead
+ *  of here, where it can be explained. */
+function readShareIdFromUrl(): string | null {
+  const fromPath = /^\/share\/([0-9a-fA-F-]{36})$/.exec(window.location.pathname)
+  if (fromPath) return fromPath[1]
+  const fromQuery = new URLSearchParams(window.location.search).get('share')
+  return fromQuery && /^[0-9a-fA-F-]{36}$/.test(fromQuery) ? fromQuery : null
+}
+
 type Screen =
   | { kind: 'loading' }
   | { kind: 'host-landing' }
@@ -117,10 +146,18 @@ export default function App() {
   const profile = useUserProfile(user && !user.isAnonymous ? user.uid : null)
   const customQuestions = useCustomQuestions(user && !user.isAnonymous ? user.uid : null)
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' })
+  // Read here, one level above Gathering, purely for the leave-room control
+  // below: whether this viewer can currently close or transfer the room, and
+  // who else is in it to transfer to. Gathering.tsx keeps its own identical
+  // listeners for the screens it routes between - a second subscription to
+  // the same two documents, not a shared one, the same way useRoster is
+  // already called independently in more than one place in this app.
+  const inRoomSessionId = screen.kind === 'in-room' ? screen.sessionId : null
+  const { session: liveSession } = useSession(inRoomSessionId)
+  const { players: liveRoster } = useRoster(inRoomSessionId)
   const [busy, setBusy] = useState(false)
   const [nameInput, setNameInput] = useState('')
   const [loadingIsSlow, setLoadingIsSlow] = useState(false)
-  const [confirmingLeave, setConfirmingLeave] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
   const [codeInput, setCodeInput] = useState('')
   const [codeBusy, setCodeBusy] = useState(false)
@@ -146,6 +183,7 @@ export default function App() {
   }, [screen.kind])
 
   const joinCode = useMemo(() => readJoinCodeFromUrl(), [])
+  const shareId = useMemo(() => readShareIdFromUrl(), [])
 
   // A guest arriving on a join link has no identity yet, and EVERY rule -
   // including reading the room code itself - requires isSignedIn(). So the
@@ -263,30 +301,17 @@ export default function App() {
   }
 
   /**
-   * Forgets this browser's room and marks the player doc left, so the roster
-   * can say so - the game itself is otherwise untouched, matching DESIGN's
-   * "leaving is allowed at any moment, an active round is never broken."
-   * There was no way to do this at all before the first version of this fix:
-   * a stored session resumes forever, with no screen that ever clears it -
-   * found during the first manual walkthrough, on a browser still holding a
-   * session from an earlier test. The confirmation step and the `leftAt`
-   * write were added after Nitzan's own first manual walkthrough of *this*
-   * fix: leaving needs a step back for a mis-tap, and the room looked exactly
-   * as stale to everyone else as it had to him, just for a different reason -
-   * nothing ever recorded that a player had gone.
+   * Forgets this browser's room, so the local state matches "not in a room"
+   * regardless of whether the roster write below succeeds - this is called
+   * both for an ordinary leave and after a host closes or transfers the room,
+   * see `LeaveRoomControl`. There was no way to do this at all before the
+   * first version of this fix: a stored session resumes forever, with no
+   * screen that ever clears it - found during the first manual walkthrough,
+   * on a browser still holding a session from an earlier test.
    */
-  async function confirmLeaveRoom(sessionId: string, uid: string) {
-    try {
-      await leaveRoom(db, sessionId, uid)
-    } catch (error) {
-      // Best-effort, same reasoning as storeSession/clearStoredSession below:
-      // forgetting the room locally must not be blocked by a flaky write that
-      // only updates how this player looks to everyone else's roster.
-      console.error('[FlashPlay] leaveRoom failed:', error)
-    }
+  function goHomeAfterLeaving() {
     clearStoredSession()
     window.history.pushState({}, '', '/')
-    setConfirmingLeave(false)
     setScreen({ kind: 'host-landing' })
   }
 
@@ -424,6 +449,12 @@ export default function App() {
                 {t('greeting', { name: user.displayName ?? user.email })}
               </p>
 
+              {/* Someone handed this host a group - see GroupShareDoc. Offered
+                  rather than applied on arrival: a link that silently wrote
+                  someone else's people into your account the moment you
+                  opened it would be a surprise, not a feature. */}
+              {shareId && <ImportSharedGroup uid={user.uid} shareId={shareId} />}
+
               {editingProfile ? (
                 <ProfileEditor
                   uid={user.uid}
@@ -517,6 +548,9 @@ export default function App() {
           )
         ) : (
           <div className="flex w-full max-w-sm flex-col items-center gap-4">
+            {/* A share link only means something once there is an account to
+                save the group into. */}
+            {shareId && <p className="text-sm text-muted">{t('shareNeedsSignIn')}</p>}
             <button
               type="button"
               onClick={() => void signInWithGoogle()}
@@ -586,44 +620,21 @@ export default function App() {
 
       {screen.kind === 'in-room' && (
         <>
-          <Gathering
-            sessionId={screen.sessionId}
-            roomCode={screen.roomCode}
-            uid={screen.uid}
-            isHost={screen.isHost}
-          />
+          <Gathering sessionId={screen.sessionId} roomCode={screen.roomCode} uid={screen.uid} />
           {/* Deliberately quiet, and deliberately not a bare underlined link:
               leaving is a real action that deserves a real control, but it
               must never compete with the host's game buttons for attention.
               Asked for directly - "כפתור היציאה מהחדר לא הכי נחמד". */}
-          {confirmingLeave ? (
-            <div className="mt-2 flex w-full max-w-xs flex-col items-center gap-3 rounded-2xl border border-danger/40 bg-surface/80 p-4">
-              <p className="text-sm font-medium">{t('leaveRoomConfirmQuestion')}</p>
-              <div className="flex w-full items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void confirmLeaveRoom(screen.sessionId, screen.uid)}
-                  className="grow cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger"
-                >
-                  {t('leaveRoomConfirmYes')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingLeave(false)}
-                  className="grow cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
-                >
-                  {t('leaveRoomConfirmNo')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmingLeave(true)}
-              className="mt-2 cursor-pointer rounded-full border border-line px-4 py-1.5 text-xs text-muted"
-            >
-              {t('leaveRoom')}
-            </button>
+          {liveSession && (
+            <LeaveRoomControl
+              sessionId={screen.sessionId}
+              uid={screen.uid}
+              isActiveHost={liveSession.hostUid === screen.uid}
+              originalHostUid={liveSession.originalHostUid ?? liveSession.hostUid}
+              groupId={liveSession.groupId}
+              players={liveRoster}
+              onLeft={goHomeAfterLeaving}
+            />
           )}
         </>
       )}
@@ -885,5 +896,328 @@ function JoinByCode({
       )}
     </div>
   )
+}
+
+/**
+ * The receiving end of a shared group - offered, never applied on arrival.
+ * Importing writes a fresh, independent copy into this account: nothing links
+ * the two afterwards, so both hosts edit their own from then on. See
+ * `GroupShareDoc` in model.ts and `importSharedGroup` in memory.ts.
+ */
+function ImportSharedGroup({ uid, shareId }: { uid: string; shareId: string }) {
+  const { t } = useTranslation()
+  const action = useAction()
+  const [done, setDone] = useState(false)
+
+  if (done) {
+    return <p className="text-sm text-accent-3">{t('sharedGroupImported')}</p>
+  }
+
+  return (
+    <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-accent-2/50 bg-surface/40 p-3">
+      <p className="text-center text-sm">{t('sharedGroupOffer')}</p>
+      <button
+        type="button"
+        disabled={action.busy}
+        onClick={() =>
+          void action.run(async () => {
+            await importSharedGroup(db, uid, shareId)
+            setDone(true)
+            // The link has done its job - clear it so a refresh does not
+            // re-offer an import that already happened.
+            window.history.replaceState({}, '', '/')
+          })
+        }
+        className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-sm text-accent-2 disabled:opacity-40"
+      >
+        {action.busy ? t('importingSharedGroup') : t('importSharedGroup')}
+      </button>
+      {action.error && (
+        <p role="alert" className="text-xs text-danger">
+          {action.error === 'share-expired' || action.error === 'share-not-found'
+            ? t('sharedGroupGone')
+            : t('importSharedGroupError')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Leaving a room, and - for the active host only - what happens to the room
+ * when they do. Asked for directly: "כאשר מנהל בוחר לצאת מהחדר... שתהיה לו
+ * האפשרות לבחור לסגור את החדר לכולם או להעביר את האירוח למשתמש לבחירתו."
+ *
+ * **Closing** runs the same collection pass the evening's last screen would
+ * (`ensureContacts`/`writeRemainingFacts`/`writeProfileFacts`) before ending
+ * it - a room closed early must be exactly as safe as one that reached
+ * Finale normally, the same lesson the milestone-8 abandoned-session fix
+ * already applies elsewhere in this app.
+ *
+ * **Transferring** only ever moves `hostUid` (who runs the controls) -
+ * `originalHostUid` (whose memory the evening banks into) never moves, see
+ * both fields' own comments in model.ts. The warning shown before a
+ * transfer-and-leave is not decoration: only the true owner's own client can
+ * ever write into their private store (firestore.rules), so if they transfer
+ * away control *and* leave, nobody is left in a position to collect
+ * anything for them - see the comment on `BetweenGames`'s fallback
+ * collection effect for the mechanism that keeps working as long as they at
+ * least stay.
+ */
+function LeaveRoomControl({
+  sessionId,
+  uid,
+  isActiveHost,
+  originalHostUid,
+  groupId,
+  players,
+  onLeft,
+}: {
+  sessionId: string
+  uid: string
+  isActiveHost: boolean
+  originalHostUid: string
+  groupId: string | null
+  players: { id: string; name: string; leftAt: number | null }[]
+  onLeft: () => void
+}) {
+  const { t } = useTranslation()
+  const [stage, setStage] = useState<
+    'idle' | 'confirm-guest' | 'menu' | 'confirm-close' | 'pick-transfer' | 'confirm-transfer'
+  >('idle')
+  const [target, setTarget] = useState<{ id: string; name: string } | null>(null)
+  const action = useAction()
+
+  const others = players.filter((p) => p.id !== uid && !p.leftAt)
+
+  async function doLeave() {
+    try {
+      await leaveRoom(db, sessionId, uid)
+    } catch (error) {
+      // Best-effort, same reasoning as storeSession/clearStoredSession
+      // elsewhere in this file: forgetting the room locally must not be
+      // blocked by a flaky write that only updates how this player looks to
+      // everyone else's roster.
+      console.error('[FlashPlay] leaveRoom failed:', error)
+    }
+    onLeft()
+  }
+
+  async function doClose() {
+    await action.run(async () => {
+      try {
+        await ensureContacts(db, originalHostUid, sessionId, players, groupId)
+        await writeRemainingFacts(db, originalHostUid, sessionId)
+        await writeProfileFacts(db, originalHostUid, sessionId, players)
+      } catch (error) {
+        // Never block closing on this - a delegate host closing a room they
+        // were only handed, rather than opened, cannot write into the true
+        // owner's store at all (firestore.rules), and that owner's own
+        // client will still collect independently once it sees the
+        // gathering finish, as long as they have not also left.
+        console.error(
+          '[FlashPlay] keeping the evening before closing failed:',
+          errorCode(error),
+          error,
+        )
+      }
+      await endGathering(db, sessionId)
+      await doLeave()
+    })
+  }
+
+  async function doTransfer(stay: boolean) {
+    if (!target) return
+    await action.run(async () => {
+      await transferHost(db, sessionId, target.id)
+      if (stay) setStage('idle')
+      else await doLeave()
+    })
+  }
+
+  if (stage === 'idle') {
+    return (
+      <button
+        type="button"
+        onClick={() => setStage(isActiveHost ? 'menu' : 'confirm-guest')}
+        className="mt-2 cursor-pointer rounded-full border border-line px-4 py-1.5 text-xs text-muted"
+      >
+        {t('leaveRoom')}
+      </button>
+    )
+  }
+
+  const panelClass =
+    'mt-2 flex w-full max-w-xs flex-col items-center gap-3 rounded-2xl border border-danger/40 bg-surface/80 p-4'
+
+  if (stage === 'confirm-guest') {
+    return (
+      <div className={panelClass}>
+        <p className="text-sm font-medium">{t('leaveRoomConfirmQuestion')}</p>
+        <div className="flex w-full items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void doLeave()}
+            className="grow cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger"
+          >
+            {t('leaveRoomConfirmYes')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setStage('idle')}
+            className="grow cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
+          >
+            {t('leaveRoomConfirmNo')}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (stage === 'menu') {
+    return (
+      <div className={panelClass}>
+        <p className="text-sm font-medium">{t('leaveRoomHostQuestion')}</p>
+        <div className="flex w-full flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => setStage('confirm-close')}
+            className="cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger"
+          >
+            {t('closeRoomForEveryone')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setStage('pick-transfer')}
+            className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2"
+          >
+            {t('transferHostOption')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setStage('idle')}
+            className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
+          >
+            {t('leaveRoomConfirmNo')}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (stage === 'confirm-close') {
+    return (
+      <div className={panelClass}>
+        <p className="text-center text-sm font-medium">{t('closeRoomConfirm')}</p>
+        <div className="flex w-full items-center gap-2">
+          <button
+            type="button"
+            disabled={action.busy}
+            onClick={() => void doClose()}
+            className="grow cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger disabled:opacity-50"
+          >
+            {action.busy ? t('closingRoom') : t('closeRoomYes')}
+          </button>
+          <button
+            type="button"
+            disabled={action.busy}
+            onClick={() => setStage('menu')}
+            className="grow cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted disabled:opacity-50"
+          >
+            {t('backToOptions')}
+          </button>
+        </div>
+        {action.error && (
+          <p role="alert" className="text-xs text-danger">
+            {t('closeRoomError')}{' '}
+            <span dir="ltr" className="font-mono">
+              ({action.error})
+            </span>
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  if (stage === 'pick-transfer') {
+    return (
+      <div className={panelClass}>
+        <p className="text-sm font-medium">{t('pickTransferTarget')}</p>
+        {others.length === 0 ? (
+          <p className="text-xs text-muted">{t('noOtherPlayersToTransfer')}</p>
+        ) : (
+          <div className="flex w-full flex-col gap-2">
+            {others.map((player) => (
+              <button
+                key={player.id}
+                type="button"
+                onClick={() => {
+                  setTarget(player)
+                  setStage('confirm-transfer')
+                }}
+                className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2"
+              >
+                {player.name}
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setStage('menu')}
+          className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
+        >
+          {t('backToOptions')}
+        </button>
+      </div>
+    )
+  }
+
+  if (stage === 'confirm-transfer' && target) {
+    return (
+      <div className={panelClass}>
+        <p className="text-center text-sm font-medium">
+          {t('confirmTransferTo', { name: target.name })}
+        </p>
+        <p className="text-center text-xs text-muted">{t('transferLeaveWarning')}</p>
+        <div className="flex w-full flex-col gap-2">
+          <button
+            type="button"
+            disabled={action.busy}
+            onClick={() => void doTransfer(false)}
+            className="cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger disabled:opacity-50"
+          >
+            {action.busy ? t('transferringHost') : t('transferAndLeave')}
+          </button>
+          <button
+            type="button"
+            disabled={action.busy}
+            onClick={() => void doTransfer(true)}
+            className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-50"
+          >
+            {action.busy ? t('transferringHost') : t('transferAndStay')}
+          </button>
+          <button
+            type="button"
+            disabled={action.busy}
+            onClick={() => setStage('pick-transfer')}
+            className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted disabled:opacity-50"
+          >
+            {t('backToOptions')}
+          </button>
+        </div>
+        {action.error && (
+          <p role="alert" className="text-xs text-danger">
+            {t('transferError')}{' '}
+            <span dir="ltr" className="font-mono">
+              ({action.error})
+            </span>
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  return null
 }
 

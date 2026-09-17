@@ -76,7 +76,16 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
-import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore'
+import {
+  collection,
+  deleteDoc,
+  deleteField,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -604,9 +613,122 @@ describe('F1 - the host cannot peek at the answer key mid-game', () => {
     )
   })
 
-  it('refuses to hand the gathering to a different host', async () => {
+})
+
+// Handing a saved group to another host - see GroupShareDoc in model.ts.
+// Bearer-token shaped like a join link: receivable, not discoverable.
+describe('groupShares', () => {
+  const sharePath = 'groupShares/share-1'
+  const share = () => ({
+    fromUid: HOST,
+    groupName: 'המשפחה',
+    contacts: [{ name: 'דוד', facts: ['אוהב פיצה'] }],
+    groupFacts: [],
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  })
+
+  it('lets a registered host create a share of their own', async () => {
+    await assertSucceeds(setDoc(doc(asHost(), sharePath), share()))
+  })
+
+  it('refuses creating one that claims to come from someone else', async () => {
+    await assertFails(setDoc(doc(asHost(), sharePath), { ...share(), fromUid: OUTSIDER }))
+  })
+
+  it('refuses an expiry beyond the window, however the client computed it', async () => {
     await assertFails(
+      setDoc(doc(asHost(), sharePath), {
+        ...share(),
+        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      }),
+    )
+  })
+
+  it('is readable by another signed-in host who was handed the id', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), sharePath), share())
+    })
+    await assertSucceeds(getDoc(doc(asOutsider(), sharePath)))
+  })
+
+  it('cannot be listed, so shares cannot be swept for', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), sharePath), share())
+    })
+    await assertFails(getDocs(collection(asOutsider(), 'groupShares')))
+  })
+
+  // A share someone has already opened must not be able to turn into
+  // different content behind the same link.
+  it('is never editable, even by its creator', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), sharePath), share())
+    })
+    await assertFails(updateDoc(doc(asHost(), sharePath), { groupName: 'משהו אחר' }))
+  })
+
+  it('can be withdrawn by its creator, and nobody else', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), sharePath), share())
+    })
+    await assertFails(deleteDoc(doc(asOutsider(), sharePath)))
+    await assertSucceeds(deleteDoc(doc(asHost(), sharePath)))
+  })
+})
+
+// Milestone 8's "leave the room" question, asked directly: what happens when
+// the host wants to leave? `hostUid` (who runs the controls) can now move,
+// deliberately - see model.ts, SessionDoc.hostUid/originalHostUid, and
+// room.ts's transferHost. `originalHostUid` (whose private store the
+// evening banks into) never does, transfer or not.
+describe('host transfer', () => {
+  it('lets the current host hand hostUid to someone already playing', async () => {
+    await assertSucceeds(
       updateDoc(doc(asHost(), `sessions/${SESSION}`), { hostUid: PLAYER }),
+    )
+  })
+
+  it('refuses handing it to someone who is not actually in the room', async () => {
+    await assertFails(
+      updateDoc(doc(asHost(), `sessions/${SESSION}`), { hostUid: OUTSIDER }),
+    )
+  })
+
+  it('refuses a non-host initiating a transfer at all, even to a valid target', async () => {
+    await assertFails(
+      updateDoc(doc(asPlayer(), `sessions/${SESSION}`), { hostUid: PLAYER }),
+    )
+  })
+
+  // The whole reason this field exists: a transfer must never change whose
+  // private store the evening's facts land in.
+  it('refuses changing originalHostUid, transfer or not', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}`), { originalHostUid: HOST })
+    })
+    await assertFails(
+      updateDoc(doc(asHost(), `sessions/${SESSION}`), {
+        hostUid: PLAYER,
+        originalHostUid: PLAYER,
+      }),
+    )
+  })
+
+  // A session written before this field existed has it genuinely absent, not
+  // merely equal - the safe .get(default) accessor in the rule has to treat
+  // that as "still equal to itself" or every such session would be
+  // permanently un-updatable at all (a get() on a missing field throws
+  // outright rather than denying cleanly, the same shape of pitfall as a
+  // get() on a missing document - see CLAUDE.md, Known pitfalls).
+  it('still allows an ordinary update on a session that predates originalHostUid', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `sessions/${SESSION}`), {
+        originalHostUid: deleteField(),
+      })
+    })
+    await assertSucceeds(
+      updateDoc(doc(asHost(), `sessions/${SESSION}`), { phase: 'finished' }),
     )
   })
 })

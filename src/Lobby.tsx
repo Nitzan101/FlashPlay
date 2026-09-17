@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import EmojiPicker from './EmojiPicker'
 import GuidedQuestions from './GuidedQuestions'
+import LinkPlayers from './LinkPlayers'
 import { pickHarvestPromptIds, startHarvestGame } from './lib/harvest'
 import { db } from './lib/firebase'
 import { MIN_PLAYERS_TO_START, type PlayerDoc, type ProfileQuestion } from './lib/model'
@@ -13,11 +14,21 @@ interface LobbyProps {
   roomCode: string
   uid: string
   isHost: boolean
+  /** The *active* host, for the roster's own "(מארח/ת)" label - who is
+   *  running the room right now, which after a transfer is not necessarily
+   *  who opened it. */
   hostUid: string
   /** This gathering's snapshot of the host's own question bank - see
    *  SessionDoc.customQuestions. Optional, defaulting to none, so every
    *  existing test that renders this screen without it stays valid. */
   customQuestions?: ProfileQuestion[]
+  /** The evening's true owner and the group it continues - both needed only
+   *  by the host-only "link a returning player" panel, which is skipped
+   *  entirely without them. Optional for the same test-compatibility reason
+   *  as customQuestions. */
+  originalHostUid?: string
+  groupId?: string | null
+  contactIds?: Record<string, string>
 }
 
 export default function Lobby({
@@ -27,6 +38,9 @@ export default function Lobby({
   isHost,
   hostUid,
   customQuestions = [],
+  originalHostUid,
+  groupId,
+  contactIds = {},
 }: LobbyProps) {
   const { t } = useTranslation()
   const { players, error } = useRoster(sessionId)
@@ -158,6 +172,19 @@ export default function Lobby({
       )}
 
       <p className="text-muted">{isHost ? t('lobbyWaitingHost') : t('lobbyWaitingGuest')}</p>
+
+      {/* Host-only, and only when this gathering continues a saved group -
+          the contacts it offers live in that host's own private store, which
+          nobody else can read at all. */}
+      {originalHostUid === uid && groupId && (
+        <LinkPlayers
+          sessionId={sessionId}
+          hostUid={originalHostUid}
+          groupId={groupId}
+          players={players}
+          contactIds={contactIds}
+        />
+      )}
 
       {/* Every player, host included - framed as something to fill the wait
           with, never a gate on it (milestone 8). */}
