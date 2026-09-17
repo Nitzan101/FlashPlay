@@ -72,6 +72,7 @@ export default function Gathering({ sessionId, roomCode, uid, isHost }: Gatherin
         uid={uid}
         isHost={isHost}
         hostUid={session.hostUid}
+        customQuestions={session.customQuestions ?? []}
       />
     )
   }

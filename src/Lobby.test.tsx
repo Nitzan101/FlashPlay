@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Lobby from './Lobby'
 import './i18n'
@@ -10,6 +10,17 @@ vi.mock('./lib/firebase', () => ({ db: {}, auth: {}, firebaseApp: {} }))
 vi.mock('./lib/harvest', () => ({
   pickHarvestPromptIds: () => ['p1', 'p2'],
   startHarvestGame: vi.fn(),
+}))
+
+// GuidedQuestions (rendered unconditionally in the lobby) reaches Firestore
+// through here - mocked so this suite is not incidentally passing only
+// because a real Firestore call against a fake `db` fails and gets swallowed
+// (CLAUDE.md: "a test double that cannot produce the real failure is not
+// evidence").
+const mockSaveProfileAnswer = vi.fn().mockResolvedValue(undefined)
+vi.mock('./lib/profileQuestions', () => ({
+  useMyProfileAnswers: () => ({ answers: {}, loading: false }),
+  saveProfileAnswer: (...args: unknown[]) => mockSaveProfileAnswer(...args) as unknown,
 }))
 
 let players: (PlayerDoc & { id: string })[] = []
@@ -151,5 +162,55 @@ describe('Lobby', () => {
     render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
 
     expect(screen.getByRole('button', { name: 'התחלת המשחק' })).toBeDisabled()
+  })
+})
+
+// Milestone 8: the self-report questions offered while everyone waits.
+describe('the guided-questions panel', () => {
+  it('is offered to every player, not just the host', () => {
+    players = [player('guest-uid', { name: 'שרה' })]
+    render(<Lobby sessionId="s1" roomCode="1234" uid="guest-uid" isHost={false} hostUid="host-uid" />)
+
+    expect(screen.getByText('ספרו לנו על עצמכם')).toBeInTheDocument()
+  })
+
+  it('includes this gathering\'s own custom questions alongside the built-ins', () => {
+    players = [player('host-uid', { name: 'דוד' })]
+    render(
+      <Lobby
+        sessionId="s1"
+        roomCode="1234"
+        uid="host-uid"
+        isHost={true}
+        hostUid="host-uid"
+        customQuestions={[{ id: 'q1', text: 'שאלה מותאמת אישית', kind: 'text' }]}
+      />,
+    )
+
+    expect(screen.getByText('שאלה מותאמת אישית')).toBeInTheDocument()
+    // A built-in is present too - this is additive, not a replacement.
+    expect(screen.getByText('התחביב שלך')).toBeInTheDocument()
+  })
+
+  it('saves a text answer through saveProfileAnswer, keyed to the question that was answered', async () => {
+    players = [player('host-uid', { name: 'דוד' })]
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+
+    // Scoped to this one question's own row, since every question repeats the
+    // same "שמירה" label - a bare getByRole would be ambiguous the moment a
+    // second question exists.
+    const hobbyRow = within(screen.getByText('התחביב שלך').parentElement!)
+    fireEvent.change(hobbyRow.getByPlaceholderText('התשובה שלך'), { target: { value: 'ציור' } })
+    fireEvent.click(hobbyRow.getByRole('button', { name: /שמירה/ }))
+
+    await waitFor(() =>
+      expect(mockSaveProfileAnswer).toHaveBeenCalledWith(
+        expect.anything(),
+        's1',
+        'host-uid',
+        'hobby',
+        'ציור',
+      ),
+    )
   })
 })

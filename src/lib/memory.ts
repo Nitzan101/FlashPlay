@@ -36,6 +36,7 @@ import {
 } from 'firebase/firestore'
 import { useEffect, useState } from 'react'
 import { HARVEST_PROMPTS } from '../content/prompts'
+import { PROFILE_QUESTIONS } from '../content/profileQuestions'
 import { db } from './firebase'
 import { errorCode, step } from './room'
 import {
@@ -45,6 +46,8 @@ import {
   type GroupDoc,
   type ItemAuthorDoc,
   type ItemDoc,
+  type ProfileAnswerDoc,
+  type ProfileQuestion,
   type SessionDoc,
   type SessionFeedbackDoc,
 } from './model'
@@ -333,6 +336,124 @@ export async function writeRemainingFacts(
   return kept
 }
 
+/**
+ * Every active player's guided-question answers, turned into facts - the
+ * collector for milestone 8's self-report half. Only called once, at the end
+ * of the evening (see the module comment on `ProfileAnswerDoc` for why: there
+ * is no "revealed" moment here to make an earlier, partial collection safe,
+ * unlike the party games' items).
+ *
+ * **Upserts rather than write-once**, unlike `writeFactsForGame`'s facts -
+ * deliberately: a profile answer is editable up to the moment the evening
+ * ends (the whole point of the lobby's per-question save button is "I can
+ * still change my mind"), so a fact written from an earlier snapshot of the
+ * answer would go stale otherwise. `useCount` is still preserved once set,
+ * the same reasoning as `writeFactsForGame` - only `text` is ever touched on
+ * an update.
+ *
+ * Iterates the known question list by id rather than listing the
+ * `profileAnswers` subcollection - see the comment on `paths.profileAnswer`.
+ */
+export async function writeProfileFacts(
+  firestore: Firestore,
+  hostUid: string,
+  sessionId: string,
+  players: { id: string; name: string }[],
+  /** Parameterised so a test can supply a fixed set rather than depending on
+   *  the shipped content file, matching writeFactsForGame's own `prompts`
+   *  parameter. */
+  questions: readonly ProfileQuestion[] = PROFILE_QUESTIONS,
+): Promise<number> {
+  const sessionSnap = await step('read-session', () =>
+    getDoc(doc(firestore, paths.session(sessionId))),
+  )
+  const session = sessionSnap.data() as SessionDoc
+  const contactIds = session.contactIds ?? {}
+  if (Object.keys(contactIds).length === 0) return 0
+
+  const activeQuestions = [...questions, ...(session.customQuestions ?? [])]
+
+  let kept = 0
+  for (const player of players) {
+    const contactId = contactIds[player.id]
+    if (!contactId) continue
+
+    for (const question of activeQuestions) {
+      const answerSnap = await getDoc(
+        doc(firestore, paths.profileAnswer(sessionId, player.id, question.id)),
+      )
+      if (!answerSnap.exists()) continue
+      const { answer } = answerSnap.data() as ProfileAnswerDoc
+      const text = Array.isArray(answer) ? answer.join(', ') : answer
+      if (!text.trim()) continue // an explicitly cleared answer is a retraction, not a fact
+
+      const factPath = `${paths.contactFacts(hostUid, contactId)}/profile_${question.id}`
+      const fullText = `${question.text}: ${text}`
+      const existing = await getDoc(doc(firestore, factPath))
+      kept += 1
+      if (existing.exists()) {
+        await step('update-profile-fact', () =>
+          updateDoc(doc(firestore, factPath), { text: fullText }),
+        )
+        continue
+      }
+      const fact: FactDoc = {
+        text: fullText,
+        promptId: question.id,
+        authorContactId: contactId,
+        useCount: 0,
+        sessionId,
+        createdAt: Date.now(),
+      }
+      await step('write-profile-fact', () => setDoc(doc(firestore, factPath), fact))
+    }
+  }
+  return kept
+}
+
+/** A free-form note the host writes about one person directly, any time, from
+ *  the group's own details screen - no question or game behind it at all.
+ *  Document id is fresh, since nothing else determines one the way an item id
+ *  or a question id does for every other fact-writing path here. */
+export async function addManualFact(
+  firestore: Firestore,
+  hostUid: string,
+  contactId: string,
+  text: string,
+): Promise<void> {
+  const fact: FactDoc = {
+    text,
+    authorContactId: contactId,
+    useCount: 0,
+    sessionId: '',
+    createdAt: Date.now(),
+  }
+  await step('add-manual-fact', () =>
+    setDoc(doc(firestore, `${paths.contactFacts(hostUid, contactId)}/${crypto.randomUUID()}`), fact),
+  )
+}
+
+/** The group-wide counterpart to addManualFact, for something true of the
+ *  group rather than of one person - the same "על הקבוצה" drawer the party
+ *  games' own group-drawer prompts would use, if any shipped one today. */
+export async function addManualGroupFact(
+  firestore: Firestore,
+  hostUid: string,
+  groupId: string,
+  text: string,
+): Promise<void> {
+  const fact: FactDoc = {
+    text,
+    authorContactId: '',
+    useCount: 0,
+    sessionId: '',
+    createdAt: Date.now(),
+  }
+  await step('add-manual-group-fact', () =>
+    setDoc(doc(firestore, `${paths.groupFacts(hostUid, groupId)}/${crypto.randomUUID()}`), fact),
+  )
+}
+
 /** The host's own note on how the evening went. Keyed by session id, so
  *  answering again corrects it rather than adding a second answer. */
 export async function recordFeedback(
@@ -467,7 +588,15 @@ export interface GroupMemory {
  * Reads the group's own facts plus every member contact's, which is what a
  * person actually means by "what does it know about us".
  */
-export function useGroupMemory(hostUid: string | null, groupId: string | null): GroupMemory {
+export function useGroupMemory(
+  hostUid: string | null,
+  groupId: string | null,
+  /** Bump this (any changing value) to force a re-read - there is no live
+   *  listener here, so adding a manual fact from GroupDetails needs an
+   *  explicit nudge to show up without a full remount. Ignored by every
+   *  existing test double that mocks this hook with a fixed arity. */
+  refreshToken: number = 0,
+): GroupMemory {
   const [state, setState] = useState<GroupMemory>({
     groupName: '',
     members: [],
@@ -534,7 +663,7 @@ export function useGroupMemory(hostUid: string | null, groupId: string | null): 
     return () => {
       cancelled = true
     }
-  }, [hostUid, groupId])
+  }, [hostUid, groupId, refreshToken])
 
   return state
 }

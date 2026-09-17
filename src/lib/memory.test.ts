@@ -26,6 +26,8 @@ import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { HARVEST_PROMPTS } from '../content/prompts'
 import {
+  addManualFact,
+  addManualGroupFact,
   createGroup,
   deleteContact,
   deleteFact,
@@ -35,6 +37,7 @@ import {
   nameGroup,
   recordFeedback,
   writeFactsForGame,
+  writeProfileFacts,
   writeRemainingFacts,
 } from './memory'
 import {
@@ -42,6 +45,7 @@ import {
   type ContactDoc,
   type FactDoc,
   type GroupDoc,
+  type ProfileQuestion,
   type SessionDoc,
   type SessionFeedbackDoc,
 } from './model'
@@ -274,6 +278,132 @@ describe('writeFactsForGame', () => {
       collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
     )
     expect(facts.docs.map((d) => d.id).sort()).toEqual(['never-played', 'played'])
+  })
+})
+
+// Milestone 8's collector: a player's guided-question answers, turned into
+// facts. Session-scoped answers are seeded directly (bypassing the rules
+// this file is not about) - profileQuestions.test.ts proves the client
+// function that actually writes them drives the rules correctly.
+describe('writeProfileFacts', () => {
+  const QUESTIONS: ProfileQuestion[] = [{ id: 'hobby', text: 'התחביב שלך', kind: 'text' }]
+
+  async function seedAnswer(uid: string, questionId: string, answer: string | string[]) {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), paths.profileAnswer(SESSION, uid, questionId)), {
+        questionId,
+        answer,
+        updatedAt: 0,
+      })
+    })
+  }
+
+  it('turns an answered question into a fact under the answering contact', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await seedAnswer(PLAYER, 'hobby', 'ציור')
+
+    const kept = await writeProfileFacts(asHost(), HOST, SESSION, roster, QUESTIONS)
+
+    expect(kept).toBe(1)
+    const facts = await getDocs(
+      collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
+    )
+    expect(facts.docs[0].data().text).toBe('התחביב שלך: ציור')
+  })
+
+  it('joins a multi-choice answer with commas', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await seedAnswer(PLAYER, 'hobby', ['ציור', 'ריצה'])
+
+    await writeProfileFacts(asHost(), HOST, SESSION, roster, QUESTIONS)
+
+    const facts = await getDocs(
+      collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
+    )
+    expect(facts.docs[0].data().text).toBe('התחביב שלך: ציור, ריצה')
+  })
+
+  // The whole reason this upserts instead of writing once - unlike a
+  // harvest fact, a profile answer is explicitly editable up to the moment
+  // the evening ends (the lobby's own per-question save button says so).
+  it('updates the fact when the answer changes, rather than freezing the first value', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await seedAnswer(PLAYER, 'hobby', 'ציור')
+    await writeProfileFacts(asHost(), HOST, SESSION, roster, QUESTIONS)
+
+    await seedAnswer(PLAYER, 'hobby', 'ריצה')
+    await writeProfileFacts(asHost(), HOST, SESSION, roster, QUESTIONS)
+
+    const facts = await getDocs(
+      collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
+    )
+    expect(facts.size).toBe(1)
+    expect(facts.docs[0].data().text).toBe('התחביב שלך: ריצה')
+  })
+
+  it('treats a cleared (empty) answer as a retraction, not a fact', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await seedAnswer(PLAYER, 'hobby', '')
+
+    const kept = await writeProfileFacts(asHost(), HOST, SESSION, roster, QUESTIONS)
+
+    expect(kept).toBe(0)
+    const facts = await getDocs(
+      collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
+    )
+    expect(facts.size).toBe(0)
+  })
+
+  it('writes nothing, quietly, when the group was never saved', async () => {
+    await seedAnswer(PLAYER, 'hobby', 'ציור')
+    expect(await writeProfileFacts(asHost(), HOST, SESSION, roster, QUESTIONS)).toBe(0)
+  })
+
+  it("includes the session's own custom questions alongside the built-ins passed in", async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), paths.session(SESSION)), {
+        customQuestions: [{ id: 'custom1', text: 'שאלה מותאמת', kind: 'text' }],
+      })
+    })
+    await seedAnswer(PLAYER, 'custom1', 'תשובה')
+
+    const kept = await writeProfileFacts(asHost(), HOST, SESSION, roster, [])
+
+    expect(kept).toBe(1)
+    const facts = await getDocs(
+      collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
+    )
+    expect(facts.docs[0].data().text).toBe('שאלה מותאמת: תשובה')
+  })
+})
+
+describe('addManualFact and addManualGroupFact', () => {
+  it("adds a free-form fact directly to a person's contact", async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+
+    await addManualFact(asHost(), HOST, contactIds[PLAYER], 'אוהב פיצה אננס')
+
+    const facts = await getDocs(
+      collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
+    )
+    expect(facts.docs.map((d) => d.data().text)).toEqual(['אוהב פיצה אננס'])
+  })
+
+  it('adds a free-form fact to the group itself', async () => {
+    await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+
+    await addManualGroupFact(asHost(), HOST, SESSION, 'תמיד מגיעים באיחור')
+
+    const facts = await getDocs(collection(asHost(), paths.groupFacts(HOST, SESSION)))
+    expect(facts.docs.map((d) => d.data().text)).toEqual(['תמיד מגיעים באיחור'])
+  })
+
+  it('refuses a guest adding a fact to another host\'s store', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await expect(
+      addManualFact(asPlayer(), HOST, contactIds[PLAYER], 'x'),
+    ).rejects.toThrow()
   })
 })
 

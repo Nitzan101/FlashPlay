@@ -7,6 +7,12 @@ import { db } from './lib/firebase'
 import { paths } from './lib/model'
 import { createRoom, joinRoom, leaveRoom, resolveRoomCode, setPlayerEmoji } from './lib/room'
 import { saveUserProfile, useUserProfile } from './lib/profile'
+import {
+  addCustomQuestion,
+  deleteCustomQuestion,
+  useCustomQuestions,
+} from './lib/profileQuestions'
+import type { QuestionKind } from './lib/model'
 import GroupDetails from './GroupDetails'
 import RoomPicker from './RoomPicker'
 import EmojiPicker from './EmojiPicker'
@@ -109,6 +115,7 @@ export default function App() {
   // account, and a guest's uid is a new one every gathering anyway (see
   // matchName in memory.ts).
   const profile = useUserProfile(user && !user.isAnonymous ? user.uid : null)
+  const customQuestions = useCustomQuestions(user && !user.isAnonymous ? user.uid : null)
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' })
   const [busy, setBusy] = useState(false)
   const [nameInput, setNameInput] = useState('')
@@ -126,6 +133,7 @@ export default function App() {
   const [detailsOf, setDetailsOf] = useState<string | null>(null)
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const [editingProfile, setEditingProfile] = useState(false)
+  const [editingQuestions, setEditingQuestions] = useState(false)
   const [joinEmoji, setJoinEmoji] = useState<string | null>(null)
 
   useEffect(() => {
@@ -222,7 +230,13 @@ export default function App() {
     if (!user) return
     setBusy(true)
     try {
-      const { sessionId, roomCode } = await createRoom(db, user.uid, undefined, groupId)
+      const { sessionId, roomCode } = await createRoom(
+        db,
+        user.uid,
+        undefined,
+        groupId,
+        customQuestions.questions,
+      )
       // Falls back to a generic label, never the email - the roster is
       // visible to every guest, and an email address has no business in it.
       await joinRoom(
@@ -424,6 +438,22 @@ export default function App() {
                   className="cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
                 >
                   {t('editProfileButton')}
+                </button>
+              )}
+
+              {editingQuestions ? (
+                <CustomQuestionsEditor
+                  uid={user.uid}
+                  questions={customQuestions.questions}
+                  onDone={() => setEditingQuestions(false)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditingQuestions(true)}
+                  className="cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+                >
+                  {t('editCustomQuestionsButton')}
                 </button>
               )}
 
@@ -674,6 +704,122 @@ function ProfileEditor({
           {t('profileSaveError')}{' '}
           <span dir="ltr" className="font-mono">
             ({save.error})
+          </span>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The host's own question bank - milestone 8's "questions the host chooses
+ * themselves, with answers", persisted so it is offered again in every future
+ * gathering (see `SessionDoc.customQuestions`, taken as a snapshot at
+ * `createRoom` time). Add and delete only, deliberately - editing an existing
+ * question is left out of this first pass, and deleting and re-adding covers
+ * the rare case of a genuine mistake.
+ */
+function CustomQuestionsEditor({
+  uid,
+  questions,
+  onDone,
+}: {
+  uid: string
+  questions: { id: string; text: string; kind: QuestionKind; options?: string[] }[]
+  onDone: () => void
+}) {
+  const { t } = useTranslation()
+  const [text, setText] = useState('')
+  const [kind, setKind] = useState<QuestionKind>('text')
+  const [optionsInput, setOptionsInput] = useState('')
+  const add = useAction()
+  const remove = useAction()
+
+  const options = optionsInput
+    .split(',')
+    .map((option) => option.trim())
+    .filter(Boolean)
+
+  return (
+    <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 p-3">
+      {questions.length > 0 && (
+        <ul className="flex w-full flex-col gap-1">
+          {questions.map((question) => (
+            <li
+              key={question.id}
+              className="flex items-center justify-between gap-2 rounded-lg border border-line bg-surface/60 px-2 py-1.5 text-sm"
+            >
+              <span className="min-w-0 truncate text-start">{question.text}</span>
+              <button
+                type="button"
+                disabled={remove.busy}
+                onClick={() => void remove.run(() => deleteCustomQuestion(db, uid, question.id))}
+                className="shrink-0 cursor-pointer text-xs text-danger disabled:opacity-50"
+              >
+                {t('deleteFact')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <input
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        placeholder={t('customQuestionTextPlaceholder')}
+        maxLength={120}
+        className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-ink placeholder:text-muted"
+      />
+      <select
+        value={kind}
+        onChange={(event) => setKind(event.target.value as QuestionKind)}
+        className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-ink"
+      >
+        <option value="text">{t('questionKindText')}</option>
+        <option value="single-choice">{t('questionKindSingleChoice')}</option>
+        <option value="multi-choice">{t('questionKindMultiChoice')}</option>
+      </select>
+      {kind !== 'text' && (
+        <input
+          value={optionsInput}
+          onChange={(event) => setOptionsInput(event.target.value)}
+          placeholder={t('customQuestionOptionsPlaceholder')}
+          className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-ink placeholder:text-muted"
+        />
+      )}
+
+      <div className="flex w-full items-center gap-2">
+        <button
+          type="button"
+          disabled={add.busy || !text.trim() || (kind !== 'text' && options.length < 2)}
+          onClick={() =>
+            void add.run(async () => {
+              await addCustomQuestion(db, uid, {
+                text: text.trim(),
+                kind,
+                ...(kind !== 'text' && { options }),
+              })
+              setText('')
+              setOptionsInput('')
+            })
+          }
+          className="grow cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+        >
+          {add.busy ? t('savingProfile') : t('addCustomQuestion')}
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          className="cursor-pointer rounded-xl px-3 py-2 text-sm text-muted"
+        >
+          {t('backButton')}
+        </button>
+      </div>
+      {(add.error ?? remove.error) && (
+        <p role="alert" className="text-xs text-danger">
+          {t('customQuestionSaveError')}{' '}
+          <span dir="ltr" className="font-mono">
+            ({add.error ?? remove.error})
           </span>
         </p>
       )}

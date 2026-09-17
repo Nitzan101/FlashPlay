@@ -73,6 +73,18 @@ vi.mock('./lib/profile', () => ({
   saveUserProfile: (...args: unknown[]) => mockSaveUserProfile(...args) as unknown,
 }))
 
+// The host's own guided-question bank - see src/lib/profileQuestions.ts.
+// Also reached transitively by Lobby (via GuidedQuestions) whenever a test
+// renders into the in-room lobby screen.
+const mockCustomQuestions = vi.fn()
+vi.mock('./lib/profileQuestions', () => ({
+  useCustomQuestions: () => mockCustomQuestions(),
+  addCustomQuestion: vi.fn(),
+  deleteCustomQuestion: vi.fn(),
+  useMyProfileAnswers: () => ({ answers: {}, loading: false }),
+  saveProfileAnswer: vi.fn(),
+}))
+
 const mockSavedGroups = vi.fn()
 const mockCreateGroup = vi.fn()
 vi.mock('./lib/memory', () => ({
@@ -106,6 +118,7 @@ afterEach(() => {
 beforeEach(() => {
   mockSavedGroups.mockReturnValue({ groups: [], loading: false, error: null })
   mockUserProfile.mockReturnValue({ displayName: '', emoji: null, loading: false })
+  mockCustomQuestions.mockReturnValue({ questions: [], loading: false, error: null })
 })
 
 describe('app shell', () => {

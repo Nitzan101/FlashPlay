@@ -40,7 +40,8 @@ All verified by execution on 2026-09-04.
 - Security rules test: `npm run test:rules` - starts the Firestore emulator and
   runs the rules suite against it (`firestore-rules.test.ts`, `room.test.ts`,
   `harvest.test.ts`, `rounds.test.ts`, `secondGame.test.ts`,
-  `memory.test.ts`, `evening.test.ts`, `profile.test.ts`). Needs Java
+  `memory.test.ts`, `evening.test.ts`, `profile.test.ts`,
+  `profileQuestions.test.ts`). Needs Java
   (present: OpenJDK 21). Excluded from `npm
   test` so the everyday loop stays fast and emulator-free. **Also needs
   `.env.local` to exist**, even though these files never touch the real
@@ -85,6 +86,19 @@ Two kinds of change are not covered by that and need more:
   resync, the WhatsApp in-app browser, redirect auth. These do not reproduce on
   a laptop. Evidence is a real multi-device run.
 
+**Screenshotting a screen that only renders for a real signed-in registered
+host** (a browser-driving tool has no way to complete real Google OAuth): mock
+the Firestore-touching hooks the same way the component's own test file does
+(`vi.mock('./lib/memory', ...)`), render it with React Testing Library in a
+throwaway `.test.tsx`, dump `container.innerHTML` to a file, and load that
+HTML in a plain page alongside the real built CSS (`dist/assets/index-*.css`)
+served from a local static server - a real browser then paints the actual
+Tailwind classes correctly, which a components-in-isolation storybook would
+not need but this project has none of. Delete the scratch test and HTML
+files afterwards; nothing here belongs in the repo. Used 2026-09-17 to verify
+`RoomPicker`/`GroupDetails`/`EmojiPicker`, none of which a signed-out session
+can reach.
+
 ## Structure
 - `src/main.tsx` — entry; mounts App, imports i18n and Tailwind.
 - `src/i18n.ts` — i18next setup. Hebrew is the only shipped locale.
@@ -120,6 +134,24 @@ Two kinds of change are not covered by that and need more:
   across edits).
 - `src/EmojiPicker.tsx` — the fixed `EMOJI_PALETTE` (model.ts) grid, shared by
   the host's profile editor, the join form, and the lobby's self-edit.
+- `src/content/profileQuestions.ts` — milestone 8: the built-in guided-question
+  bank (`ProfileQuestion[]`), content only, same convention as
+  `content/prompts.ts`.
+- `src/lib/profileQuestions.ts` — milestone 8. A host's own persisted question
+  bank (`useCustomQuestions`, `addCustomQuestion`, `deleteCustomQuestion`, at
+  `users/{uid}/customQuestions`, reused across every gathering they open) and
+  a player's own answers within one gathering (`saveProfileAnswer`,
+  `useMyProfileAnswers`, at `players/{uid}/profileAnswers/{questionId}` -
+  private, never readable by another player). `readCustomQuestions` is the
+  one-off read `createRoom`'s snapshot uses - see the comment on its
+  `customQuestions` parameter for why `room.ts` never imports this file
+  directly (it would cycle back, the same reasoning `nameSlotId`'s
+  duplication already documents).
+- `src/GuidedQuestions.tsx` — "ספרו לנו על עצמכם", shown in the lobby while
+  waiting: every built-in plus this gathering's own custom questions, each
+  with its own independent save button and saved-state, never one shared
+  form-wide save (asked for directly - a half-typed or regretted answer must
+  never be swept up by someone else's save tap).
 - `src/lib/harvest.ts` — milestone 4: the session state machine and the
   harvest phase. `startHarvestGame`, `submitHarvestItem` (the three-write
   contract - see `ITEM_WRITE_ORDER` in `model.ts`), `getMySubmission`,
@@ -141,17 +173,23 @@ Two kinds of change are not covered by that and need more:
 - `src/lib/memory.ts` — milestone 7: what the evening leaves behind, all of it
   in the host's own private store. `ensureContacts`, `createGroup` (a group
   made before any gathering, from the room picker - starts with no members),
-  `writeFactsForGame`, `writeRemainingFacts`, `nameGroup`, `recordFeedback`,
+  `writeFactsForGame`, `writeRemainingFacts`, `writeProfileFacts` (milestone
+  8's collector - upserts rather than write-once, since a profile answer is
+  editable up to the moment the evening ends, unlike a harvest fact),
+  `addManualFact`/`addManualGroupFact` (the host's own free-form note, no
+  question or game behind it - milestone 8), `nameGroup`, `recordFeedback`,
   the deletion cascade (`deleteFact`/`deleteContact`/`deleteGroup`), and the
   `useGroupMemory` (returns `members: RememberedMember[]`, each with their own
   `facts`, plus a separate `groupFacts` array - grouped by person, not one flat
-  list), `useSavedGroups`/`useGroupName` hooks.
+  list; takes an optional `refreshToken` to force a re-read after a manual add,
+  since it has no live listener), `useSavedGroups`/`useGroupName` hooks.
 - `src/RoomPicker.tsx` — the landing screen's room chooser: "a new room" or one
   of the host's saved groups, as a visible selection separate from the "open
   a room" tap itself, plus creating a new (empty) group.
 - `src/GroupDetails.tsx` — a saved group's details, owner only: per-person
   facts (including "nothing recorded yet"), group-wide facts, inline renaming,
-  per-fact and whole-group deletion, both behind a confirm step. Named
+  per-fact and whole-group deletion (both behind a confirm step), and adding a
+  free-form fact directly to a person or the group (milestone 8). Named
   `GroupDetails` rather than the milestone-7 original `GroupMemory` once it
   stopped being read-only.
 - `src/lib/useAction.ts` — one host tap: busy, the error with its code, and the

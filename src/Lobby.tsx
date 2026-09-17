@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import EmojiPicker from './EmojiPicker'
+import GuidedQuestions from './GuidedQuestions'
 import { pickHarvestPromptIds, startHarvestGame } from './lib/harvest'
 import { db } from './lib/firebase'
-import { MIN_PLAYERS_TO_START, type PlayerDoc } from './lib/model'
+import { MIN_PLAYERS_TO_START, type PlayerDoc, type ProfileQuestion } from './lib/model'
 import { renamePlayer, useRoster } from './lib/room'
 import { useAction } from './lib/useAction'
 
@@ -13,9 +14,20 @@ interface LobbyProps {
   uid: string
   isHost: boolean
   hostUid: string
+  /** This gathering's snapshot of the host's own question bank - see
+   *  SessionDoc.customQuestions. Optional, defaulting to none, so every
+   *  existing test that renders this screen without it stays valid. */
+  customQuestions?: ProfileQuestion[]
 }
 
-export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: LobbyProps) {
+export default function Lobby({
+  sessionId,
+  roomCode,
+  uid,
+  isHost,
+  hostUid,
+  customQuestions = [],
+}: LobbyProps) {
   const { t } = useTranslation()
   const { players, error } = useRoster(sessionId)
   // "In the room" means present, not merely having joined at some point -
@@ -146,6 +158,10 @@ export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: Lob
       )}
 
       <p className="text-muted">{isHost ? t('lobbyWaitingHost') : t('lobbyWaitingGuest')}</p>
+
+      {/* Every player, host included - framed as something to fill the wait
+          with, never a gate on it (milestone 8). */}
+      <GuidedQuestions sessionId={sessionId} uid={uid} customQuestions={customQuestions} />
 
       {isHost && (
         <div className="flex flex-col items-center gap-2">

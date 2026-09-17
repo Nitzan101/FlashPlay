@@ -25,6 +25,7 @@ import {
   ROOM_CODE_WINDOW_MS,
   type PlayerDoc,
   type PlayerNameDoc,
+  type ProfileQuestion,
   type RoomCodeDoc,
   type SessionDoc,
 } from './model'
@@ -151,6 +152,12 @@ export async function createRoom(
    *  visit. Set here so the end of the evening adds to that group's memory
    *  rather than starting a second one (milestone 7). */
   groupId: string | null = null,
+  /** A snapshot of the host's own custom-question bank at this exact moment -
+   *  passed in rather than read here so this file never has to import from
+   *  profileQuestions.ts, which itself imports from this one (the same cycle
+   *  nameSlotId's duplication above already avoids). The caller (App.tsx) has
+   *  the live list from `useCustomQuestions` anyway. */
+  customQuestions: ProfileQuestion[] = [],
 ): Promise<{ sessionId: string; roomCode: string }> {
   const sessionId = crypto.randomUUID()
   const now = Date.now()
@@ -165,6 +172,7 @@ export async function createRoom(
     contactIds: {},
     createdAt: now,
     expiresAt: now + ROOM_CODE_WINDOW_MS,
+    customQuestions,
   }
   await step('create-session', () =>
     setDoc(doc(firestore, paths.session(sessionId)), session),

@@ -4,6 +4,8 @@ import HostButton from './HostButton'
 import LoadFailure from './LoadFailure'
 import { db } from './lib/firebase'
 import {
+  addManualFact,
+  addManualGroupFact,
   deleteFact,
   deleteGroup,
   nameGroup,
@@ -50,9 +52,20 @@ export default function GroupDetails({
   onDeleted,
 }: GroupDetailsProps) {
   const { t } = useTranslation()
-  const { groupName, members, groupFacts, loading, error } = useGroupMemory(hostUid, groupId)
+  const [refreshToken, setRefreshToken] = useState(0)
+  const { groupName, members, groupFacts, loading, error } = useGroupMemory(
+    hostUid,
+    groupId,
+    refreshToken,
+  )
   const remove = useAction()
   const rename = useAction()
+  const addFact = useAction()
+  // Which person's (or the group's, keyed '') add-a-fact box is open - at
+  // most one at a time, so opening a new one does not leave a half-typed note
+  // behind in another.
+  const [addingTo, setAddingTo] = useState<string | null>(null)
+  const [factInput, setFactInput] = useState('')
   const [deleted, setDeleted] = useState<string[]>([])
   // Which row is being deleted, so one slow delete does not grey out every
   // other row's button with no explanation.
@@ -124,6 +137,26 @@ export default function GroupDetails({
         )}
       </div>
     )
+  }
+
+  /** `null` (the group itself) is keyed as `''` in `addingTo`, since state
+   *  keys can't be null. */
+  function openAddFact(contactId: string | null) {
+    setAddingTo(contactId ?? '')
+    setFactInput('')
+  }
+
+  function saveFact(contactId: string | null) {
+    void addFact.run(async () => {
+      if (contactId) {
+        await addManualFact(db, hostUid, contactId, factInput.trim())
+      } else {
+        await addManualGroupFact(db, hostUid, groupId, factInput.trim())
+      }
+      setAddingTo(null)
+      setFactInput('')
+      setRefreshToken((token) => token + 1)
+    })
   }
 
   return (
@@ -198,20 +231,34 @@ export default function GroupDetails({
                 ) : (
                   facts.map((fact) => <FactRow key={fact.path} fact={fact} />)
                 )}
+                <AddFactRow
+                  isOpen={addingTo === member.contactId}
+                  value={factInput}
+                  busy={addFact.busy}
+                  onOpen={() => openAddFact(member.contactId)}
+                  onChange={setFactInput}
+                  onSave={() => saveFact(member.contactId)}
+                  onCancel={() => setAddingTo(null)}
+                />
               </div>
             )
           })}
 
-          {groupFacts.filter(isVisible).length > 0 && (
-            <>
-              <p className="w-full text-start text-xs tracking-wide text-muted">
-                {t('groupFactsTitle')}
-              </p>
-              {groupFacts.filter(isVisible).map((fact) => (
-                <FactRow key={fact.path} fact={fact} showWho />
-              ))}
-            </>
-          )}
+          <div className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
+            <p className="text-start text-xs tracking-wide text-muted">{t('groupFactsTitle')}</p>
+            {groupFacts.filter(isVisible).map((fact) => (
+              <FactRow key={fact.path} fact={fact} showWho />
+            ))}
+            <AddFactRow
+              isOpen={addingTo === ''}
+              value={factInput}
+              busy={addFact.busy}
+              onOpen={() => openAddFact(null)}
+              onChange={setFactInput}
+              onSave={() => saveFact(null)}
+              onCancel={() => setAddingTo(null)}
+            />
+          </div>
         </>
       )}
 
@@ -223,6 +270,14 @@ export default function GroupDetails({
           {t('deleteFactError')}{' '}
           <span dir="ltr" className="font-mono">
             ({remove.error})
+          </span>
+        </p>
+      )}
+      {addFact.error && (
+        <p role="alert" className="text-xs text-danger">
+          {t('addFactError')}{' '}
+          <span dir="ltr" className="font-mono">
+            ({addFact.error})
           </span>
         </p>
       )}
@@ -266,6 +321,75 @@ export default function GroupDetails({
       <HostButton busy={false} onClick={onClose}>
         {t('backButton')}
       </HostButton>
+    </div>
+  )
+}
+
+/**
+ * The host's own free-form note, added directly rather than collected from a
+ * game or a guided question - "add info as they wish" from the room
+ * picker/details conversation. Shared between a person's card and the
+ * group-wide section, driven entirely by props rather than closing over
+ * `GroupDetails`'s state - a component declared inside another component's
+ * render body is recreated every render, which resets any state of its own
+ * and defeats reconciliation (oxlint: react/static-components).
+ */
+function AddFactRow({
+  isOpen,
+  value,
+  busy,
+  onOpen,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  isOpen: boolean
+  value: string
+  busy: boolean
+  onOpen: () => void
+  onChange: (value: string) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+
+  if (!isOpen) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className="cursor-pointer self-start text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+      >
+        + {t('addFact')}
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={t('addFactPlaceholder')}
+        maxLength={300}
+        autoFocus
+        className="w-full min-w-0 rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
+      />
+      <button
+        type="button"
+        disabled={busy || !value.trim()}
+        onClick={onSave}
+        className="shrink-0 cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+      >
+        {t('addFactSave')}
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="shrink-0 cursor-pointer rounded-xl px-2 py-2 text-sm text-muted"
+      >
+        {t('addGroupCancel')}
+      </button>
     </div>
   )
 }

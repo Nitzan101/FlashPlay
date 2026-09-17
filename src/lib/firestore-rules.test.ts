@@ -1314,3 +1314,74 @@ describe('playerNames - one slot per display name, self-uid only, never updatabl
     await assertSucceeds(getDoc(doc(asOutsider(), `sessions/${SESSION}/playerNames/taken`)))
   })
 })
+
+// Milestone 8: a player's own answers to the guided questions. Private, not
+// public like an item - no other player may ever read one, and the host may
+// only once the gathering is finished (there is no "revealed" moment here
+// that would make an earlier read safe, unlike itemAuthors).
+describe('profileAnswers - private to the answering player and the host once finished', () => {
+  const path = `sessions/${SESSION}/players/${PLAYER}/profileAnswers/hobby`
+  const answer = { questionId: 'hobby', answer: 'ציור', updatedAt: 0 }
+
+  it('lets a player create their own answer', async () => {
+    await assertSucceeds(setDoc(doc(asPlayer(), path), answer))
+  })
+
+  it('lets a player update their own answer, any number of times', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), path), answer)
+    })
+    await assertSucceeds(setDoc(doc(asPlayer(), path), { ...answer, answer: 'משהו אחר' }))
+  })
+
+  it("refuses another player writing into someone else's profileAnswers", async () => {
+    await assertFails(setDoc(doc(asHost(), path), answer))
+  })
+
+  it('refuses a questionId that does not match the document id', async () => {
+    await assertFails(
+      setDoc(doc(asPlayer(), path), { ...answer, questionId: 'a-different-question' }),
+    )
+  })
+
+  it('refuses an extra field beyond the declared shape', async () => {
+    await assertFails(setDoc(doc(asPlayer(), path), { ...answer, authorPlayerId: PLAYER }))
+  })
+
+  it('lets a player read their own answer', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), path), answer)
+    })
+    await assertSucceeds(getDoc(doc(asPlayer(), path)))
+  })
+
+  it('refuses another player reading it, regardless of gathering phase', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), path), answer)
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}`), { phase: 'finished' }, { merge: true })
+    })
+    await assertFails(getDoc(doc(asOutsider(), path)))
+  })
+
+  it('refuses the host reading it while the gathering is still running', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), path), answer)
+    })
+    await assertFails(getDoc(doc(asHost(), path)))
+  })
+
+  it('lets the host read it once the gathering is finished', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), path), answer)
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}`), { phase: 'finished' }, { merge: true })
+    })
+    await assertSucceeds(getDoc(doc(asHost(), path)))
+  })
+
+  it('lets a player delete their own answer, retracting it', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), path), answer)
+    })
+    await assertSucceeds(deleteDoc(doc(asPlayer(), path)))
+  })
+})

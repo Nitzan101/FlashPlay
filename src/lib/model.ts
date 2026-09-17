@@ -94,8 +94,13 @@ export interface SessionFeedbackDoc {
  */
 export interface FactDoc {
   text: string
-  /** Which harvest prompt produced it - this is what determined the drawer. */
-  promptId: string
+  /** Which harvest prompt or profile question produced it - this is what
+   *  determined the drawer for a harvest-sourced fact (see writeFactsForGame).
+   *  Optional because a fact can also be added by the host directly, with no
+   *  question behind it at all (see addManualFact/addManualGroupFact in
+   *  memory.ts) - always `personal`/attributed drawer in that case, decided by
+   *  which screen the host used, not by looking anything up. */
+  promptId?: string
   /** Kept even when display is anonymous, or a personal fact could never
    *  travel with its person. */
   authorContactId: string
@@ -105,6 +110,74 @@ export interface FactDoc {
   sessionId: string
   createdAt: number
 }
+
+// --- Guided profile questions -----------------------------------------------
+//
+// A second, separate way facts enter the store, alongside the party games'
+// harvest - milestone 8. Built-in questions (src/content/profileQuestions.ts)
+// ship with the app; a host can also grow their own bank, reused across every
+// gathering they run (see CustomQuestionDoc, below) - the same "persists
+// across evenings" philosophy as groups and contacts, not a one-off form.
+
+export type QuestionKind = 'single-choice' | 'multi-choice' | 'text'
+
+/** One question, whether built-in or the host's own - the shape a screen
+ *  actually renders from. A built-in's `id` is a fixed content-file string; a
+ *  custom question's `id` is its Firestore document id, attached when read. */
+export interface ProfileQuestion {
+  id: string
+  text: string
+  kind: QuestionKind
+  /** Only meaningful for the choice kinds. */
+  options?: string[]
+}
+
+/** A host-authored question, persisted under their own account so it is
+ *  offered again in every future gathering they open - not just this one.
+ *  Lives at `users/{uid}/customQuestions/{id}`, already covered by that
+ *  subtree's blanket owner-only rule - no rules change needed for this half.
+ *  A snapshot of the host's bank at room-creation time is what a session's
+ *  players actually see (`SessionDoc.customQuestions`, below): the bank
+ *  itself is private, and a guest cannot read `users/{hostUid}/...` at all. */
+export interface CustomQuestionDoc {
+  text: string
+  kind: QuestionKind
+  options?: string[]
+  createdAt: number
+}
+
+/**
+ * One player's answer to one guided question, for one gathering - lives at
+ * `sessions/{sessionId}/players/{uid}/profileAnswers/{questionId}`, a
+ * subcollection of the player's own document so the existing `isUser`/`isHost`
+ * shape applies directly with no new helper function.
+ *
+ * **Private, unlike a harvest item.** A harvest item is meant to be read aloud
+ * to the room; a profile answer is meant only for the host's own memory of
+ * that person - so unlike `items`, no other player, ever, can read this. Only
+ * its own author (any time - editing a half-finished or regretted answer is
+ * the point, see the Lobby's per-question save button) and the host, once the
+ * gathering is `finished` (the same gate `itemAuthors` uses for an unrevealed
+ * item's author - collection happens once, at the end of the evening, not per
+ * game: unlike party-game items there is no "revealed" moment that would let a
+ * mid-gathering collection happen safely, and a profile answer is normally
+ * filled during the lobby wait anyway, well before that point).
+ */
+export interface ProfileAnswerDoc {
+  questionId: string
+  /** A single string for `text`/`single-choice`; an array of the chosen
+   *  options for `multi-choice`. */
+  answer: string | string[]
+  updatedAt: number
+}
+
+/** Bounds a `text`-kind answer. Client-side only, unlike `ITEM_TEXT_MAX_LENGTH`
+ *  - that one is enforced in firestore.rules too because an item is PUBLIC and
+ *  rendered on every phone the instant it lands; a profile answer is never
+ *  read by anyone but its own author and the host, so an oversized value at
+ *  worst costs the answering player their own storage, not anyone else's
+ *  screen. */
+export const PROFILE_ANSWER_MAX_LENGTH = 500
 
 // --- The live gathering -----------------------------------------------------
 
@@ -151,6 +224,16 @@ export interface SessionDoc {
    *  display only. Not enforced by rules - the session document itself is
    *  never deleted (see firestore.rules); only the code can expire. */
   expiresAt: number
+  /**
+   * A snapshot of the host's own custom-question bank (`CustomQuestionDoc`),
+   * taken once at `createRoom` time. A player reads this to know the full set
+   * of guided questions this gathering offers - the bank itself lives under
+   * `users/{hostUid}/customQuestions`, which no guest can read, so the
+   * snapshot is what makes the questions visible in the room at all. Optional
+   * because every session written before this field existed has none, which
+   * means "no custom questions", not "unknown" - readers fall back to `[]`.
+   */
+  customQuestions?: ProfileQuestion[]
 }
 
 /**
@@ -554,6 +637,9 @@ export const paths = {
   contactFacts: (uid: string, contactId: string) =>
     `users/${uid}/contacts/${contactId}/facts`,
 
+  customQuestions: (uid: string) => `users/${uid}/customQuestions`,
+  customQuestion: (uid: string, id: string) => `users/${uid}/customQuestions/${id}`,
+
   sessionFeedback: (uid: string, sessionId: string) => `users/${uid}/feedback/${sessionId}`,
 
   groups: (uid: string) => `users/${uid}/groups`,
@@ -573,6 +659,13 @@ export const paths = {
   // collection is claim-only bookkeeping, never listed.
   playerName: (sessionId: string, normalizedName: string) =>
     `sessions/${sessionId}/playerNames/${normalizedName}`,
+
+  // No collection-level helper on purpose - the writer already knows the full
+  // active question list (built-ins + the session's own customQuestions), so
+  // the collector at evening's end reads each one individually by id rather
+  // than listing, the same shape as promptSubmission below.
+  profileAnswer: (sessionId: string, uid: string, questionId: string) =>
+    `sessions/${sessionId}/players/${uid}/profileAnswers/${questionId}`,
 
   games: (sessionId: string) => `sessions/${sessionId}/games`,
   game: (sessionId: string, gameId: string) => `sessions/${sessionId}/games/${gameId}`,

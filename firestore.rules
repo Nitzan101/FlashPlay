@@ -307,6 +307,28 @@ service cloud.firestore {
           && !inRoundLoop(sessionId);
         allow update: if isUser(playerId) || isHost(sessionId);
         allow delete: if isUser(playerId) || isHost(sessionId);
+
+        // --- one player's guided-question answers - milestone 8 ---
+        //
+        // Private, unlike a harvest item: this is meant only for the host's
+        // own memory of this person, never for another player to read - so
+        // unlike `items`, there is no player-facing reveal path here at all.
+        // Readable by its own author at any time (editing a half-finished or
+        // regretted answer is the point - see the lobby's per-question save
+        // button), and by the host once the gathering is `finished` - the
+        // same gate `itemAuthors` uses for an unrevealed item's author.
+        // Collection genuinely only happens then (writeProfileFacts in
+        // memory.ts, called once from the evening's last screen): unlike a
+        // harvest item there is no "revealed" moment that would make an
+        // earlier, mid-gathering collection safe.
+        match /profileAnswers/{questionId} {
+          allow get: if isUser(playerId)
+            || (isHost(sessionId) && session(sessionId).phase == 'finished');
+          allow create, update: if isUser(playerId)
+            && request.resource.data.questionId == questionId
+            && request.resource.data.keys().hasOnly(['questionId', 'answer', 'updatedAt']);
+          allow delete: if isUser(playerId);
+        }
       }
 
       // --- playerNames ---

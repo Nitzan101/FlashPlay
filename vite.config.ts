@@ -24,6 +24,7 @@ export default defineConfig({
       'src/lib/memory.test.ts',
       'src/lib/evening.test.ts',
       'src/lib/profile.test.ts',
+      'src/lib/profileQuestions.test.ts',
     ],
   },
 })

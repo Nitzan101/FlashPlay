@@ -108,6 +108,18 @@ describe('createRoom', () => {
     expect(session.data()?.roomCode).toBe('1111')
   })
 
+  // Milestone 8: what a session offers is a snapshot taken at creation time,
+  // not a live read of the host's account - see the comment on `createRoom`'s
+  // `customQuestions` parameter for why this file cannot just read it itself.
+  it('snapshots the custom questions handed to it into the session, publicly readable by a guest', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'), null, [
+      { id: 'q1', text: 'שאלה', kind: 'text' },
+    ])
+
+    const session = await getDoc(doc(asGuest(), `sessions/${sessionId}`))
+    expect(session.data()?.customQuestions).toEqual([{ id: 'q1', text: 'שאלה', kind: 'text' }])
+  })
+
   it('skips a code that is still live and claims the next one instead', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'roomCodes/1111'), {

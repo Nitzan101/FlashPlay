@@ -1266,3 +1266,90 @@ nothing pre-existing changed), `npm run test:rules` (190 assertions, up from
 `firestore.rules` changes were needed anywhere in this round - `players`
 update and the whole `users/{uid}` subtree were already owner-writable
 broadly enough for everything built here.
+
+## Guided questions, milestone 8, 2026-09-17
+
+Nitzan's next request, discussed and scoped before building: a directed way
+to collect information, alongside whatever the party games organically
+produce - a built-in question bank, a host-authored bank of his own, and a
+free paragraph - plus two bigger asks (host-transferable rooms, and
+copying a saved group to another host) that were discussed, agreed as worth
+doing, and explicitly deferred to a later round (see BACKLOG.md, "the
+room-picker/identity conversation" and its sibling entry here). Only the
+guided-question half is built this round.
+
+**The central design fork was "who answers", and the answer is both.** A
+host can add a free-form note about anyone, any time, directly from
+`GroupDetails` (`addManualFact`/`addManualGroupFact`) - no rules change, since
+the host already owns full read/write on their own store. And every player
+can answer a set of guided questions about *themselves*, offered in the lobby
+while waiting for the host to start (`GuidedQuestions.tsx`) - this is the one
+that needed real design, since a guest cannot write into the host's private
+store at all.
+
+**The self-report path reuses the harvest's own shape rather than inventing a
+new one: stage in the session, collect into the private store later.** A
+player's answer lives at `players/{uid}/profileAnswers/{questionId}` - a
+subcollection of their own player document, which is what lets the existing
+`isUser`/`isHost` rule shapes apply directly with no new helper function.
+**Unlike a harvest item, this is never public** - no other player may ever
+read one, only its own author (any time) and the host once the gathering is
+`finished`. That gate is deliberately the coarser, `itemAuthors`-style "only
+once finished" rather than the harvest's own per-game collection: there is no
+"revealed" moment here that would make an earlier read safe, and a profile
+answer is normally filled well before the first game even starts anyway.
+
+**Facts from a profile answer are upserted, not written once.** Every other
+fact-writing path in this app (`writeFactsForGame`) treats the first write as
+final and never overwrites it - correct for a harvest item, which cannot be
+edited after submission. A profile answer is explicitly editable up to the
+moment the evening ends (the whole point of the lobby's own per-question save
+button), so `writeProfileFacts` re-reads the current answer and updates the
+fact's `text` in place on every run, while still preserving `useCount` once
+set. Mutation-checked: removing the "empty answer is a retraction, not a
+fact" guard reddened exactly that one test.
+
+**Every question has its own save button, asked for directly.** Nitzan's own
+reasoning: a shared save risks keeping a half-typed or since-regretted answer
+the player never meant to submit, and gives no way to tell which answers
+actually landed if a batched write failed partway through. `GuidedQuestions`
+tracks each question's own draft-vs-saved state independently; nothing here
+is submitted as a group.
+
+**A host's custom questions are a persisted, reusable bank, not a one-off per
+gathering.** Consistent with everything else this app persists (groups,
+contacts, the profile) - `users/{uid}/customQuestions`, already covered by
+that subtree's blanket owner rule. A guest cannot read the bank itself, so a
+snapshot of it is taken into `SessionDoc.customQuestions` at `createRoom`
+time - the field the room's own players actually read. `createRoom` takes the
+snapshot as a parameter rather than reading the bank itself, specifically to
+avoid a `room.ts` → `profileQuestions.ts` → `room.ts` import cycle (the same
+reasoning `nameSlotId`'s duplication between those two files already
+documents).
+
+**The general free-write paragraph asked for is just another `text` question,
+not a separate mechanism.** It needed nothing a text question doesn't already
+have, so it ships as one more entry in `PROFILE_QUESTIONS`
+(`src/content/profileQuestions.ts`) rather than a parallel code path.
+
+**A second config-registration miss, same shape as the first.** Adding
+`profileQuestions.test.ts` for the emulator repeated the exact mistake
+`profile.test.ts` had just taught: forgetting `vite.config.ts`'s `exclude`
+list runs it against a nonexistent emulator under plain `npm test`; forgetting
+`vitest.rules.config.ts`'s `include` list makes it silently never run at all.
+Both are now checked as a pair whenever a new emulator-backed test file is
+added - see CLAUDE.md, Known pitfalls.
+
+Evidence: `npm run build`, `npx tsc -b`, `npm test` (122, up from 118),
+`npm run test:rules` (217 assertions, up from 190 - ten new for
+`profileAnswers` directly in `firestore-rules.test.ts`, one in `room.test.ts`
+proving `createRoom`'s snapshot, seven in the new `profileQuestions.test.ts`,
+and nine in `memory.test.ts` for `writeProfileFacts`/`addManualFact`/
+`addManualGroupFact`), plus four new component tests in `GroupDetails.test.tsx`
+and three in `Lobby.test.tsx` for the new screens. Two rules guards
+mutation-checked in this round: the host-read gate on `profileAnswers`
+(`isHost && phase == 'finished'`) and the self-only write guard
+(`isUser(playerId)`), each turning exactly its own named assertion red. No
+other `firestore.rules` change was needed - `writeFactsForGame`'s existing
+shape, the `users/{uid}` blanket rule, and the `players/{playerId}` update
+rule already covered everything else this milestone touches.
