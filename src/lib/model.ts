@@ -229,6 +229,26 @@ export interface PlayerDoc {
   leftAt: number | null
 }
 
+/**
+ * One slot per normalised display name within a session, document-id-locked
+ * to the name itself so first-write-wins is structural rather than checked -
+ * the same trick `ItemAuthorDoc`/`PromptSubmissionDoc` use for a different
+ * collision. Without this, two structurally different players (different
+ * uids - a rejoin under a new identity after leaving, say) could hold the
+ * identical display name, and every screen that names a player by looking up
+ * `PlayerDoc.name` - the reveal, the scoreboard, "who is most likely to" -
+ * becomes ambiguous about which one is meant. Found live: two "אלה" rows on
+ * the scoreboard with different scores, 2026-09-16.
+ *
+ * Never released once claimed, even after the holder's `PlayerDoc.leftAt` is
+ * set - DESIGN's "what a leaver already contributed stays in the game"
+ * extends to the name they were known by, since freeing it for someone else
+ * recreates the exact ambiguity this exists to prevent.
+ */
+export interface PlayerNameDoc {
+  uid: string
+}
+
 export type GameType = 'who-said-that' | 'most-likely-to'
 export type GamePhase = 'harvesting' | 'rounds' | 'done'
 
@@ -425,6 +445,16 @@ export interface RoundDoc {
 export const MAX_ROUNDS = 10
 
 /**
+ * The floor below which "start the game" is refused in the lobby. Not
+ * DESIGN's target size (3-25 people) - that is a sweet spot, not a gate -
+ * but the point below which the mechanic itself breaks: "who said that"'s
+ * vote screen excludes the voter, so a single player alone in the room would
+ * be shown zero candidates to vote for. Two is the actual floor; found live
+ * when starting a game with only the host in the room produced exactly that.
+ */
+export const MIN_PLAYERS_TO_START = 2
+
+/**
  * "Who said that" scoring, from DESIGN: "two points for each correct guess and
  * one point to the writer for everyone they fooled." Cumulative across the
  * gathering rather than per game, which is what gives the evening an arc.
@@ -515,6 +545,10 @@ export const paths = {
   players: (sessionId: string) => `sessions/${sessionId}/players`,
   player: (sessionId: string, playerId: string) =>
     `sessions/${sessionId}/players/${playerId}`,
+  // No collection-level helper on purpose, matching itemAuthors below: this
+  // collection is claim-only bookkeeping, never listed.
+  playerName: (sessionId: string, normalizedName: string) =>
+    `sessions/${sessionId}/playerNames/${normalizedName}`,
 
   games: (sessionId: string) => `sessions/${sessionId}/games`,
   game: (sessionId: string, gameId: string) => `sessions/${sessionId}/games/${gameId}`,

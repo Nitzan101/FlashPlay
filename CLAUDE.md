@@ -104,7 +104,9 @@ Two kinds of change are not covered by that and need more:
   Single source of truth for document shapes; `firestore.rules` mirrors it by
   hand and the two are kept in step by the emulator tests.
 - `src/lib/room.ts` — room creation, joining, presence: `createRoom`,
-  `resolveRoomCode`, `joinRoom`, `leaveRoom` (records `PlayerDoc.leftAt`;
+  `resolveRoomCode`, `joinRoom` (now also claims a `PlayerNameDoc` slot via the
+  internal `reserveName`, so two different uids cannot hold the same display
+  name in one session - see model.ts), `leaveRoom` (records `PlayerDoc.leftAt`;
   cleared again by `joinRoom` on a fresh join), `useRoster`,
   `usePresenceHeartbeat`, `useSession` (live session-document listener -
   milestone 4's screens are driven by this, not by App.tsx's one-off getDoc
@@ -172,6 +174,21 @@ and why. Do not move it back. The vault keeps only the career-facing note at
 so there is no reason to co-locate them.
 
 ## Known pitfalls
+- **Gating a client read on document A's state to satisfy a rule that checks
+  document B is a race the emulator cannot show you.** `revealRound()` writes
+  a round's `phase` and its item's `revealed` flag as two separate awaited
+  writes; `Rounds.tsx` gated its own read of `itemAuthors` on the ROUND's
+  phase, but the rule that read actually has to satisfy (`itemRevealed()`)
+  checks the ITEM's flag - a different document, written second. The
+  emulator's client and server round-trip in under a millisecond, so the two
+  writes always land close enough together that the gap never showed up in
+  eighteen months of tests; a real network's round-trip is wide enough to
+  fall through it reliably; every live reveal failed with a
+  permission-denied. Found 2026-09-16, in Nitzan's first real play session -
+  see DECISIONS.md, "the first real play session". When a screen's `enabled`
+  flag for a rule-gated read is derived from phase X of document A, check
+  which document the rule itself actually reads before assuming X is the
+  right signal.
 - **A truthy Firebase `user` does not mean "signed in" once anonymous auth is
   in play anywhere in the app.** `signInAsGuest()` mints a real, truthy `User`
   object with a real uid - it exists only so the rules have a subject to
@@ -490,8 +507,10 @@ session rather than two separate ones.
 
 "Who said that" is built: the host opens a round, previews the item alone,
 opens voting, every phone votes, the host reveals, points land, next round.
-`src/lib/rounds.ts` and `src/Rounds.tsx`. What has not run is the gate's other
-half - real people, and whether the material is funny.
+`src/lib/rounds.ts` and `src/Rounds.tsx`. The gate's other half - real people,
+over a real network - has now run once, 2026-09-16, and found a live-only
+race in exactly the reveal sequence this section describes: see "Known
+pitfalls" above and DECISIONS.md, "the first real play session".
 
 **The reveal is a sequence, and its order is a security boundary.** Close the
 round first, then reveal the item, then read votes and author, then record what

@@ -1274,3 +1274,43 @@ describe('M4 - games are shape-checked on create', () => {
     await assertSucceeds(setDoc(doc(asHost(), `sessions/${SESSION}/games/newgame`), wellFormed))
   })
 })
+
+// From Nitzan's own manual walkthrough, 2026-09-16: two structurally different
+// players sharing a display name made every screen that names a player by
+// looking it up - the reveal, the scoreboard - ambiguous about which one was
+// meant. room.ts's reserveName() (exercised end to end in room.test.ts)
+// depends on two properties of this rule that room.test.ts's own tests
+// cannot isolate from each other: only the slot's own uid may ever claim it,
+// and once claimed a slot is never writable again by anyone, including its
+// own holder. Mutation-checked: removing the self-uid check turns the first
+// assertion below red; removing `allow create` entirely (leaving no update
+// rule either) turns the third red.
+describe('playerNames - one slot per display name, self-uid only, never updatable', () => {
+  it('refuses claiming a name slot under a uid that is not the caller\'s own', async () => {
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/playerNames/forged`), { uid: OUTSIDER }),
+    )
+  })
+
+  it('lets a player claim a fresh name slot under their own uid', async () => {
+    await assertSucceeds(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/playerNames/newname`), { uid: PLAYER }),
+    )
+  })
+
+  it('refuses rewriting an already-claimed slot, even by the uid that holds it', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/playerNames/taken`), { uid: PLAYER })
+    })
+    await assertFails(
+      setDoc(doc(asPlayer(), `sessions/${SESSION}/playerNames/taken`), { uid: PLAYER }),
+    )
+  })
+
+  it('is readable by anyone signed in, so a first-time guest can check before their own player document exists', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/playerNames/taken`), { uid: PLAYER })
+    })
+    await assertSucceeds(getDoc(doc(asOutsider(), `sessions/${SESSION}/playerNames/taken`)))
+  })
+})

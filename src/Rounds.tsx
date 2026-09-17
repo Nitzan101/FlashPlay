@@ -49,11 +49,23 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
 
   const round = rounds.length > 0 ? rounds[rounds.length - 1] : null
   const revealed = round?.phase === 'revealed'
+  const item = round ? items[round.itemId] : undefined
   const { votes, error: votesError } = useVotes(sessionId, round?.id ?? null, revealed)
+  // Gated on the ITEM's own `revealed` flag, not the round's phase, even
+  // though `revealRound()` sets both to true in the same call: it sets them
+  // as two sequential writes, and `itemAuthors`' rule checks the item's flag
+  // specifically (see itemRevealed() in firestore.rules). Gating on the
+  // round's phase - which flips first - opened a window where this fired a
+  // permission-denied read against a real network's round-trip latency
+  // (invisible on the emulator, where both writes land almost
+  // simultaneously): "אי אפשר לטעון את תוצאות הסבב", every reveal, on the
+  // first live multi-device test. Found in Nitzan's own play session,
+  // 2026-09-16.
+  const itemRevealed = item?.revealed === true
   const { authorPlayerId, error: authorError } = useAuthor(
     sessionId,
     round?.itemId ?? null,
-    revealed,
+    itemRevealed,
   )
 
   const [myVote, setMyVote] = useState<string | null>(null)
@@ -102,7 +114,6 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
   // same empty map - and they call for opposite host controls.
   const loading = roundsLoading || itemsLoading
   const exhausted = !loading && (playedRounds.length >= MAX_ROUNDS || unplayed === 0)
-  const item = round ? items[round.itemId] : undefined
   const prompt = item ? HARVEST_PROMPTS.find((p) => p.id === item.promptId) : undefined
   const votesCast = round ? players.filter((p) => p.votedRoundId === round.id).length : 0
   // Shown to everyone from the round document once the host has scored it, and

@@ -24,6 +24,7 @@ import {
   ROOM_CODE_CLOCK_SKEW_MARGIN_MS,
   ROOM_CODE_WINDOW_MS,
   type PlayerDoc,
+  type PlayerNameDoc,
   type RoomCodeDoc,
   type SessionDoc,
 } from './model'
@@ -198,6 +199,53 @@ export async function resolveRoomCode(firestore: Firestore, code: string): Promi
   return claim.sessionId
 }
 
+/** Same normalisation as `matchName()` in memory.ts (cross-gathering contact
+ *  matching) - duplicated rather than imported, since memory.ts already
+ *  imports from this file and importing back would make a cycle. "/" is
+ *  additionally stripped: it is the one character that would otherwise be
+ *  read as an extra Firestore path segment when this string becomes part of
+ *  a document path (paths.playerName). The empty-string fallback covers the
+ *  degenerate case of a name that is nothing but slashes and whitespace -
+ *  everyone who manages that collides into one slot, which just means "pick
+ *  an actual name", the correct outcome for typing nothing meaningful. */
+function nameSlotId(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase().replace(/\//g, '') || '_'
+}
+
+/**
+ * Claims this player's display name for the whole session, so no other uid
+ * can join under the identical name - see `PlayerNameDoc` in model.ts for why
+ * that matters (a reveal or a scoreboard row naming a player is ambiguous the
+ * moment two players share a name). Resuming under the same uid and the same
+ * name is a no-op, not a collision - that is the ordinary "left, then tapped
+ * the link again" case. A genuinely different uid trying to claim a name
+ * already spoken for throws `'name-taken'`, which joinRoom's caller shows
+ * instead of letting a second identically-named player into the room.
+ */
+async function reserveName(
+  firestore: Firestore,
+  sessionId: string,
+  uid: string,
+  name: string,
+): Promise<void> {
+  const ref = doc(firestore, paths.playerName(sessionId, nameSlotId(name)))
+  const existing = await getDoc(ref)
+  if (existing.exists()) {
+    if ((existing.data() as PlayerNameDoc).uid === uid) return
+    throw new Error('name-taken')
+  }
+  try {
+    await setDoc(ref, { uid } satisfies PlayerNameDoc)
+  } catch (error) {
+    // The only way this specific write fails, given the shape above always
+    // matches the rule, is losing a race for this exact name to another
+    // client between the read above and this write - genuinely name-taken,
+    // just discovered a moment later than the check.
+    console.error('[FlashPlay] reserving a player name failed:', errorCode(error), error)
+    throw new Error('name-taken')
+  }
+}
+
 /** Joining is creating your own player document - this is what makes
  *  isPlayer() true and unlocks the roster (firestore.rules). `hasDevice` is
  *  always true here: joining without a phone is deferred, see BACKLOG.md. */
@@ -207,6 +255,7 @@ export async function joinRoom(
   uid: string,
   name: string,
 ): Promise<void> {
+  await reserveName(firestore, sessionId, uid, name)
   const now = Date.now()
   const player: PlayerDoc = {
     name,

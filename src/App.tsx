@@ -107,6 +107,7 @@ export default function App() {
   const [nameInput, setNameInput] = useState('')
   const [loadingIsSlow, setLoadingIsSlow] = useState(false)
   const [confirmingLeave, setConfirmingLeave] = useState(false)
+  const [nameError, setNameError] = useState<string | null>(null)
   const [codeInput, setCodeInput] = useState('')
   const [codeBusy, setCodeBusy] = useState(false)
   const [codeError, setCodeError] = useState<string | null>(null)
@@ -250,7 +251,7 @@ export default function App() {
   async function handleJoinByCode() {
     const code = codeInput.trim()
     if (!CODE_PATTERN.test(code)) {
-      setCodeError(t('roomNotFound'))
+      setCodeError(t('codeNotFound'))
       return
     }
     setCodeBusy(true)
@@ -261,7 +262,10 @@ export default function App() {
       setScreen(await resolveJoinScreen(sessionId, code, uid))
     } catch (error) {
       console.error('[FlashPlay] joining by typed code failed:', error)
-      setCodeError(detailOf(error) === 'room-expired' ? t('roomExpired') : t('roomNotFound'))
+      // Its own wording, not roomNotFound/roomExpired: those say "the LINK
+      // may no longer be valid", which makes no sense for a code someone
+      // typed by hand. Found in Nitzan's own play session, 2026-09-16.
+      setCodeError(detailOf(error) === 'room-expired' ? t('codeExpired') : t('codeNotFound'))
     } finally {
       setCodeBusy(false)
     }
@@ -271,6 +275,7 @@ export default function App() {
     const name = nameInput.trim()
     if (!name) return
     setBusy(true)
+    setNameError(null)
     try {
       const uid = user?.uid ?? (await signInAsGuest())
       await joinRoom(db, sessionId, uid, name)
@@ -278,7 +283,17 @@ export default function App() {
       setScreen({ kind: 'in-room', sessionId, roomCode, uid, isHost: false })
     } catch (error) {
       console.error('[FlashPlay] joinRoom failed:', error)
-      setScreen({ kind: 'error', message: t('joinError'), detail: detailOf(error) })
+      // A taken name is "pick a different one", not "something is broken" -
+      // shown inline so the same name-entry form can be resubmitted, rather
+      // than wiping the whole screen the way an unrecoverable join failure
+      // does. Found in Nitzan's own play session: two players who both typed
+      // "אלה" (one having left and rejoined under a new identity) made every
+      // reveal and the scoreboard ambiguous about which one was meant.
+      if (detailOf(error) === 'name-taken') {
+        setNameError(t('nameTaken'))
+      } else {
+        setScreen({ kind: 'error', message: t('joinError'), detail: detailOf(error) })
+      }
     } finally {
       setBusy(false)
     }
@@ -418,7 +433,10 @@ export default function App() {
           <input
             id="guest-name"
             value={nameInput}
-            onChange={(event) => setNameInput(event.target.value)}
+            onChange={(event) => {
+              setNameInput(event.target.value)
+              setNameError(null)
+            }}
             placeholder={t('yourNamePlaceholder')}
             // A pasted or joke name with no bound would overflow the roster
             // on every phone in the room - see Lobby.tsx's truncate class,
@@ -428,6 +446,11 @@ export default function App() {
             className="rounded-md border border-neutral-300 px-3 py-2 text-center"
             autoFocus
           />
+          {nameError && (
+            <p role="alert" className="text-xs text-red-600">
+              {nameError}
+            </p>
+          )}
           <button
             type="submit"
             disabled={busy || !nameInput.trim()}

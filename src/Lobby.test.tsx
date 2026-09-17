@@ -64,4 +64,32 @@ describe('Lobby', () => {
 
     expect(screen.getByText('דוד').closest('li')).not.toHaveTextContent('(עזב/ה)')
   })
+
+  // Found live: starting a game with only the host in the room showed a vote
+  // screen with zero candidates, since "who said that" excludes the voter.
+  it('refuses to start the game with only the host in the room', () => {
+    players = [player('host-uid', { name: 'דוד' })]
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+
+    expect(screen.getByRole('button', { name: 'התחלת המשחק' })).toBeDisabled()
+    expect(screen.getByText('צריך לפחות 2 משתתפים כדי להתחיל')).toBeInTheDocument()
+  })
+
+  it('allows starting the game once there are enough players', () => {
+    players = [player('host-uid', { name: 'דוד' }), player('guest-uid', { name: 'שרה' })]
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+
+    expect(screen.getByRole('button', { name: 'התחלת המשחק' })).not.toBeDisabled()
+    expect(screen.queryByText('צריך לפחות 2 משתתפים כדי להתחיל')).not.toBeInTheDocument()
+  })
+
+  it('still refuses to start when the second player has left, even though they once joined', () => {
+    players = [
+      player('host-uid', { name: 'דוד' }),
+      player('guest-uid', { name: 'שרה', leftAt: Date.now() }),
+    ]
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+
+    expect(screen.getByRole('button', { name: 'התחלת המשחק' })).toBeDisabled()
+  })
 })

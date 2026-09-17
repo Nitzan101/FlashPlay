@@ -25,6 +25,7 @@ const PROJECT_ID = 'demo-flashplay-room'
 const HOST = 'host-uid'
 const OTHER_HOST = 'other-host-uid'
 const GUEST = 'guest-uid'
+const OTHER_GUEST = 'other-guest-uid'
 
 let testEnv: RulesTestEnvironment
 
@@ -68,6 +69,10 @@ const asOtherHost = () =>
     .firestore() as unknown as Firestore
 const asGuest = () =>
   testEnv.authenticatedContext(GUEST, { firebase: { sign_in_provider: 'anonymous' } }).firestore() as unknown as Firestore
+const asOtherGuest = () =>
+  testEnv
+    .authenticatedContext(OTHER_GUEST, { firebase: { sign_in_provider: 'anonymous' } })
+    .firestore() as unknown as Firestore
 
 /**
  * A fixed sequence of codes for createRoom's `nextCode` parameter, so the
@@ -194,5 +199,54 @@ describe('joinRoom', () => {
     // now answers it from local state instead.
     const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
     await assertFails(getDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`)))
+  })
+
+  // Two structurally different players (different uids) sharing a display
+  // name makes every screen that names a player by looking it up - the
+  // reveal, the scoreboard, "most likely to" - ambiguous about which one is
+  // meant. Found live: two players both named "אלה" (one having left and
+  // rejoined under a new identity) produced a scoreboard with two identically
+  // labelled rows and no way to tell which one a given round's points
+  // belonged to. 2026-09-16.
+  describe('name uniqueness within a session', () => {
+    it('refuses a second, different player joining under the same name', async () => {
+      const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+      await joinRoom(asGuest(), sessionId, GUEST, 'אלה')
+
+      await expect(joinRoom(asOtherGuest(), sessionId, OTHER_GUEST, 'אלה')).rejects.toThrow(
+        'name-taken',
+      )
+      const roster = await getDocs(collection(asGuest(), `sessions/${sessionId}/players`))
+      expect(roster.docs.map((d) => d.data().uid)).toEqual([GUEST])
+    })
+
+    it('refuses the same collision after whitespace/case normalisation, matching matchName()', async () => {
+      const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+      await joinRoom(asGuest(), sessionId, GUEST, 'Dana Levi')
+
+      await expect(
+        joinRoom(asOtherGuest(), sessionId, OTHER_GUEST, '  dana  levi '),
+      ).rejects.toThrow('name-taken')
+    })
+
+    it('lets the same player rejoin under the name they already hold', async () => {
+      const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+      await joinRoom(asGuest(), sessionId, GUEST, 'אלה')
+
+      // The realistic case this must not break: leaving (leftAt set) and
+      // tapping the same link again - joinRoom is called a second time for
+      // the identical uid and name.
+      await expect(joinRoom(asGuest(), sessionId, GUEST, 'אלה')).resolves.toBeUndefined()
+    })
+
+    it('does not block a genuinely different name', async () => {
+      const { sessionId } = await createRoom(asHost(), HOST, codeSequence('1111'))
+      await joinRoom(asGuest(), sessionId, GUEST, 'אלה')
+
+      await joinRoom(asOtherGuest(), sessionId, OTHER_GUEST, 'דנה')
+
+      const roster = await getDocs(collection(asGuest(), `sessions/${sessionId}/players`))
+      expect(roster.docs.map((d) => d.data().uid).sort()).toEqual([GUEST, OTHER_GUEST].sort())
+    })
   })
 })

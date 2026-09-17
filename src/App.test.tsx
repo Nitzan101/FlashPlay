@@ -317,7 +317,12 @@ describe('joining by typed code', () => {
     fireEvent.change(screen.getByLabelText('יש לך קוד לחדר?'), { target: { value: '9999' } })
     fireEvent.click(screen.getByRole('button', { name: 'הצטרפות עם קוד' }))
 
-    expect(await screen.findByText('החדר לא נמצא. ייתכן שהקישור כבר לא בתוקף.')).toBeInTheDocument()
+    // Its own wording, not the link path's "roomNotFound" (which talks about
+    // a link, nonsensical for a typed code) - found in Nitzan's own play
+    // session, 2026-09-16.
+    expect(
+      await screen.findByText('הקוד שהקלדת לא נמצא. אפשר לבדוק שוב עם מי שמארח/ת.'),
+    ).toBeInTheDocument()
     // The landing page itself survives the error - unlike the link path, a
     // mistyped code should not blank the whole screen.
     expect(screen.getByRole('button', { name: 'התחברות עם Google' })).toBeInTheDocument()
@@ -380,6 +385,41 @@ describe('joining by a link', () => {
 
     await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
     expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'guest-uid', 'שרה')
+  })
+
+  // Found in Nitzan's own play session, 2026-09-16: two players both typed
+  // "אלה" (one had left and rejoined under a new identity), and every reveal
+  // and the scoreboard became ambiguous about which one a round's points
+  // belonged to. joinRoom() now refuses a second, different player claiming a
+  // name already in use - shown here inline, on the same name-entry form, so
+  // the person can just try another name rather than the whole screen
+  // wiping into the generic join-error page.
+  it('lets someone try a different name instead of wiping the screen, when the name is taken', async () => {
+    window.history.pushState({}, '', '/join/1234')
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'guest-uid', displayName: null, email: null } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockResolveRoomCode.mockResolvedValue('session-1')
+    mockJoinRoom.mockRejectedValueOnce(new Error('name-taken'))
+    mockJoinRoom.mockResolvedValueOnce(undefined)
+
+    render(<App />)
+    const nameField = await screen.findByLabelText('איך קוראים לך?')
+    fireEvent.change(nameField, { target: { value: 'אלה' } })
+    fireEvent.click(screen.getByRole('button', { name: 'הצטרפות' }))
+
+    expect(
+      await screen.findByText('השם הזה כבר תפוס בחדר הזה - אפשר לנסות שם אחר.'),
+    ).toBeInTheDocument()
+    // Still on the name-entry form, not the whole-page error screen.
+    expect(screen.getByLabelText('איך קוראים לך?')).toBeInTheDocument()
+
+    fireEvent.change(nameField, { target: { value: 'אלה 2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'הצטרפות' }))
+
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
   })
 
   it('goes straight back into the room if this browser already joined it, as a guest', async () => {

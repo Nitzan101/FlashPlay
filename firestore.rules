@@ -309,6 +309,24 @@ service cloud.firestore {
         allow delete: if isUser(playerId) || isHost(sessionId);
       }
 
+      // --- playerNames ---
+      // One slot per normalised display name, id-locked so first-write-wins
+      // is structural - see PlayerNameDoc in model.ts for why this exists
+      // (two structurally different players sharing a display name makes
+      // every screen that names a player by looking it up ambiguous about
+      // which one is meant). `get` is open to anyone signed in, not just
+      // players of this session: a first-time guest checking a name before
+      // they have a player document of their own is exactly the caller this
+      // exists to unblock, and a name-in-use bit leaks nothing.
+      // Never updatable or deletable, even by the host - matching
+      // itemAuthors/PromptSubmissionDoc, since releasing a name mid-gathering
+      // recreates the exact ambiguity this is meant to prevent.
+      match /playerNames/{name} {
+        allow get: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid']);
+      }
+
       // --- games ---
       match /games/{gameId} {
         allow read: if isPlayer(sessionId);

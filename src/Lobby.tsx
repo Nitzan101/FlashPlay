@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { pickHarvestPromptIds, startHarvestGame } from './lib/harvest'
 import { db } from './lib/firebase'
+import { MIN_PLAYERS_TO_START } from './lib/model'
 import { useRoster } from './lib/room'
 
 interface LobbyProps {
@@ -116,11 +117,19 @@ export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: Lob
           <button
             type="button"
             onClick={() => void startGame()}
-            disabled={startState === 'busy'}
+            disabled={startState === 'busy' || activeCount < MIN_PLAYERS_TO_START}
             className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
           >
             {startState === 'busy' ? t('startingGame') : t('startGame')}
           </button>
+          {/* "Who said that"'s vote screen excludes the voter, so starting
+              alone would show zero candidates - found live, starting a game
+              with only the host in the room. */}
+          {activeCount < MIN_PLAYERS_TO_START && (
+            <p className="text-xs text-neutral-500">
+              {t('needMorePlayers', { count: MIN_PLAYERS_TO_START })}
+            </p>
+          )}
           {startState === 'error' && (
             <p role="alert" className="text-xs text-red-600">
               {t('startGameError')}

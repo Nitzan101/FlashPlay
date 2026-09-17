@@ -1050,3 +1050,89 @@ itself did not need to change for any of this). Three guards were
 mutation-checked, each turning exactly the named assertion(s) red: the leave
 confirmation gate, the host/left roster labels together with the "N in the
 room" count, and the anonymous-vs-registered landing branch.
+
+## The first real play session: five more findings, one of them serious
+
+Everything above was found clicking through the app alone. The first time
+Nitzan actually played a round with a second identity in the room, five more
+problems surfaced, one of them a genuine correctness bug in code that
+predates this week entirely (milestone 5) and had been green through every
+suite since.
+
+**The reveal raced its own two writes, over a real network.** Every reveal
+showed "אי אפשר לטעון את תוצאות הסבב (permission-denied)" and no author line,
+every single time, live. `revealRound()` writes the round's `phase` and the
+item's `revealed` flag as two sequential awaited writes (`ROUND_REVEAL_ORDER`
+requires the order for a real reason - see milestone 5, above). `Rounds.tsx`
+gated its own read of `itemAuthors` on the ROUND's phase flipping to
+`'revealed'`, but `itemAuthors`' rule (`itemRevealed()`) checks the ITEM's own
+`revealed` flag - a different document, written second. The emulator cannot
+show this: its client and server round-trip in under a millisecond, so both
+writes land close enough together that the gap never mattered in eighteen
+months of tests. A real network's round-trip is wide enough to fall through
+it reliably. Fixed by gating the read on `item?.revealed === true` - the
+exact field the rule actually checks - instead of the round's phase.
+`SecondGame.tsx` uses the same `useAuthor` hook but was never at risk: its
+items are revealed by construction before the round even opens, so its
+`enabled` argument is a bare `true`, never a phase-derived flag. **The general
+lesson, sharpened**: gating a read on document A's state to satisfy a rule
+that reads document B is a race the moment those two writes are not one
+atomic operation - the emulator's speed hides exactly this class of bug, the
+same way it hid the room-code clock-skew bug in milestone 3.
+
+**Two structurally different players could hold the identical display name**,
+and nothing stopped it. It happened by an ordinary path: a player left, then
+rejoined under a new identity (anonymous, then signed in with Google) using
+the same typed name. The result was a scoreboard with two rows both labelled
+"אלה" and no way to tell which one a round's points belonged to - exactly the
+confusion Nitzan reported ("למה האלה קיבלה? איך בכלל עובד הניקוד?"). The
+scoring was not actually wrong; it was uninterpretable, which for a game that
+runs entirely on naming people by their typed name is the same failure. Fixed
+with `PlayerNameDoc`, a `sessions/{sessionId}/playerNames/{normalisedName}`
+slot, document-id-locked exactly like `ItemAuthorDoc`/`PromptSubmissionDoc` -
+`joinRoom()` now claims one before writing the player document, and a second,
+different uid claiming an already-held name is refused with `'name-taken'`,
+shown inline on the name-entry form rather than wiping the screen. The same
+uid reclaiming the name it already holds (the ordinary "left, then tapped the
+link again" case) is a no-op, not a collision. The slot is never released,
+even after the holder leaves - the name stays claimed for the rest of the
+gathering, matching DESIGN's "what a leaver already contributed stays in the
+game" extended to the name they were known by.
+
+**Nothing stopped starting a game with only the host in the room.**
+"Who said that"'s vote screen excludes the voter, so a lone host would be
+shown zero candidates - not a graceful degradation, a broken screen. Fixed
+with `MIN_PLAYERS_TO_START = 2` in model.ts, gating the lobby's start button
+and explaining why underneath it when it is disabled. Not DESIGN's target
+size (3-25, a sweet spot) - the actual floor below which the mechanic itself
+cannot run.
+
+**Two small, real UI defects, both from this same fix's first version.** The
+typed-code input's placeholder ("קוד בן 4 ספרות") was wider than the box built
+for a 4-digit value and rendered truncated - replaced with a plain "1234"
+example, since the instruction already lives in the label above it. And the
+typed-code error path was reusing `roomNotFound`/`roomExpired`, both worded
+around a *link* ("ייתכן שהקישור כבר לא בתוקף") - nonsensical for a code
+someone typed by hand. Given its own `codeNotFound`/`codeExpired` strings.
+
+Automated evidence: `npm run build`, `npm test` (105 tests: 25 in
+`App.test.tsx`, 6 in `Lobby.test.tsx`, plus the earlier suites), `npm run
+test:rules` (182 assertions: 89 in `firestore-rules.test.ts`, 25 in
+`memory.test.ts`, 24 in `rounds.test.ts`, 16 in `harvest.test.ts`, 15 in
+`secondGame.test.ts`, 12 in `room.test.ts`, 1 in `evening.test.ts`). Six
+guards were mutation-checked, each turning exactly the named assertion(s)
+red: the reveal-race fix (gating on the round's phase instead of the item's
+flag), `playerNames`' self-uid requirement, its never-updatable property,
+`joinRoom()`'s actual call to the name-reservation function (not just the
+rule allowing it), the inline "name taken" UI path, and the minimum-player
+gate on starting a game.
+
+**The general lesson for this whole session**: every defect since the very
+first "no way to leave a room" report has been found by a real person doing a
+real thing the four-lens review and the suite were never going to think to
+try - leaving mid-test, typing a code by hand, playing an actual round with a
+second identity. The suite proves the code does what it was written to do;
+none of these five were the code doing the wrong thing by its own logic, they
+were the logic being asked a question - a real network's timing, two people
+who happen to share a name, one person alone in a lobby - that nothing before
+a live human ever asked it.

@@ -51,8 +51,12 @@ export const resources = {
       leaveRoomConfirmYes: 'כן, לצאת',
       leaveRoomConfirmNo: 'להישאר',
       haveCodeIntro: 'יש לך קוד לחדר?',
-      roomCodePlaceholder: 'קוד בן 4 ספרות',
+      roomCodePlaceholder: '1234',
       joinByCode: 'הצטרפות עם קוד',
+      codeNotFound: 'הקוד שהקלדת לא נמצא. אפשר לבדוק שוב עם מי שמארח/ת.',
+      codeExpired: 'הקוד הזה כבר לא בתוקף. אפשר לבקש קוד חדש מהמארח/ת.',
+      nameTaken: 'השם הזה כבר תפוס בחדר הזה - אפשר לנסות שם אחר.',
+      needMorePlayers: 'צריך לפחות {{count}} משתתפים כדי להתחיל',
 
       // --- milestone 4: the harvest phase ---
       startGame: 'התחלת המשחק',

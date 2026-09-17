@@ -50,7 +50,7 @@ vi.mock('./lib/rounds', async () => {
     useRounds: () => mockRounds(),
     useItems: () => mockItems(),
     useVotes: () => mockVotes(),
-    useAuthor: () => mockAuthor(),
+    useAuthor: (...args: unknown[]) => mockAuthor(...args),
     getMyVote: (...args: unknown[]) => mockGetMyVote(...args),
     castVote: (...args: unknown[]) => mockCastVote(...args),
     openNextRound: (...args: unknown[]) => mockOpenNextRound(...args),
@@ -203,6 +203,39 @@ describe('Rounds', () => {
     expect(screen.getByText('Third חשב/ה שזה Host')).not.toHaveClass('text-green-700')
     expect(screen.getByText('Host +2')).toBeInTheDocument()
     expect(screen.getByText('Player +1')).toBeInTheDocument()
+  })
+
+  // revealRound() writes the round's phase and the item's `revealed` flag as
+  // two sequential writes, but itemAuthors' rule (itemRevealed()) checks the
+  // ITEM's flag specifically. Gating this screen's author read on the round's
+  // phase - which flips first - opened a window, invisible on the emulator
+  // but real over an actual network, where the read fires before the item
+  // write lands and gets refused. Found in Nitzan's own play session,
+  // 2026-09-16: every reveal showed a permission-denied error and no author.
+  it('does not read the author until the item itself is marked revealed, not merely the round', () => {
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('revealed')], error: null })
+    mockItems.mockReturnValue({
+      loading: false,
+      items: { item1: { gameId: 'game1', text: 'the answer', promptId: PROMPT, revealed: false, createdAt: 0 } },
+      error: null,
+    })
+
+    renderRounds(true)
+
+    expect(mockAuthor).toHaveBeenCalledWith('s1', 'item1', false)
+  })
+
+  it('reads the author once the item itself is marked revealed', () => {
+    mockRounds.mockReturnValue({ loading: false, rounds: [round('revealed')], error: null })
+    mockItems.mockReturnValue({
+      loading: false,
+      items: { item1: { gameId: 'game1', text: 'the answer', promptId: PROMPT, revealed: true, createdAt: 0 } },
+      error: null,
+    })
+
+    renderRounds(true)
+
+    expect(mockAuthor).toHaveBeenCalledWith('s1', 'item1', true)
   })
 
   // A reveal whose scoring write was lost leaves the round revealed but
