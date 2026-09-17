@@ -466,6 +466,19 @@ hand. This is the same underlying capability as the item above (something
 external assigning a `PlayerDoc` to a `ContactDoc`), so the two probably
 share one mechanism once designed together rather than being built twice.
 
+**A concrete instance of the same gap, found asking about milestone 8:**
+a returning player's guided-question answers from a past gathering (now
+sitting as facts under their `ContactDoc`) are never offered back to them as
+a starting point in a new one - `GuidedQuestions` only ever reads the current
+session's own `profileAnswers`, which are session-scoped by construction.
+Doing this needs exactly the missing piece above (knowing which contact this
+player *is*, before the evening ends and `ensureContacts` runs) plus a new
+read path across the same privacy boundary (a guest reading their own past
+facts out of the host's private store, which nothing today permits at all -
+not even the player reading facts about themselves). Not started; noted here
+so it is designed once, together with the rest of this section, rather than
+patched in on its own later.
+
 **Whether to require Google sign-in to play at all, closing all three gaps at
 once.** Asked and answered: no. It would not even fully close them - contacts
 stay per-host by design, so a stable identity alone does not remove the need

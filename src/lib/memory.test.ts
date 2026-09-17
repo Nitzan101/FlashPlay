@@ -359,6 +359,27 @@ describe('writeProfileFacts', () => {
     expect(await writeProfileFacts(asHost(), HOST, SESSION, roster, QUESTIONS)).toBe(0)
   })
 
+  // The actual fix, 2026-09-17: the first version could only ever collect
+  // once the gathering reached `finished`, so a room closed earlier lost
+  // every guided answer for good. This proves it now runs from BetweenGames,
+  // mid-gathering, against the real rules - not just against a session
+  // seeded as already finished, which every other test in this block is.
+  it('collects an answer while the gathering is still running, not only once finished', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), paths.session(SESSION)), { phase: 'playing' })
+    })
+    await seedAnswer(PLAYER, 'hobby', 'ציור')
+
+    const kept = await writeProfileFacts(asHost(), HOST, SESSION, roster, QUESTIONS)
+
+    expect(kept).toBe(1)
+    const facts = await getDocs(
+      collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
+    )
+    expect(facts.docs[0].data().text).toBe('התחביב שלך: ציור')
+  })
+
   it("includes the session's own custom questions alongside the built-ins passed in", async () => {
     const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
     await testEnv.withSecurityRulesDisabled(async (ctx) => {

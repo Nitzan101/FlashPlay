@@ -28,6 +28,7 @@ const mockGroupName = vi.fn()
 vi.mock('./lib/memory', () => ({
   writeFactsForGame: (...args: unknown[]) => mockWriteFactsForGame(...args),
   writeRemainingFacts: (...args: unknown[]) => mockWriteRemainingFacts(...args),
+  writeProfileFacts: vi.fn().mockResolvedValue(0),
   ensureContacts: (...args: unknown[]) => mockEnsureContacts(...args),
   nameGroup: (...args: unknown[]) => mockNameGroup(...args),
   useGroupName: () => mockGroupName(),

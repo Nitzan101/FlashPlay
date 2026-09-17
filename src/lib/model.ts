@@ -154,14 +154,16 @@ export interface CustomQuestionDoc {
  *
  * **Private, unlike a harvest item.** A harvest item is meant to be read aloud
  * to the room; a profile answer is meant only for the host's own memory of
- * that person - so unlike `items`, no other player, ever, can read this. Only
- * its own author (any time - editing a half-finished or regretted answer is
- * the point, see the Lobby's per-question save button) and the host, once the
- * gathering is `finished` (the same gate `itemAuthors` uses for an unrevealed
- * item's author - collection happens once, at the end of the evening, not per
- * game: unlike party-game items there is no "revealed" moment that would let a
- * mid-gathering collection happen safely, and a profile answer is normally
- * filled during the lobby wait anyway, well before that point).
+ * that person - so unlike `items`, no other *player*, ever, can read this.
+ * Only its own author (any time - editing a half-finished or regretted answer
+ * is the point, see the Lobby's per-question save button) and the host, also
+ * at any time - **not** gated behind `finished` the way `itemAuthors` gates an
+ * unrevealed item's author. That gate exists there to stop a live vote being
+ * swayed by an early peek; nothing here is voted on, so the same caution just
+ * cost the abandoned-session guarantee every other fact source gets - see
+ * `writeProfileFacts` in `memory.ts`, called from `BetweenGames.tsx` at the
+ * same per-game cadence as the party games' own facts, not only once at the
+ * very end. Found live, Nitzan asking directly, 2026-09-17.
  */
 export interface ProfileAnswerDoc {
   questionId: string

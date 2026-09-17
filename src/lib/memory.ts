@@ -338,10 +338,11 @@ export async function writeRemainingFacts(
 
 /**
  * Every active player's guided-question answers, turned into facts - the
- * collector for milestone 8's self-report half. Only called once, at the end
- * of the evening (see the module comment on `ProfileAnswerDoc` for why: there
- * is no "revealed" moment here to make an earlier, partial collection safe,
- * unlike the party games' items).
+ * collector for milestone 8's self-report half. Called from `BetweenGames.tsx`
+ * at the end of every game (the same cadence `writeFactsForGame` already uses)
+ * and again from `Finale.tsx` for whoever answers between the last game and
+ * the very end - see the module comment on `ProfileAnswerDoc` for why the
+ * first version only ran once, at the end of the evening, and what that cost.
  *
  * **Upserts rather than write-once**, unlike `writeFactsForGame`'s facts -
  * deliberately: a profile answer is editable up to the moment the evening

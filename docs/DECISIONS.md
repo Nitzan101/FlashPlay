@@ -1377,3 +1377,54 @@ assertion red. No other `firestore.rules` change was needed -
 `writeFactsForGame`'s existing shape, the `users/{uid}` blanket rule, and the
 `players/{playerId}` update rule already covered everything else this
 milestone touches.
+
+## A `finished`-only read gate was the wrong caution, corrected same day
+
+Nitzan asked two questions right after the milestone-8 report: does a
+returning participant's own answer come back prefilled and editable (yes,
+already - `useMyProfileAnswers` reads it back within the same gathering,
+proven by `profileQuestions.test.ts`'s round-trip test), and - the real
+finding - "if the game isn't finished, is the information not saved? I want
+it saved even if the room gets closed by accident or on purpose."
+
+**It was not saved, in the sense that mattered.** The raw answer was always
+durable the instant its own "שמירה" landed - `saveProfileAnswer` writes
+straight to Firestore, no different from any other write in this app. What
+was missing was the step that turns it into a keepsake in the host's memory:
+`writeProfileFacts` could only run once the gathering reached `finished`,
+because the read gate protecting `profileAnswers` from the host required it.
+A room that never got there - closed early, abandoned mid-evening, or ended
+deliberately - lost every guided answer for good, with no way to recover them
+even by hand, since the host could never read the raw answers either.
+
+**The gate itself was reasoning imported from the wrong place.** It copied
+`itemAuthors`' own `finished`-only clause, which exists to stop a live vote
+being swayed by an early peek at who wrote an unrevealed item. Nothing about
+a profile answer is voted on - there is no equivalent stake to protect, and
+the host already has broad read access to the room's bookkeeping throughout
+the gathering regardless. Once that was clear, the fix was two changes, not
+one: relax the rule (`isUser(playerId) || isHost(sessionId)`, no phase
+check), and actually call `writeProfileFacts` earlier - from
+`BetweenGames.tsx`'s `keepThisGame()`, at the same per-game cadence
+`writeFactsForGame` already uses, not only once from `Finale.tsx`. Doing only
+the second without the first would have failed outright; doing only the
+first would have left the earlier collection unreachable in the client.
+
+This is the same lesson milestone 7 already learned once, in a different
+shape (DECISIONS.md, "the same walkthrough, continued": contacts created only
+at the end of the evening meant every per-game write found nothing to
+attribute to). **A new fact source needs the abandoned-session guarantee
+designed in from the start, not assumed to follow from wherever its data
+happens to live** - it does not follow automatically, and the review process
+that would normally catch this (the four-lens pass) has not run on milestone
+8 yet.
+
+Evidence: `npm run build`, `npx tsc -b`, `npm test` (126, unchanged),
+`npm run test:rules` (218, up from 217 - one new in `memory.test.ts` proving
+`writeProfileFacts` collects mid-gathering against the real rules, not only
+against a session pre-seeded as `finished` the way every other test in that
+block already was). Mutation-checked: restoring the `finished` clause
+reddened exactly the two tests written against the new behaviour and nothing
+else. Also recorded in BACKLOG.md: a returning player's past answers are not
+yet offered back to them in a new gathering - a concrete instance of the
+identity-linking work already deferred, not a new gap.

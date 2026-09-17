@@ -311,19 +311,31 @@ service cloud.firestore {
         // --- one player's guided-question answers - milestone 8 ---
         //
         // Private, unlike a harvest item: this is meant only for the host's
-        // own memory of this person, never for another player to read - so
+        // own memory of this person, never for another *player* to read - so
         // unlike `items`, there is no player-facing reveal path here at all.
         // Readable by its own author at any time (editing a half-finished or
         // regretted answer is the point - see the lobby's per-question save
-        // button), and by the host once the gathering is `finished` - the
-        // same gate `itemAuthors` uses for an unrevealed item's author.
-        // Collection genuinely only happens then (writeProfileFacts in
-        // memory.ts, called once from the evening's last screen): unlike a
-        // harvest item there is no "revealed" moment that would make an
-        // earlier, mid-gathering collection safe.
+        // button), and by the host at any time too, not gated on `finished`
+        // the way `itemAuthors` gates an unrevealed item's author.
+        //
+        // **That gate does not apply here, on reflection.** `itemAuthors`
+        // waits for `finished` to stop a player from reading who wrote an
+        // unrevealed item and using it to sway a vote still in progress -
+        // there is no equivalent stake here: nobody votes on a profile
+        // answer, and the host already has broad read access to the room's
+        // bookkeeping mid-gathering regardless. The original `finished`-only
+        // version instead cost the exact thing DESIGN asks every other fact
+        // source for - "an abandoned session keeps whatever was already
+        // played" - since `writeProfileFacts` could only ever run once the
+        // evening reached its very last screen, and a room closed earlier
+        // than that, by accident or on purpose, lost every self-report
+        // answer even though each one had already been saved to Firestore
+        // the moment its own "שמירה" was tapped. Found by Nitzan asking
+        // directly, 2026-09-17 - `writeProfileFacts` now also runs from
+        // `BetweenGames.tsx`, at the same per-game cadence `writeFactsForGame`
+        // already uses.
         match /profileAnswers/{questionId} {
-          allow get: if isUser(playerId)
-            || (isHost(sessionId) && session(sessionId).phase == 'finished');
+          allow get: if isUser(playerId) || isHost(sessionId);
           allow create, update: if isUser(playerId)
             && request.resource.data.questionId == questionId
             && request.resource.data.keys().hasOnly(['questionId', 'answer', 'updatedAt']);

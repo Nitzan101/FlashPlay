@@ -1319,7 +1319,7 @@ describe('playerNames - one slot per display name, self-uid only, never updatabl
 // public like an item - no other player may ever read one, and the host may
 // only once the gathering is finished (there is no "revealed" moment here
 // that would make an earlier read safe, unlike itemAuthors).
-describe('profileAnswers - private to the answering player and the host once finished', () => {
+describe('profileAnswers - private to the answering player and the host', () => {
   const path = `sessions/${SESSION}/players/${PLAYER}/profileAnswers/hobby`
   const answer = { questionId: 'hobby', answer: 'ציור', updatedAt: 0 }
 
@@ -1363,14 +1363,21 @@ describe('profileAnswers - private to the answering player and the host once fin
     await assertFails(getDoc(doc(asOutsider(), path)))
   })
 
-  it('refuses the host reading it while the gathering is still running', async () => {
+  // Deliberately not gated on `finished`, unlike itemAuthors - see the
+  // comment on the rule itself for why: the gate there stops a live vote
+  // being swayed by an early peek, and nothing here is voted on. The first
+  // version of this rule required `finished`, which meant `writeProfileFacts`
+  // could only ever run at the very end of the evening - an abandoned or
+  // early-closed gathering lost every guided answer for good, unlike every
+  // other fact source in the app. Found live, 2026-09-17.
+  it('lets the host read it while the gathering is still running, mid-game', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), path), answer)
     })
-    await assertFails(getDoc(doc(asHost(), path)))
+    await assertSucceeds(getDoc(doc(asHost(), path)))
   })
 
-  it('lets the host read it once the gathering is finished', async () => {
+  it('lets the host read it once the gathering is finished, too', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), path), answer)
       await setDoc(doc(ctx.firestore(), `sessions/${SESSION}`), { phase: 'finished' }, { merge: true })

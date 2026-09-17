@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import HostButton from './HostButton'
 import Scoreboard from './Scoreboard'
 import { db } from './lib/firebase'
-import { ensureContacts, writeFactsForGame } from './lib/memory'
+import { ensureContacts, writeFactsForGame, writeProfileFacts } from './lib/memory'
 import { errorCode } from './lib/room'
 import { endGathering, startSecondGame } from './lib/secondGame'
 import { useAction } from './lib/useAction'
@@ -66,11 +66,20 @@ export default function BetweenGames({
    * end-of-evening "save the group" tap, which meant every per-game write
    * found an empty map and wrote nothing at all - the abandoned-session
    * promise was never kept. Both reviews found it.
+   *
+   * `writeProfileFacts` runs alongside `writeFactsForGame` on purpose, for
+   * the same reason - milestone 8's first version only collected guided
+   * answers at the very end of the evening, so a room that never reached the
+   * last screen (an accidental close, or the host ending the evening early)
+   * lost every self-report answer for good, even though each one had already
+   * been saved the moment its own "שמירה" was tapped. Found by Nitzan asking
+   * directly, 2026-09-17.
    */
   async function keepThisGame() {
     try {
       await ensureContacts(db, hostUid, sessionId, players, groupId)
       await writeFactsForGame(db, hostUid, sessionId, gameId)
+      await writeProfileFacts(db, hostUid, sessionId, players)
     } catch (caught) {
       // Never block the room on this: the evening's last screen writes
       // whatever this missed, and the writes are idempotent.
