@@ -1332,6 +1332,27 @@ not a separate mechanism.** It needed nothing a text question doesn't already
 have, so it ships as one more entry in `PROFILE_QUESTIONS`
 (`src/content/profileQuestions.ts`) rather than a parallel code path.
 
+**Six built-in questions grew to twenty within the same session, on Nitzan's
+own pushback.** His framing for this feature was "everyone answers whatever
+comes to mind or flows for them" - and a short fixed list works against that
+framing: with six questions, most of the room ends up answering the same six,
+which is closer to a short form than a real choice. Twenty gives real variety
+on two axes at once (kind - 12 free-text, 5 single-choice, 3 multi-choice -
+and topic - habits, taste, memory, values, mood), so someone with nothing to
+say about music still has eighteen other doors. Still held to the harvest
+prompts' own bar despite not being a guessing game: answerable in seconds,
+works the same for a nine-year-old and a grandparent, nothing about work,
+dating, money or politics.
+
+**Twenty questions needed the lobby to stop showing all of them at once.**
+`GuidedQuestions` now shows the first six built-ins plus every one of the
+host's own custom questions (added specifically for this gathering, so never
+hidden), with an "עוד N שאלות" button revealing the rest - the answered-count
+badge still counts against the full set, not just what's visible, so a person
+who has already answered a hidden one still sees it reflected. Mutation-
+checked: making the visible slice drop the always-shown custom questions
+reddened exactly that one test.
+
 **A second config-registration miss, same shape as the first.** Adding
 `profileQuestions.test.ts` for the emulator repeated the exact mistake
 `profile.test.ts` had just taught: forgetting `vite.config.ts`'s `exclude`
@@ -1340,16 +1361,19 @@ list runs it against a nonexistent emulator under plain `npm test`; forgetting
 Both are now checked as a pair whenever a new emulator-backed test file is
 added - see CLAUDE.md, Known pitfalls.
 
-Evidence: `npm run build`, `npx tsc -b`, `npm test` (122, up from 118),
-`npm run test:rules` (217 assertions, up from 190 - ten new for
-`profileAnswers` directly in `firestore-rules.test.ts`, one in `room.test.ts`
-proving `createRoom`'s snapshot, seven in the new `profileQuestions.test.ts`,
-and nine in `memory.test.ts` for `writeProfileFacts`/`addManualFact`/
-`addManualGroupFact`), plus four new component tests in `GroupDetails.test.tsx`
-and three in `Lobby.test.tsx` for the new screens. Two rules guards
-mutation-checked in this round: the host-read gate on `profileAnswers`
-(`isHost && phase == 'finished'`) and the self-only write guard
-(`isUser(playerId)`), each turning exactly its own named assertion red. No
-other `firestore.rules` change was needed - `writeFactsForGame`'s existing
-shape, the `users/{uid}` blanket rule, and the `players/{playerId}` update
-rule already covered everything else this milestone touches.
+Evidence: `npm run build`, `npx tsc -b`, `npm test` (126, up from 118 across
+both passes - four more from the twenty-question expansion's own
+`GuidedQuestions.test.tsx`), `npm run test:rules` (217 assertions, up from 190
+- ten new for `profileAnswers` directly in `firestore-rules.test.ts`, one in
+`room.test.ts` proving `createRoom`'s snapshot, seven in the new
+`profileQuestions.test.ts`, and nine in `memory.test.ts` for
+`writeProfileFacts`/`addManualFact`/`addManualGroupFact`), plus four new
+component tests in `GroupDetails.test.tsx` and three in `Lobby.test.tsx` for
+the new screens. Three rules/logic guards mutation-checked in this round: the
+host-read gate on `profileAnswers` (`isHost && phase == 'finished'`), the
+self-only write guard (`isUser(playerId)`), and `GuidedQuestions`'s own
+always-show-custom-questions guarantee, each turning exactly its own named
+assertion red. No other `firestore.rules` change was needed -
+`writeFactsForGame`'s existing shape, the `users/{uid}` blanket rule, and the
+`players/{playerId}` update rule already covered everything else this
+milestone touches.

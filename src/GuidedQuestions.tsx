@@ -28,15 +28,31 @@ interface GuidedQuestionsProps {
  * tell which answers actually landed if the write failed partway through a
  * batch.
  */
+/** How many of the built-in questions show before "more questions" is
+ *  needed. Twenty exist precisely so different people can find one that
+ *  resonates (see the module comment on PROFILE_QUESTIONS) - stacking all
+ *  twenty in the lobby by default would turn "pick what flows for you" into
+ *  a wall of text competing with the roster and the start-game button for the
+ *  same screen. The host's own custom questions are never behind this: they
+ *  were added specifically for this gathering, presumably because they
+ *  matter more here than the shipped defaults do. */
+const DEFAULT_VISIBLE_BUILTINS = 6
+
 export default function GuidedQuestions({ sessionId, uid, customQuestions }: GuidedQuestionsProps) {
   const { t } = useTranslation()
-  const questions = [...PROFILE_QUESTIONS, ...customQuestions]
+  const allQuestions = [...customQuestions, ...PROFILE_QUESTIONS]
   const { answers, loading } = useMyProfileAnswers(
     sessionId,
     uid,
-    questions.map((q) => q.id),
+    allQuestions.map((q) => q.id),
   )
   const [open, setOpen] = useState(true)
+  const [showAll, setShowAll] = useState(false)
+
+  const hiddenCount = Math.max(0, PROFILE_QUESTIONS.length - DEFAULT_VISIBLE_BUILTINS)
+  const visibleQuestions = showAll
+    ? allQuestions
+    : [...customQuestions, ...PROFILE_QUESTIONS.slice(0, DEFAULT_VISIBLE_BUILTINS)]
 
   const answeredCount = Object.values(answers).filter((a) =>
     Array.isArray(a) ? a.length > 0 : a.trim() !== '',
@@ -53,14 +69,14 @@ export default function GuidedQuestions({ sessionId, uid, customQuestions }: Gui
       >
         <span className="font-medium text-accent-2">{t('tellUsAboutYourself')}</span>
         <span className="text-xs text-muted">
-          {answeredCount}/{questions.length}
+          {answeredCount}/{allQuestions.length}
         </span>
       </button>
       {open && (
         <>
           <p className="text-xs text-muted">{t('tellUsAboutYourselfHint')}</p>
           <div className="flex flex-col gap-3">
-            {questions.map((question) => (
+            {visibleQuestions.map((question) => (
               <QuestionRow
                 key={question.id}
                 sessionId={sessionId}
@@ -70,6 +86,15 @@ export default function GuidedQuestions({ sessionId, uid, customQuestions }: Gui
               />
             ))}
           </div>
+          {!showAll && hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="cursor-pointer self-start text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+            >
+              {t('showMoreQuestions', { count: hiddenCount })}
+            </button>
+          )}
         </>
       )}
     </div>

@@ -235,6 +235,7 @@ export const resources = {
       savingAnswer: 'שומרים...',
       answerSaveError: 'אי אפשר לשמור כרגע.',
       profileAnswerTextPlaceholder: 'התשובה שלך',
+      showMoreQuestions: 'עוד {{count}} שאלות',
       addFact: 'הוספת פרט',
       addFactPlaceholder: 'מה כדאי לזכור?',
       addFactSave: 'שמירה',
