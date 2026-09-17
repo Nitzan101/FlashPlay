@@ -226,8 +226,8 @@ describe('Rounds', () => {
     renderRounds(true, { [HOST]: 2, [PLAYER]: 1 })
 
     expect(screen.getByText('זה נכתב על ידי Player')).toBeInTheDocument()
-    expect(screen.getByText('Host חשב/ה שזה Player')).toHaveClass('text-green-700')
-    expect(screen.getByText('Third חשב/ה שזה Host')).not.toHaveClass('text-green-700')
+    expect(screen.getByText('Host חשב/ה שזה Player')).toHaveClass('text-accent-3')
+    expect(screen.getByText('Third חשב/ה שזה Host')).not.toHaveClass('text-accent-3')
     expect(screen.getByText('Host +2')).toBeInTheDocument()
     expect(screen.getByText('Player +1')).toBeInTheDocument()
   })

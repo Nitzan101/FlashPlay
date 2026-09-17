@@ -163,6 +163,14 @@ Two kinds of change are not covered by that and need more:
 - **No hardcoded UI strings.** i18n infrastructure exists from day one even
   though only Hebrew ships, so adding a language stays a content decision.
 - Tailwind v4 via `@tailwindcss/vite`; no `tailwind.config.js`.
+- **Visual identity is "neon night" (chosen 2026-09-17, see DECISIONS.md) - a
+  small `@theme` token set in `src/index.css`, not a component library.**
+  Colour utilities always go through the tokens (`bg-accent`, `text-muted`,
+  `border-line`, `bg-surface`, `text-danger`, `text-accent-2`/`accent-3`) -
+  never a stock Tailwind colour like `blue-600` or `neutral-500` directly, or
+  a screen quietly drifts from the rest of the app. One committed dark theme,
+  not a light/dark toggle - deliberately deferred, see BACKLOG.md, "a
+  light/colourful second theme".
 
 ## Where this lives
 `C:\Users\nitza\Dev\FlashPlay` — a plain folder, deliberately **not** inside the

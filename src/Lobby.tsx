@@ -52,38 +52,40 @@ export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: Lob
 
   return (
     <div className="flex w-full max-w-xs flex-col items-center gap-4">
-      <p className="text-lg font-semibold">{t('roomCodeLabel', { code: roomCode })}</p>
+      <p className="text-lg font-bold text-accent-2 drop-shadow-[0_0_10px_rgba(34,240,211,0.5)]">
+        {t('roomCodeLabel', { code: roomCode })}
+      </p>
 
       {isHost && (
         <div className="flex w-full flex-col items-center gap-2">
-          <p className="text-sm text-neutral-500">{t('roomLinkLabel')}</p>
+          <p className="text-sm text-muted">{t('roomLinkLabel')}</p>
           <code
             dir="ltr"
-            className="w-full break-all rounded-md bg-neutral-100 px-3 py-2 text-center text-sm select-all"
+            className="w-full break-all rounded-xl border border-line bg-surface px-3 py-2 text-center text-sm text-ink select-all"
           >
             {joinUrl}
           </code>
           <button
             type="button"
             onClick={() => void copyLink()}
-            className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2"
+            className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
           >
             {copyState === 'copied' ? t('linkCopied') : t('copyLink')}
           </button>
           {copyState === 'failed' && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('copyFailed')}
             </p>
           )}
         </div>
       )}
 
-      <p className="text-neutral-600">
+      <p className="text-muted">
         {activeCount === 1 ? t('memberCountOne') : t('memberCount', { count: activeCount })}
       </p>
 
       {error && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-danger">
           {t('rosterLoadError')}
         </p>
       )}
@@ -99,18 +101,20 @@ export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: Lob
           above and the roster itself (both correct at every moment, since
           they come straight from who has actually joined) are the honest
           signal for this screen. See BACKLOG.md, "presence UI". */}
-      <ul className="flex w-full flex-col gap-1">
+      <ul className="flex w-full flex-col gap-1 rounded-xl border border-line bg-surface/60 p-2">
         {players.map((player) => (
-          <li key={player.id} className="min-w-0 truncate">
-            <span className={player.leftAt ? 'text-neutral-400' : undefined}>{player.name}</span>
-            {player.id === uid && <span className="text-neutral-500"> {t('youSuffix')}</span>}
-            {player.id === hostUid && <span className="text-neutral-500"> {t('hostSuffix')}</span>}
-            {player.leftAt && <span className="text-neutral-400"> {t('leftSuffix')}</span>}
+          <li key={player.id} className="min-w-0 truncate px-1 py-0.5">
+            <span className={player.leftAt ? 'text-muted' : undefined}>{player.name}</span>
+            {player.id === uid && <span className="text-accent-2"> {t('youSuffix')}</span>}
+            {player.id === hostUid && (
+              <span className="font-semibold text-accent-3"> {t('hostSuffix')}</span>
+            )}
+            {player.leftAt && <span className="text-muted italic"> {t('leftSuffix')}</span>}
           </li>
         ))}
       </ul>
 
-      <p className="text-neutral-500">{isHost ? t('lobbyWaitingHost') : t('lobbyWaitingGuest')}</p>
+      <p className="text-muted">{isHost ? t('lobbyWaitingHost') : t('lobbyWaitingGuest')}</p>
 
       {isHost && (
         <div className="flex flex-col items-center gap-2">
@@ -118,7 +122,7 @@ export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: Lob
             type="button"
             onClick={() => void startGame()}
             disabled={startState === 'busy' || activeCount < MIN_PLAYERS_TO_START}
-            className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+            className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
           >
             {startState === 'busy' ? t('startingGame') : t('startGame')}
           </button>
@@ -126,12 +130,12 @@ export default function Lobby({ sessionId, roomCode, uid, isHost, hostUid }: Lob
               alone would show zero candidates - found live, starting a game
               with only the host in the room. */}
           {activeCount < MIN_PLAYERS_TO_START && (
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-muted">
               {t('needMorePlayers', { count: MIN_PLAYERS_TO_START })}
             </p>
           )}
           {startState === 'error' && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('startGameError')}
             </p>
           )}

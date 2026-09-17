@@ -392,12 +392,21 @@ auto-advances off this count, the host's own tap does - so not urgent, but the
 fix belongs with a proper look at the round loop's screens rather than riding
 in on the lobby fix that found it.
 
-**A visual design pass.** Nitzan's own words, first manual walkthrough:
-generic, "not appealing to the eye." Every screen in this app so far has been
-built for correctness first - default Tailwind spacing, no real typography or
-colour decisions, no motion. Deliberately sequenced *after* the functional bugs
-found in the same walkthrough are fixed (his own ordering: fix what's broken,
-then make it look like something, then add features) - not started yet.
+**A visual design pass - done 2026-09-17, "neon night."** See DECISIONS.md,
+"the visual identity: neon night, chosen 2026-09-17". Two directions shown
+and not chosen (confetti/game-show, warm "living room") are worth revisiting
+if a lighter mode ever gets built - see the next item.
+
+**A light/colourful second theme, alongside the dark one.** Raised by Nitzan
+right after picking "neon night": would a light/dark toggle be complicated?
+Answer given and agreed: the toggle mechanism itself is not (Tailwind/CSS
+both support it natively), but it roughly doubles the design surface - two
+palettes and two sets of component treatments to keep in sync as the app
+grows, rather than one. Deliberately deferred rather than built alongside the
+first theme. If it happens, the "confetti/game-show" or "warm living room"
+mockups from the same design round are the natural starting palettes, since
+they were already built and rejected only for being the *second* choice, not
+for being wrong.
 
 **A social/relationship layer, once the basics are solid.** Also from the same
 walkthrough: accounts that hold information about yourself, and relationships

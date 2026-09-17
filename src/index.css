@@ -1,7 +1,44 @@
 @import 'tailwindcss';
 
+/*
+ * "Neon night" - the visual direction chosen 2026-09-17 from three mockups
+ * (see the FlashPlay Directions artifact). A single committed dark identity,
+ * not a light/dark toggle - that idea is deliberately deferred, see
+ * BACKLOG.md, "a light/colourful second theme".
+ */
+@theme {
+  --color-bg: #12081f;
+  --color-surface: #1d1030;
+  --color-line: #352a52;
+  --color-ink: #f5f1ff;
+  --color-muted: #a99bd1;
+  --color-accent: #ff2e9a;
+  --color-accent-2: #22f0d3;
+  --color-accent-3: #d4ff3d;
+  --color-danger: #ff6b5c;
+}
+
 /* Hebrew-first product. The document is RTL; English identifiers and numbers
    are handled by the browser's bidi algorithm inside otherwise-Hebrew text. */
 html {
-  font-family: system-ui, 'Segoe UI', Arial, sans-serif;
+  font-family: 'Rubik', system-ui, 'Segoe UI', Arial, sans-serif;
+}
+
+body {
+  /* Fixed, not scrolling with content - a gradient that repositions on scroll
+     reads as broken on a phone, and every screen here scrolls at some point
+     (the roster, the memory list, the finale). */
+  background:
+    radial-gradient(120% 60% at 50% 0%, #241242 0%, transparent 60%), var(--color-bg);
+  background-attachment: fixed;
+  color: var(--color-ink);
+  min-height: 100dvh;
+}
+
+/* The default blue focus ring is invisible against this background - most
+   screens here are host controls tapped mid-gathering, not keyboard-driven,
+   but a visible focus state still matters for anyone who does tab through. */
+:focus-visible {
+  outline: 2px solid var(--color-accent-2);
+  outline-offset: 2px;
 }

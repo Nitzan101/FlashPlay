@@ -11,7 +11,7 @@ export default function LoadFailure({ message, code }: { message: string; code?:
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <p role="alert" className="text-red-600">
+      <p role="alert" className="text-danger">
         {message}{' '}
         {code && (
           <span dir="ltr" className="font-mono text-xs">
@@ -22,7 +22,7 @@ export default function LoadFailure({ message, code }: { message: string; code?:
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2"
+        className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
       >
         {t('retryButton')}
       </button>

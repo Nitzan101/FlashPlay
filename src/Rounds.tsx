@@ -136,7 +136,7 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-4">
       {round && (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-muted">
           {t('roundCounter', {
             current: playedRounds.length,
             total: Math.min(MAX_ROUNDS, playedRounds.length + unplayed),
@@ -144,24 +144,24 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
         </p>
       )}
 
-      {loading && <p className="text-neutral-500">{t('loadingRound')}</p>}
+      {loading && <p className="text-muted">{t('loadingRound')}</p>}
       {!loading && !round && !exhausted && !isHost && <p>{t('waitingForHostToRead')}</p>}
       {!loading && !round && exhausted && (
-        <p className="text-neutral-500">{t('noItemsLeft')}</p>
+        <p className="text-muted">{t('noItemsLeft')}</p>
       )}
 
       {round && (
-        <div className="flex w-full flex-col items-center gap-2 rounded-md border border-neutral-200 p-4">
+        <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/60 p-4">
           {prompt && (
-            <p className="text-xs text-neutral-500">{t('roundPromptLabel', { text: prompt.text })}</p>
+            <p className="text-xs text-muted">{t('roundPromptLabel', { text: prompt.text })}</p>
           )}
           {itemVisible && <p className="text-center text-lg">{item.text}</p>}
           {round.phase === 'preview' && (
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-muted">
               {isHost ? t('hostPreviewOnly') : t('waitingForHostToRead')}
             </p>
           )}
-          {round.phase === 'skipped' && <p className="text-neutral-500">{t('roundSkipped')}</p>}
+          {round.phase === 'skipped' && <p className="text-muted">{t('roundSkipped')}</p>}
         </div>
       )}
 
@@ -182,8 +182,8 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
                   disabled={voter.busy}
                   className={
                     myVote === player.id
-                      ? 'cursor-pointer rounded-md border-2 border-blue-600 bg-blue-50 px-4 py-3 font-medium disabled:opacity-50'
-                      : 'cursor-pointer rounded-md border border-neutral-300 px-4 py-3 disabled:opacity-50'
+                      ? 'cursor-pointer rounded-xl border-2 border-accent bg-accent/15 px-4 py-3 font-medium text-ink disabled:opacity-50'
+                      : 'cursor-pointer rounded-xl border border-line bg-surface/60 px-4 py-3 disabled:opacity-50'
                   }
                 >
                   {player.name}
@@ -194,16 +194,16 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
           {/* The options stay tappable after voting: a mis-tap on a phone is
               ordinary, and the rules already allow replacing a vote until the
               reveal. Hiding them made a wrong tap final. */}
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-muted">
             {myVote ? t('changeVoteHint') : t('everyoneVotesHint')}
           </p>
           {/* Game 2 already explained its scoring during voting
               (majorityScoringHint) - this game had a rule and no explanation
               of it anywhere on screen. Asked for directly, 2026-09-16. */}
-          <p className="text-xs text-neutral-500">{t('firstGameScoringHint')}</p>
-          {voter.slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
+          <p className="text-xs text-muted">{t('firstGameScoringHint')}</p>
+          {voter.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
           {voter.error && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('voteError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({voter.error})
@@ -219,7 +219,7 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
             <p className="text-lg font-medium">{t('authorWas', { name: nameOf(authorPlayerId) })}</p>
           )}
           {(authorError || votesError) && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('revealLoadError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({authorError ?? votesError})
@@ -230,7 +230,7 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
             <p
               key={voterId}
               className={
-                votedForPlayerId === authorPlayerId ? 'text-green-700' : 'text-neutral-600'
+                votedForPlayerId === authorPlayerId ? 'font-medium text-accent-3' : 'text-muted'
               }
             >
               {t('votedForLine', { voter: nameOf(voterId), target: nameOf(votedForPlayerId) })}
@@ -239,7 +239,7 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
           {/* Repeated here on purpose: the hint shown during voting is gone by
               now, and this is the screen where the points actually appear -
               same reasoning as SecondGame.tsx's majorityScoringReminder. */}
-          <p className="text-xs text-neutral-500">{t('firstGameScoringReminder')}</p>
+          <p className="text-xs text-muted">{t('firstGameScoringReminder')}</p>
           {Object.entries(awarded).map(([playerId, points]) => (
             <p key={playerId} className="text-sm font-medium">
               {t('awardedLine', { name: nameOf(playerId), points })}
@@ -281,7 +281,7 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
 
           {round?.phase === 'voting' && (
             <>
-              <p className="text-sm text-neutral-500">
+              <p className="text-sm text-muted">
                 {t('votesCastOf', { count: votesCast, total: players.length })}
               </p>
               <HostButton
@@ -320,7 +320,7 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
             </HostButton>
           )}
 
-          {exhausted && round && <p className="text-sm text-neutral-500">{t('noItemsLeft')}</p>}
+          {exhausted && round && <p className="text-sm text-muted">{t('noItemsLeft')}</p>}
 
           {/* DESIGN: "every phase needs a timeout or a host override." A room
               that has had enough at round five can stop there. */}
@@ -332,9 +332,9 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
             {t('finishGame')}
           </HostButton>
 
-          {host.slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
+          {host.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
           {host.error && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('roundActionError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({host.error})

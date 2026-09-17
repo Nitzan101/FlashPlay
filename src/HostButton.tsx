@@ -27,8 +27,8 @@ export default function HostButton({
       disabled={busy}
       className={
         primary
-          ? 'cursor-pointer rounded-md bg-blue-600 px-4 py-3 text-white disabled:opacity-50'
-          : 'cursor-pointer rounded-md border border-neutral-300 px-4 py-3 disabled:opacity-50'
+          ? 'cursor-pointer rounded-xl bg-accent px-4 py-3 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50'
+          : 'cursor-pointer rounded-xl border border-accent-2 px-4 py-3 font-medium text-accent-2 shadow-[0_0_12px_rgba(34,240,211,0.25)] disabled:opacity-50'
       }
     >
       {busy && busyLabel ? busyLabel : children}

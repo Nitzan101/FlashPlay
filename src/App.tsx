@@ -301,11 +301,13 @@ export default function App() {
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center">
-      <h1 className="text-3xl font-bold">{t('appName')}</h1>
-      <p className="text-neutral-600">{t('tagline')}</p>
+      <h1 className="text-3xl font-black text-accent drop-shadow-[0_0_18px_rgba(255,46,154,0.6)]">
+        {t('appName')}
+      </h1>
+      <p className="text-muted">{t('tagline')}</p>
 
       {redirectError && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-danger">
           {t('signInError')}
         </p>
       )}
@@ -315,11 +317,11 @@ export default function App() {
           <p>{t('loading')}</p>
           {loadingIsSlow && (
             <>
-              <p className="text-sm text-neutral-500">{t('loadingSlow')}</p>
+              <p className="text-sm text-muted">{t('loadingSlow')}</p>
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2"
+                className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
               >
                 {t('retryButton')}
               </button>
@@ -330,16 +332,16 @@ export default function App() {
 
       {screen.kind === 'error' && (
         <div role="alert" className="flex flex-col items-center gap-2">
-          <p className="text-red-600">{screen.message}</p>
+          <p className="text-danger">{screen.message}</p>
           {screen.detail && (
-            <p dir="ltr" className="font-mono text-xs text-neutral-500">
+            <p dir="ltr" className="font-mono text-xs text-muted">
               {screen.detail}
             </p>
           )}
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2"
+            className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
           >
             {t('retryButton')}
           </button>
@@ -368,14 +370,14 @@ export default function App() {
               type="button"
               onClick={() => void handleCreateRoom(null)}
               disabled={busy}
-              className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+              className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
             >
               {busy ? t('creatingRoom') : t('createRoom')}
             </button>
             <button
               type="button"
               onClick={() => void signOutUser()}
-              className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2"
+              className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
             >
               {t('signOut')}
             </button>
@@ -398,7 +400,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => void signInWithGoogle()}
-              className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white"
+              className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)]"
             >
               {t('signInWithGoogle')}
             </button>
@@ -443,18 +445,18 @@ export default function App() {
             // which handles the rest of it.
             maxLength={40}
             enterKeyHint="done"
-            className="rounded-md border border-neutral-300 px-3 py-2 text-center"
+            className="rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
             autoFocus
           />
           {nameError && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {nameError}
             </p>
           )}
           <button
             type="submit"
             disabled={busy || !nameInput.trim()}
-            className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+            className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
           >
             {busy ? t('joining') : t('joinButton')}
           </button>
@@ -471,18 +473,18 @@ export default function App() {
           />
           {confirmingLeave ? (
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-neutral-500">{t('leaveRoomConfirmQuestion')}</span>
+              <span className="text-muted">{t('leaveRoomConfirmQuestion')}</span>
               <button
                 type="button"
                 onClick={() => void confirmLeaveRoom(screen.sessionId, screen.uid)}
-                className="cursor-pointer text-red-600 underline"
+                className="cursor-pointer text-danger underline"
               >
                 {t('leaveRoomConfirmYes')}
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmingLeave(false)}
-                className="cursor-pointer text-neutral-400 underline"
+                className="cursor-pointer text-muted underline"
               >
                 {t('leaveRoomConfirmNo')}
               </button>
@@ -491,7 +493,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setConfirmingLeave(true)}
-              className="cursor-pointer text-xs text-neutral-400 underline"
+              className="cursor-pointer text-xs text-muted underline"
             >
               {t('leaveRoom')}
             </button>
@@ -527,11 +529,11 @@ function JoinByCode({
     <div
       className={
         bordered
-          ? 'flex w-full flex-col items-center gap-2 border-t border-neutral-200 pt-4'
+          ? 'flex w-full flex-col items-center gap-2 border-t border-line pt-4'
           : 'flex w-full flex-col items-center gap-2'
       }
     >
-      <label htmlFor="room-code-input" className="text-sm text-neutral-500">
+      <label htmlFor="room-code-input" className="text-sm text-muted">
         {t('haveCodeIntro')}
       </label>
       <div className="flex items-center gap-2">
@@ -542,19 +544,19 @@ function JoinByCode({
           placeholder={t('roomCodePlaceholder')}
           maxLength={4}
           inputMode="numeric"
-          className="w-24 rounded-md border border-neutral-300 px-3 py-2 text-center"
+          className="w-24 rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
         />
         <button
           type="button"
           onClick={onSubmit}
           disabled={busy || !CODE_PATTERN.test(codeInput.trim())}
-          className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2 disabled:opacity-50"
+          className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2 disabled:opacity-50"
         >
           {busy ? t('joining') : t('joinByCode')}
         </button>
       </div>
       {error && (
-        <p role="alert" className="text-xs text-red-600">
+        <p role="alert" className="text-xs text-danger">
           {error}
         </p>
       )}
@@ -598,7 +600,7 @@ function SavedGroups({
 
   if (error) {
     return (
-      <p role="alert" className="text-xs text-red-600">
+      <p role="alert" className="text-xs text-danger">
         {t('savedGroupsLoadError')}{' '}
         <span dir="ltr" className="font-mono">
           ({error})
@@ -610,27 +612,27 @@ function SavedGroups({
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
-      <p className="text-sm text-neutral-500">{t('savedGroupsTitle')}</p>
+      <p className="text-sm text-muted">{t('savedGroupsTitle')}</p>
       {groups.map((group) => (
         <div key={group.id} className="flex w-full items-center gap-2">
           <button
             type="button"
             onClick={() => onPick(group.id)}
             disabled={busy}
-            className="grow cursor-pointer rounded-md border border-neutral-300 px-4 py-3 disabled:opacity-50"
+            className="grow cursor-pointer rounded-xl border border-accent-2 px-4 py-3 text-accent-2 disabled:opacity-50"
           >
             {group.name}
           </button>
           <button
             type="button"
             onClick={() => setShowingMemoryOf(group.id)}
-            className="shrink-0 cursor-pointer rounded-md border border-neutral-300 px-3 py-3 text-sm"
+            className="shrink-0 cursor-pointer rounded-xl border border-line px-3 py-3 text-sm text-muted"
           >
             {t('viewMemory')}
           </button>
         </div>
       ))}
-      <p className="text-xs text-neutral-500">{t('savedGroupsHint')}</p>
+      <p className="text-xs text-muted">{t('savedGroupsHint')}</p>
     </div>
   )
 }

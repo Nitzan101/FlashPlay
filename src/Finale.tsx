@@ -119,11 +119,11 @@ export default function Finale({
       <Scoreboard players={players} scores={scores} title={t('finalScoresTitle')} />
 
       {isHost && (
-        <div className="flex w-full flex-col items-center gap-3 rounded-md border border-neutral-200 p-3">
+        <div className="flex w-full flex-col items-center gap-3 rounded-xl border border-line bg-surface/60 p-3">
           {/* What is happening, before the number that reports it - a count
               with no sentence above it told the host their evening was saved
               and then asked whether to save it. */}
-          <p className="text-center text-sm text-neutral-500">{t('keepingExplained')}</p>
+          <p className="text-center text-sm text-muted">{t('keepingExplained')}</p>
           {factsWritten !== null && (
             <p className="text-center text-sm">
               {factsWritten === 0
@@ -134,7 +134,7 @@ export default function Finale({
             </p>
           )}
           {keepError && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('keepEveningError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({keepError})
@@ -149,7 +149,7 @@ export default function Finale({
                 value={groupName}
                 onChange={(event) => setGroupName(event.target.value)}
                 placeholder={t('groupNamePlaceholder')}
-                className="w-full rounded-md border border-neutral-300 px-3 py-2 text-center"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
               />
               <HostButton
                 busy={save.busy}
@@ -178,9 +178,9 @@ export default function Finale({
             {t('viewMemory')}
           </HostButton>
 
-          {save.slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
+          {save.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
           {save.error && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('saveGroupError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({save.error})
@@ -192,7 +192,7 @@ export default function Finale({
               die, how many were you - is in the first version, because it is
               the asset no language model can generate." */}
           {feedbackDone ? (
-            <p className="text-center text-sm text-green-700">{t('feedbackThanks')}</p>
+            <p className="text-center text-sm text-accent-3">{t('feedbackThanks')}</p>
           ) : (
             <>
               <p className="text-center text-sm">{t('feedbackQuestion')}</p>
@@ -204,8 +204,8 @@ export default function Finale({
                     onClick={() => setOutcome(value)}
                     className={
                       outcome === value
-                        ? 'cursor-pointer rounded-md border-2 border-blue-600 bg-blue-50 px-4 py-3 font-medium'
-                        : 'cursor-pointer rounded-md border border-neutral-300 px-4 py-3'
+                        ? 'cursor-pointer rounded-xl border-2 border-accent bg-accent/15 px-4 py-3 font-medium text-ink'
+                        : 'cursor-pointer rounded-xl border border-line bg-surface/60 px-4 py-3'
                     }
                   >
                     {t(`feedbackOutcome_${value}`)}
@@ -218,7 +218,7 @@ export default function Finale({
                   value={headcount}
                   onChange={(event) => setHeadcount(event.target.value.replace(/\D/g, ''))}
                   inputMode="numeric"
-                  className="w-20 rounded-md border border-neutral-300 px-2 py-2 text-center"
+                  className="w-20 rounded-xl border border-line bg-surface px-2 py-2 text-center text-ink"
                 />
               </label>
               {/* Disabled until an answer is picked: a send button that does
@@ -237,9 +237,9 @@ export default function Finale({
               >
                 {t('sendFeedback')}
               </HostButton>
-              {feedback.slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
+              {feedback.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
               {feedback.error && (
-                <p role="alert" className="text-xs text-red-600">
+                <p role="alert" className="text-xs text-danger">
                   {t('feedbackError')}{' '}
                   <span dir="ltr" className="font-mono">
                     ({feedback.error})
@@ -251,7 +251,7 @@ export default function Finale({
         </div>
       )}
 
-      <p className="text-center text-sm text-neutral-500">{t('thanksForPlaying')}</p>
+      <p className="text-center text-sm text-muted">{t('thanksForPlaying')}</p>
     </div>
   )
 }

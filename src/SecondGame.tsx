@@ -107,9 +107,9 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
 
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-4">
-      <p className="text-sm text-neutral-500">{t('secondGameTitle')}</p>
+      <p className="text-sm text-muted">{t('secondGameTitle')}</p>
       {round && (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-muted">
           {t('roundCounter', {
             current: playedRounds.length,
             total: Math.min(MAX_ROUNDS, playedRounds.length + unplayed),
@@ -117,14 +117,14 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
         </p>
       )}
 
-      {loading && <p className="text-neutral-500">{t('loadingRound')}</p>}
+      {loading && <p className="text-muted">{t('loadingRound')}</p>}
       {!loading && !round && !exhausted && !isHost && <p>{t('waitingForHostToRead')}</p>}
       {!loading && !round && exhausted && (
-        <p className="text-neutral-500">{t('noRevealedItemsLeft')}</p>
+        <p className="text-muted">{t('noRevealedItemsLeft')}</p>
       )}
 
       {round && item && round.phase !== 'skipped' && (
-        <div className="flex w-full flex-col items-center gap-2 rounded-md border border-neutral-200 p-4">
+        <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/60 p-4">
           {/* DESIGN's exact framing, and the reason each prompt carries its own
               second-game question: an answer written in the first person
               cannot be re-conjugated without a generator, so the question is
@@ -136,25 +136,25 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
               {t('secondGameQuote', { name: nameOf(authorPlayerId), text: item.text })}
             </p>
           ) : authorError ? (
-            <p role="alert" className="text-center text-xs text-red-600">
+            <p role="alert" className="text-center text-xs text-danger">
               {t('revealLoadError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({authorError})
               </span>
             </p>
           ) : (
-            <p className="text-center text-neutral-500">{t('loadingRound')}</p>
+            <p className="text-center text-muted">{t('loadingRound')}</p>
           )}
           {prompt && <p className="text-center text-lg font-medium">{prompt.secondGameQuestion}</p>}
           {round.phase === 'preview' && (
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-muted">
               {isHost ? t('hostPreviewOnly') : t('waitingForHostToRead')}
             </p>
           )}
         </div>
       )}
 
-      {round?.phase === 'skipped' && <p className="text-neutral-500">{t('roundSkipped')}</p>}
+      {round?.phase === 'skipped' && <p className="text-muted">{t('roundSkipped')}</p>}
 
       {round?.phase === 'voting' && (
         <div className="flex w-full flex-col gap-2">
@@ -171,20 +171,20 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
                 disabled={voter.busy}
                 className={
                   myVote === player.id
-                    ? 'cursor-pointer rounded-md border-2 border-blue-600 bg-blue-50 px-4 py-3 font-medium disabled:opacity-50'
-                    : 'cursor-pointer rounded-md border border-neutral-300 px-4 py-3 disabled:opacity-50'
+                    ? 'cursor-pointer rounded-xl border-2 border-accent bg-accent/15 px-4 py-3 font-medium text-ink disabled:opacity-50'
+                    : 'cursor-pointer rounded-xl border border-line bg-surface/60 px-4 py-3 disabled:opacity-50'
                 }
               >
                 {player.name}
                 {myVote === player.id ? ' ✓' : ''}
               </button>
             ))}
-          <p className="text-center text-xs text-neutral-500">
+          <p className="text-center text-xs text-muted">
             {myVote ? t('changeVoteHint') : t('majorityScoringHint')}
           </p>
-          {voter.slow && <p className="text-center text-xs text-neutral-500">{t('stillWorking')}</p>}
+          {voter.slow && <p className="text-center text-xs text-muted">{t('stillWorking')}</p>}
           {voter.error && (
-            <p role="alert" className="text-center text-xs text-red-600">
+            <p role="alert" className="text-center text-xs text-danger">
               {t('voteError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({voter.error})
@@ -211,9 +211,9 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
           )}
           {/* Repeated here on purpose: the hint shown during voting is gone by
               now, and this is the screen where the points appear. */}
-          <p className="text-xs text-neutral-500">{t('majorityScoringReminder')}</p>
+          <p className="text-xs text-muted">{t('majorityScoringReminder')}</p>
           {votesError && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('revealLoadError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({votesError})
@@ -221,7 +221,7 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
             </p>
           )}
           {Object.entries(votes).map(([voterId, votedForPlayerId]) => (
-            <p key={voterId} className="text-neutral-600">
+            <p key={voterId} className="text-muted">
               {t('votedForSecondGameLine', {
                 voter: nameOf(voterId),
                 target: nameOf(votedForPlayerId),
@@ -269,7 +269,7 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
 
           {round?.phase === 'voting' && (
             <>
-              <p className="text-sm text-neutral-500">
+              <p className="text-sm text-muted">
                 {t('votesCastOf', { count: votesCast, total: players.length })}
               </p>
               <HostButton
@@ -317,12 +317,12 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
           </HostButton>
 
           {exhausted && round && (
-            <p className="text-sm text-neutral-500">{t('noRevealedItemsLeft')}</p>
+            <p className="text-sm text-muted">{t('noRevealedItemsLeft')}</p>
           )}
 
-          {host.slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
+          {host.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
           {host.error && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('roundActionError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({host.error})

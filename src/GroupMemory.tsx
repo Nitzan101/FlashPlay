@@ -42,16 +42,16 @@ export default function GroupMemory({ hostUid, groupId, onClose }: GroupMemoryPr
     <div className="flex w-full max-w-sm flex-col items-center gap-3">
       <p className="text-lg font-medium">{groupName || t('memoryTitle')}</p>
 
-      {loading && <p className="text-neutral-500">{t('loadingRound')}</p>}
+      {loading && <p className="text-muted">{t('loadingRound')}</p>}
       {!loading && (wiped || visible.length === 0) && (
-        <p className="text-neutral-500">{t('memoryEmpty')}</p>
+        <p className="text-muted">{t('memoryEmpty')}</p>
       )}
 
       {!wiped &&
         visible.map((fact) => (
           <div
             key={fact.path}
-            className="flex w-full items-center justify-between gap-2 rounded-md border border-neutral-200 p-2"
+            className="flex w-full items-center justify-between gap-2 rounded-xl border border-line bg-surface/60 p-2"
           >
             <span className="text-sm">
               {fact.who ? t('memoryLine', { who: fact.who, text: fact.text }) : fact.text}
@@ -68,16 +68,16 @@ export default function GroupMemory({ hostUid, groupId, onClose }: GroupMemoryPr
                   .finally(() => setDeleting(null))
               }}
               disabled={deleting === fact.path}
-              className="shrink-0 cursor-pointer rounded-md border border-neutral-300 px-3 py-2 text-sm disabled:opacity-50"
+              className="shrink-0 cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-50"
             >
               {t('deleteFact')}
             </button>
           </div>
         ))}
 
-      {remove.slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
+      {remove.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
       {remove.error && (
-        <p role="alert" className="text-xs text-red-600">
+        <p role="alert" className="text-xs text-danger">
           {t('deleteFactError')}{' '}
           <span dir="ltr" className="font-mono">
             ({remove.error})

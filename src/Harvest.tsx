@@ -148,7 +148,7 @@ export default function Harvest({
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-4">
       <p className="text-center">{t('harvestIntro')}</p>
-      <p className="text-sm text-neutral-500">
+      <p className="text-sm text-muted">
         {secondsLeft > 0 ? t('harvestTimeLeft', { seconds: secondsLeft }) : t('harvestTimeUp')}
       </p>
 
@@ -160,7 +160,7 @@ export default function Harvest({
         return (
           <form
             key={promptId}
-            className="flex w-full flex-col items-center gap-2 rounded-md border border-neutral-200 p-3"
+            className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/60 p-3"
             onSubmit={(event) => {
               event.preventDefault()
               void submit(promptId)
@@ -169,7 +169,7 @@ export default function Harvest({
             <p className="text-center font-medium">{prompt.text}</p>
 
             {answer.status === 'submitted' ? (
-              <p className="text-green-700">{t('alreadySubmitted')}</p>
+              <p className="text-accent-3">{t('alreadySubmitted')}</p>
             ) : (
               <>
                 <input
@@ -185,17 +185,17 @@ export default function Harvest({
                   // ITEM_TEXT_MAX_LENGTH, which firestore.rules enforces too.
                   maxLength={ITEM_TEXT_MAX_LENGTH}
                   enterKeyHint="send"
-                  className="w-full rounded-md border border-neutral-300 px-3 py-2 text-center"
+                  className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
                 />
                 <button
                   type="submit"
                   disabled={answer.status === 'submitting' || !answer.text.trim()}
-                  className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+                  className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
                 >
                   {answer.status === 'submitting' ? t('submittingAnswer') : t('submitAnswer')}
                 </button>
                 {answer.status === 'error' && (
-                  <p role="alert" className="text-xs text-red-600">
+                  <p role="alert" className="text-xs text-danger">
                     {t('submitAnswerError')}{' '}
                     {answer.error && (
                       <span dir="ltr" className="font-mono">
@@ -210,7 +210,7 @@ export default function Harvest({
         )
       })}
 
-      <p className="text-neutral-500">{t('harvestProgress', { count: submittedCount })}</p>
+      <p className="text-muted">{t('harvestProgress', { count: submittedCount })}</p>
 
       {isHost && (
         <div className="flex flex-col items-center gap-2">
@@ -218,12 +218,12 @@ export default function Harvest({
             type="button"
             onClick={() => void extend()}
             disabled={extendState === 'busy'}
-            className="cursor-pointer rounded-md border border-neutral-300 px-4 py-2 disabled:opacity-50"
+            className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2 disabled:opacity-50"
           >
             {extendState === 'busy' ? t('extendingTime') : t('extendTime')}
           </button>
           {extendState === 'error' && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('extendTimeError')}
             </p>
           )}
@@ -235,12 +235,12 @@ export default function Harvest({
             type="button"
             onClick={() => void continueToRounds()}
             disabled={advanceState === 'busy'}
-            className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+            className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
           >
             {advanceState === 'busy' ? t('advancingPhase') : t('continueToRounds')}
           </button>
           {advanceState === 'error' && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('advancePhaseError')}
             </p>
           )}

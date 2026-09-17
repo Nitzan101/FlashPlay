@@ -21,12 +21,12 @@ export default function Scoreboard({ players, scores, title }: ScoreboardProps) 
     .sort((a, b) => b.points - a.points)
 
   return (
-    <div className="w-full max-w-sm rounded-md border border-neutral-200 p-3">
-      <p className="mb-1 text-sm font-medium">{title}</p>
+    <div className="w-full max-w-sm rounded-xl border border-line bg-surface/60 p-3">
+      <p className="mb-1 text-sm font-medium text-accent-3">{title}</p>
       {ranked.map((player) => (
         <p key={player.id} className="flex justify-between text-sm">
           <span>{player.name}</span>
-          <span>{t('pointsValue', { points: player.points })}</span>
+          <span className="font-medium">{t('pointsValue', { points: player.points })}</span>
         </p>
       ))}
     </div>

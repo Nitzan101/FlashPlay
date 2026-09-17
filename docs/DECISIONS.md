@@ -1145,3 +1145,41 @@ none of these five were the code doing the wrong thing by its own logic, they
 were the logic being asked a question - a real network's timing, two people
 who happen to share a name, one person alone in a lobby - that nothing before
 a live human ever asked it.
+
+## The visual identity: "neon night", chosen 2026-09-17
+
+Every screen up to this point had been built for correctness only - default
+Tailwind spacing and colour, no typography or motion decisions. Nitzan asked
+for "colourful and fun"; three full mockups (landing + lobby, each direction)
+were built as an artifact rather than guessed at in code - a confetti/game-show
+look, a warm "living room" look, and a dark neon-party look - and he picked
+the third, with the two others recorded here rather than just discarded, in
+case a lighter mode gets built later (see BACKLOG.md, "a light/colourful
+second theme").
+
+**A single committed dark identity, not a toggle - deliberately.** Nitzan
+asked directly whether a light/dark switch would be complicated. The
+mechanism is not (Tailwind and CSS both support it well); what it actually
+costs is scope - two visual identities to keep in sync as the app grows,
+rather than one. Decided together: ship "neon night" fully now, keep the idea
+recorded rather than built.
+
+**Implementation is a small token set, not a rewrite.** `src/index.css` gained
+one `@theme` block (`--color-bg`, `--color-surface`, `--color-line`,
+`--color-ink`, `--color-muted`, `--color-accent`, `--color-accent-2`,
+`--color-accent-3`, `--color-danger`) and a `body` background/font; every
+component still uses plain Tailwind utility classes, just against these
+tokens (`bg-accent`, `text-muted`, `border-line`, …) instead of the stock
+`blue-600`/`neutral-500`/`red-600` palette. `HostButton.tsx` carries the
+primary/secondary button treatment for every mid-game host action; the small
+number of screens with their own raw buttons (`App.tsx`, `Lobby.tsx`,
+`Finale.tsx`) were reskinned individually, same structure, only the
+`className` strings changed. No logic touched anywhere - `npm test` stayed at
+107 with one assertion updated (`text-green-700` → `text-accent-3` in
+`Rounds.test.tsx`, the correct-guess highlight colour actually changed).
+Google Fonts' Rubik is the one font, loaded in `index.html`.
+
+Not done in this pass, intentionally: GroupMemory's fact list is minimally
+restyled (borders/text only, per the "small pass, not a rewrite" scope);
+richer visual treatment for individual screens (illustration, motion, confetti
+accents like the mockup's) is future work if wanted, not assumed.

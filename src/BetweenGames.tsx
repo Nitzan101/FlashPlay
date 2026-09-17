@@ -130,9 +130,9 @@ export default function BetweenGames({
               {t('endGathering')}
             </HostButton>
           )}
-          {slow && <p className="text-xs text-neutral-500">{t('stillWorking')}</p>}
+          {slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
           {error && (
-            <p role="alert" className="text-xs text-red-600">
+            <p role="alert" className="text-xs text-danger">
               {t('roundActionError')}{' '}
               <span dir="ltr" className="font-mono">
                 ({error})
@@ -141,7 +141,7 @@ export default function BetweenGames({
           )}
         </div>
       ) : (
-        <p className="text-sm text-neutral-500">{t('waitingForHostNextGame')}</p>
+        <p className="text-sm text-muted">{t('waitingForHostNextGame')}</p>
       )}
     </div>
   )
