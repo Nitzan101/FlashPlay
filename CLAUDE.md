@@ -153,6 +153,10 @@ can reach.
   with its own independent save button and saved-state, never one shared
   form-wide save (asked for directly - a half-typed or regretted answer must
   never be swept up by someone else's save tap).
+- `src/QuestionRow.tsx` — one guided question (chips for choice questions,
+  a real toggling "אחר", its own save and a fading "נשמר ✓"), shared by the
+  lobby and GroupDetails' per-person editor so the two never drift apart.
+  The answer is always derived from the selection, never stored beside it.
 - `src/lib/harvest.ts` — milestone 4: the session state machine and the
   harvest phase. `startHarvestGame`, `submitHarvestItem` (the three-write
   contract - see `ITEM_WRITE_ORDER` in `model.ts`), `getMySubmission`,
@@ -194,10 +198,21 @@ can reach.
   a room" tap itself, plus creating a new (empty) group.
 - `src/GroupDetails.tsx` — a saved group's details, owner only: per-person
   facts (including "nothing recorded yet"), group-wide facts, inline renaming,
-  per-fact and whole-group deletion (both behind a confirm step), and adding a
-  free-form fact directly to a person or the group (milestone 8). Named
-  `GroupDetails` rather than the milestone-7 original `GroupMemory` once it
-  stopped being read-only.
+  per-fact deletion, adding/removing a person (`addGroupMember` - refuses a
+  name already in that group - / `deleteContact`), two separate destructive actions (`wipeGroupFacts` keeps
+  the group and its people; `deleteGroup` removes everything), adding a
+  free-form fact directly to a person or the group, and each person's full
+  guided-question list, editable by the host (`setContactQuestionAnswer` -
+  writes the same `profile_{questionId}` document `writeProfileFacts` does, so
+  the two converge). Named `GroupDetails` rather than the milestone-7 original
+  `GroupMemory` once it stopped being read-only.
+- **An unnamed group cannot be found from any screen** - `useSavedGroups`
+  lists named groups only, yet that evening's facts are still written. Nitzan
+  decided (2026-09-23) that an explicit "לא לשמור קבוצה" leaves straight
+  away with no follow-up screen - only a named save gets the "view and edit
+  now?" stage (`LeaveRoomControl`'s 'group-saved'). An earlier pass showed
+  that stage after a decline too, and he rejected it; do not reintroduce it
+  as a "safety net" without asking. See DECISIONS.md, "third pass".
 - `src/lib/useAction.ts` — one host tap: busy, the error with its code, and the
   "still trying" notice a write that never settles needs.
 - `src/HostButton.tsx`, `src/Scoreboard.tsx`, `src/LoadFailure.tsx` — the
@@ -445,6 +460,32 @@ so there is no reason to co-locate them.
   `App.test.tsx` throw `No '<name>' export is defined on the mock` at render
   time, which looks like a component bug. This has now bitten twice in
   milestone 4 alone; check the mock factories when adding an export.
+- **A `setState` call does not apply before the next render - reading the
+  state it just set, later in the same synchronous call, reads the old
+  value.** `LeaveRoomControl`'s close/transfer-and-leave flow called
+  `setPendingAction('close')` and then, in that same click handler, invoked a
+  `finish()` that read `pendingAction` from its own closure - still the
+  *previous* render's value, since React had not re-rendered yet. For a group
+  already named (the one path that runs `finish` immediately rather than via
+  a later stage) this silently did nothing at all. Found before it shipped,
+  2026-09-22 - pass the value as a plain argument to anything that needs it
+  in the same call that just set it; only trust reading the state back once a
+  later render has actually happened (e.g. a subsequent stage's own button).
+- **A fix for a reported interaction bug is tested against the whole
+  interaction, not just the symptom reported.** "אחר" on the guided
+  questions took three versions: the first lost its text when toggled off;
+  the fix made it one-way, which Nitzan then found could never be turned off
+  (and a single-choice "אחר" could not be re-picked by tap). Each version's
+  tests covered only the complaint just made. For any toggle or selection,
+  test on / off / on-again and switch-away-and-back before shipping.
+- **Before adding a UI element that treats one specific string as special
+  (a synthetic "other" option, a sentinel label), grep the content it will
+  sit alongside for that exact string.** `GuidedQuestions.tsx`'s new "אחר"
+  chip, added to every choice question generically, collided with the
+  `music` question's own pre-existing `'אחר'` option - both rendered, side by
+  side, in the same row. The bug only showed up as a Testing Library "found
+  two elements" error, not as a compile or logic error, because nothing about
+  either code path was individually wrong.
 
 ## Milestone 3, implemented - what a fresh session needs to know
 

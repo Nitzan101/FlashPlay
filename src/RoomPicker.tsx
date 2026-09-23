@@ -121,13 +121,19 @@ export default function RoomPicker({
               {t('addGroupCancel')}
             </button>
           </div>
-          {add.error && (
+          {add.error === 'group-name-taken' ? (
             <p role="alert" className="text-start text-xs text-danger">
-              {t('addGroupError')}{' '}
-              <span dir="ltr" className="font-mono">
-                ({add.error})
-              </span>
+              {t('groupNameTaken')}
             </p>
+          ) : (
+            add.error && (
+              <p role="alert" className="text-start text-xs text-danger">
+                {t('addGroupError')}{' '}
+                <span dir="ltr" className="font-mono">
+                  ({add.error})
+                </span>
+              </p>
+            )
           )}
         </form>
       ) : (

@@ -106,6 +106,13 @@ const mockWriteRemainingFacts = vi.fn().mockResolvedValue(0)
 const mockWriteProfileFacts = vi.fn().mockResolvedValue(0)
 const mockImportSharedGroup = vi.fn().mockResolvedValue('new-group')
 const mockEndGathering = vi.fn().mockResolvedValue(undefined)
+const mockNameGroup = vi.fn().mockResolvedValue(undefined)
+// Whether the evening's group already has a name - see LeaveRoomControl,
+// which only offers to name a group that does not have one yet (the same
+// way Finale.tsx only offers it once). Most leave-flow tests want the
+// "not yet named" case, since that is the path that exercises the new
+// naming step; overridden per test where "already named" is the point.
+const mockUseGroupName = vi.fn()
 vi.mock('./lib/memory', () => ({
   useSavedGroups: () => mockSavedGroups(),
   createGroup: (...args: unknown[]) => mockCreateGroup(...args) as unknown,
@@ -122,10 +129,19 @@ vi.mock('./lib/memory', () => ({
   }),
   deleteFact: vi.fn(),
   deleteGroup: vi.fn(),
-  nameGroup: vi.fn(),
-  // Reached by the leave-flow's "close the room" action - see
-  // LeaveRoomControl, which keeps the evening before ending it so closing
-  // early is as safe as reaching the last screen normally.
+  deleteContact: vi.fn(),
+  addGroupMember: vi.fn(),
+  wipeGroupFacts: vi.fn(),
+  setContactQuestionAnswer: vi.fn(),
+  answerFromFactText: (factText: string) => factText,
+  answerFromText: (_question: unknown, text: string) => text,
+  answerToText: (answer: string | string[]) => (Array.isArray(answer) ? answer.join(', ') : answer),
+  nameGroup: (...args: unknown[]) => mockNameGroup(...args) as unknown,
+  useGroupName: () => mockUseGroupName() as unknown,
+  // Reached by the leave-flow's "close the room" / "transfer and leave"
+  // actions - see LeaveRoomControl, which keeps the evening before finishing
+  // either one so closing (or handing off and leaving) early is exactly as
+  // safe as reaching the last screen normally.
   ensureContacts: (...args: unknown[]) => mockEnsureContacts(...args) as unknown,
   writeRemainingFacts: (...args: unknown[]) => mockWriteRemainingFacts(...args) as unknown,
   writeProfileFacts: (...args: unknown[]) => mockWriteProfileFacts(...args) as unknown,
@@ -160,6 +176,7 @@ beforeEach(() => {
     error: null,
   })
   mockUseRoster.mockReturnValue({ players: [], error: null })
+  mockUseGroupName.mockReturnValue({ name: '', loading: false })
 })
 
 describe('app shell', () => {
@@ -674,6 +691,45 @@ describe('joining by a link', () => {
   })
 })
 
+// Asked for directly, 2026-09-22: the profile editor takes over the screen,
+// with no separate "back" button - saving saves and returns, cancelling
+// discards and returns.
+describe('editing the host profile', () => {
+  beforeEach(() => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
+      loading: false,
+      redirectError: null,
+    })
+  })
+
+  it('hides the room list while open, with no separate back button', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'עריכת הפרופיל שלי' }))
+
+    expect(screen.queryByRole('button', { name: 'פתיחת חדר' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'חזרה' })).not.toBeInTheDocument()
+  })
+
+  it('returns to the home screen as soon as the profile is saved', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'עריכת הפרופיל שלי' }))
+    fireEvent.click(screen.getByRole('button', { name: 'שמירה' }))
+
+    await waitFor(() => expect(mockSaveUserProfile).toHaveBeenCalled())
+    expect(await screen.findByRole('button', { name: 'פתיחת חדר' })).toBeInTheDocument()
+  })
+
+  it('returns to the home screen without saving on cancel', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'עריכת הפרופיל שלי' }))
+    fireEvent.click(screen.getByRole('button', { name: 'ביטול' }))
+
+    expect(await screen.findByRole('button', { name: 'פתיחת חדר' })).toBeInTheDocument()
+    expect(mockSaveUserProfile).not.toHaveBeenCalled()
+  })
+})
+
 // Asked for directly: "כאשר מנהל בוחר לצאת מהחדר... שתהיה לו האפשרות לבחור
 // לסגור את החדר לכולם או להעביר את האירוח למשתמש לבחירתו."
 describe('the host leaving a room', () => {
@@ -717,7 +773,60 @@ describe('the host leaving a room', () => {
     expect(screen.getByRole('button', { name: 'העברת הניהול למישהו אחר' })).toBeInTheDocument()
   })
 
-  it('ends the gathering when the host closes the room', async () => {
+  // Asked for directly, 2026-09-22: closing (and transferring-and-leaving,
+  // below) now offer to name the group first, the same offer Finale.tsx
+  // already makes at the natural end of an evening - unless it is already
+  // named, in which case there is nothing new to ask.
+  it('ends the gathering and leaves straight away when the host declines to save the group', async () => {
+    asHostInRoom()
+    await enterRoom()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'סגירת החדר לכולם' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'כן, לסגור' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'לא לשמור קבוצה' }))
+
+    await waitFor(() => expect(mockEndGathering).toHaveBeenCalledTimes(1))
+    // ...and the evening is kept first, so closing early is exactly as safe
+    // as reaching the last screen normally.
+    expect(mockWriteRemainingFacts).toHaveBeenCalled()
+    expect(mockWriteProfileFacts).toHaveBeenCalled()
+    expect(mockNameGroup).not.toHaveBeenCalled()
+    // No "saved, view it now?" screen on an explicit decline - the button
+    // just clicked already said what it does (2026-09-23).
+    await waitFor(() => expect(mockLeaveRoom).toHaveBeenCalled())
+  })
+
+  it('names the group before closing, then offers to view it right away', async () => {
+    asHostInRoom()
+    await enterRoom()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'סגירת החדר לכולם' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'כן, לסגור' }))
+    fireEvent.change(screen.getByPlaceholderText('שם הקבוצה (למשל: המשפחה)'), {
+      target: { value: 'המשפחה' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'שמירת הקבוצה' }))
+
+    await waitFor(() => expect(mockEndGathering).toHaveBeenCalledTimes(1))
+    expect(mockNameGroup).toHaveBeenCalledWith(
+      expect.anything(),
+      'host-uid',
+      'session-1',
+      'המשפחה',
+    )
+    // Not left yet - the host is asked first whether to view/edit now.
+    expect(mockLeaveRoom).not.toHaveBeenCalled()
+    expect(await screen.findByText('הקבוצה «המשפחה» שמורה - בפעם הבאה היא תחכה לכם')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'כן, לצפות ולערוך' }))
+
+    await waitFor(() => expect(mockLeaveRoom).toHaveBeenCalled())
+    // Routed straight to that group's details, not the bare room picker.
+    expect(await screen.findByText('פרטים')).toBeInTheDocument()
+  })
+
+  it('skips the naming offer entirely when the group is already named', async () => {
+    mockUseGroupName.mockReturnValue({ name: 'המשפחה', loading: false })
     asHostInRoom()
     await enterRoom()
 
@@ -725,24 +834,37 @@ describe('the host leaving a room', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'כן, לסגור' }))
 
     await waitFor(() => expect(mockEndGathering).toHaveBeenCalledTimes(1))
-    // ...and the evening is kept first, so closing early is exactly as safe
-    // as reaching the last screen normally.
-    expect(mockWriteRemainingFacts).toHaveBeenCalled()
-    expect(mockWriteProfileFacts).toHaveBeenCalled()
-    expect(mockLeaveRoom).toHaveBeenCalled()
+    expect(mockNameGroup).not.toHaveBeenCalled()
+    // Still offered the view-now choice, under the name it already has - not
+    // the "no group was created" message a genuine skip gets.
+    expect(
+      await screen.findByText('הקבוצה «המשפחה» שמורה - בפעם הבאה היא תחכה לכם'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'לא, אפשר אחר כך מעמוד הבית' }))
+
+    await waitFor(() => expect(mockLeaveRoom).toHaveBeenCalled())
   })
 
-  it('hands the room to a chosen participant', async () => {
+  it('hands the room to a chosen participant, keeping the evening first', async () => {
     asHostInRoom([{ id: 'guest-uid', name: 'שרה', leftAt: null }])
     await enterRoom()
 
     fireEvent.click(await screen.findByRole('button', { name: 'העברת הניהול למישהו אחר' }))
     fireEvent.click(await screen.findByRole('button', { name: 'שרה' }))
     fireEvent.click(await screen.findByRole('button', { name: 'העברה ויציאה' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'לא לשמור קבוצה' }))
 
     await waitFor(() => expect(mockTransferHost).toHaveBeenCalledTimes(1))
     expect(mockTransferHost.mock.calls[0][2]).toBe('guest-uid')
     expect(mockEndGathering).not.toHaveBeenCalled()
+    // Fixed 2026-09-22: transferring-and-leaving used to skip this
+    // entirely, so the original host's own memory of the evening was lost
+    // the moment they transferred away control and left in the same tap.
+    expect(mockWriteRemainingFacts).toHaveBeenCalled()
+    expect(mockWriteProfileFacts).toHaveBeenCalled()
+    // No "saved, view it now?" screen on an explicit decline (2026-09-23).
+    await waitFor(() => expect(mockLeaveRoom).toHaveBeenCalled())
   })
 
   it('says so when there is nobody to hand the room to', async () => {

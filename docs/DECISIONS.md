@@ -1504,3 +1504,264 @@ round, each reddening exactly its own named assertion: the transfer target
 having to be a real player in the room, `originalHostUid` immutability, a
 share's expiry ceiling, and `ensureContacts` respecting a manual link rather
 than overwriting it.
+
+## Thirteen things found by actually using it (2026-09-22)
+
+Nitzan's first real pass at the room picker and group memory, after the round
+above, found thirteen separate problems - not edge cases, things wrong on the
+very first look. Worth recording the shape of what this round fixed, since
+several are the kind that recur.
+
+**A group's name is now a uniqueness boundary, checked in `createGroup` and
+`nameGroup`.** The actual bug behind "why are there four groups all named
+'אלה'": every gathering not opened against a saved group gets its own
+`groupId` (`ensureContacts`, `groupId = existingGroupId ?? sessionId`), so
+naming two unrelated one-off evenings the same thing silently produced two
+separate "families" in the room picker, each holding half of what should have
+been one continuing group's memory. There was never a check that stopped it.
+Matched the same crude way a returning person is (`matchName`) - two
+spellings of a group's name are exactly as much the same group as two
+spellings of a person's name are the same person.
+
+**A harvest-sourced fact used to be the bare answer text, with nothing saying
+what it answered.** `writeFactsForGame` wrote `item.text` alone; a guided
+question's own fact (`writeProfileFacts`) already prefixed the question
+("`{question}: {answer}`") - the harvest path just never got the same
+treatment. Fixed by carrying the prompt's own wording through
+`writeFactsForGame`'s `prompts` parameter. The failure mode it produced -
+"שעון" on its own, with no way to tell which question it was an answer to -
+is exactly the complaint that surfaced it.
+
+**A saved group's memory now has two separate destructive actions, not one
+that reads like the milder of the two.** "מחיקת כל המידע על הקבוצה" wipes
+every fact but keeps the group and its members (`wipeGroupFacts` - new);
+"מחיקת הקבוצה" deletes everything, contacts included (`deleteGroup`,
+unchanged). The single old button did the second thing under wording that
+read like the first - conflating "forget what we know" with "forget these
+people exist" is the kind of mistake that only costs something the moment
+someone actually means the milder one.
+
+**A person can now be added to a group, and removed from it, not just edited
+once they exist.** `addGroupMember` and wiring `deleteContact` into
+`GroupDetails.tsx` - both functions already existed in `memory.ts` (`deleteContact`
+was built for milestone 7's own deletion cascade) or were trivial to add
+(`addGroupMember` mirrors what `ensureContacts` already does per-player, just
+for one name typed by hand rather than a roster).
+
+**The profile editor and the guided-questions editor now take over the
+landing screen while open, instead of floating above it.** Both used to
+render inline above an unconditionally-rendered `RoomPicker` - so opening
+"עריכת הפרופיל שלי" left the full room list and "פתיחת חדר" sitting right
+below it, with no dedicated way back. Same shape as the fix that already made
+`GroupDetails` take over the screen; the other two editors just never got it.
+
+**"שאלות מותאמות אישית" was renamed and given context, because nobody could
+tell what it was for.** It only ever meant "your own additions on top of the
+built-in bank" - but the button said neither "on top of" nor named the bank
+at all. The editor screen now shows the full built-in list (collapsed by
+default) alongside the host's own, with a sentence explaining what each half
+is and that only the second is editable here.
+
+**The built-in question bank roughly doubled (20 to 42) and the lobby now
+shows a random subset that grows in batches, not a fixed first-N.** The old
+version always showed the exact same six questions first, in content order -
+which is not "a real choice", it is "the same six questions every gathering
+sees first". `GuidedQuestions.tsx` shuffles once per mount and reveals eight
+more at a time on "show more" rather than everything at once, matching what
+was actually asked for ("בטעינת שאלות נוספות הוספת עוד כמה מלמטה"). An
+already-answered question is now always shown regardless of where the
+shuffle puts it - otherwise a random reorder could hide someone's own saved
+answer behind a button they'd have no reason to tap.
+
+**Choice questions (single- and multi-) now offer "אחר" with a free-text
+box**, for both the built-in bank and a host's own custom questions - the
+same `QuestionRow` renders both. Found in passing while building it: the
+`music` question's own options already included a literal `'אחר'` entry
+predating this feature, which duplicated the new synthetic one the moment
+both existed - **check existing content for a string before adding a UI
+element that treats that exact string as special**, the same class of bug as
+a magic value colliding with real data.
+
+**Closing a room, and transferring-and-leaving, now offer to name the group
+before finishing** - the same offer `Finale.tsx` already made at the natural
+end of an evening. Skipping it on the *other* two ways an evening ends is
+exactly how four separately-named one-off evenings happened in the first
+place. Skippable, and skipped automatically when the group already has a
+name - asking twice would be worse than not asking.
+
+**Transferring-and-leaving now runs the same fact-collection pass closing
+already did, which it never did before.** `BetweenGames.tsx`'s fallback
+collection effect only fires for an owner who stays in the room after losing
+the controls - someone who transfers away control *and* leaves in the same
+tap was never covered by anything, and the transfer warning simply said so
+rather than fixing it. The fix is straightforward once named: the true
+owner's own client is still present at the exact moment of that tap, so
+running `ensureContacts`/`writeRemainingFacts`/`writeProfileFacts` there,
+before the actual transfer and leave, closes the gap outright rather than
+documenting it.
+
+**A `setState` call does not apply before the next render - reading the
+state it set, later in the very same function, reads the old value.** Caught
+before it shipped: the first version of the close/transfer naming flow called
+`setPendingAction('close')` and then, in the same synchronous call, invoked a
+`finish()` that read `pendingAction` from a closure over the *current*
+render - which was still the previous value. A group already named would
+have silently done nothing at all on "close". Fixed by having the two
+"already named, act immediately" callers pass the action to `finish` as a
+plain argument instead of relying on state a `setState` two lines earlier
+had not yet applied; the `name-group` stage's own buttons still read
+`pendingAction` from state, safely, because they render on a later, already-
+flushed pass.
+
+**Not fixed, and not attempted: a live guest's typed name colliding with an
+existing (different) saved-group contact by coincidence.** This reads like
+the same "duplicate name" family as the group-name fix above, but it is not
+buildable the same way: the guest's client cannot read the host's private
+contacts at all (`users/{uid}` is owner-only, deliberately - see "Anonymity
+leaks through the client" in DESIGN.md), so there is nowhere on the client
+side to even ask the question at join time. What already exists - `matchName`
+resolving a returning person by name, with `ensureContacts`'s own `taken` set
+stopping two *live* players from ever being matched onto one contact - is the
+whole of what this architecture allows without opening a new read path into
+the private store. Left as-is.
+
+Evidence: `npm run build`, `npx tsc -b`, `npm test` (140, up from 130),
+`npm run test:rules` (248, up from 242).
+
+### The same day, second pass
+
+Nitzan re-tested the above and found six more things; the fixes, and the one
+non-fix:
+
+**A person's guided questions are now editable from the group's details
+screen** (`setContactQuestionAnswer`, the "עריכת השאלות המנחות" toggle on each
+person's card). What "where are the guided questions in the editing screen"
+had actually meant: per person, not a read-only list of the bank on the home
+screen. Each question gets a plain text field pre-filled with that person's
+current answer (`answerFromFactText` strips the "{question}: " prefix back
+off). **It writes to the same document id writeProfileFacts does**
+(`profile_{questionId}`), so a host's correction and the person's own later
+self-report converge on one fact instead of leaving two competing answers to
+the same question. A plain text field even for choice questions, on purpose:
+this is the host maintaining a record, not a player filling in a form, and a
+free field lets them write what the person actually said.
+
+**Existing facts were not migrated to the "{question}: {answer}" shape.** The
+harvest-fact fix applies to facts written from now on; "שעון" still reads
+bare because it was written before the fix. Deliberately left: this is
+pre-launch test data, and a migration would need to re-derive each old fact's
+prompt from its `promptId`, for a handful of throwaway facts.
+
+**An unnamed group is unreachable from every screen in the app.**
+`useSavedGroups` lists only named groups and nothing else can find one - so
+"don't save a group" at close used to silently drop the host back home with
+that evening's memory effectively lost to them. Found because Nitzan could not
+tell what the button had done at all. The close/transfer flow now always ends
+on a stage saying what happened and offering to view the group right then -
+for an unnamed group, the only chance there will ever be to see it or name it.
+The underlying gap (no listing of unnamed groups anywhere) is left as is; the
+flow now just no longer walks the host past it without saying so.
+
+**"אחר" is now a one-way reveal, not a toggle.** The first version hid the
+box on a second tap and discarded what was typed in it, and kept a separate
+"is other selected" boolean that could drift from the answer itself - which is
+what made saving "sometimes possible and sometimes not". Whether the typed
+text counts is now read from the answer, not from a second flag.
+
+**The host's own questions are shuffled in with the built-ins, not placed in
+front of them.** They were concatenated ahead of the shuffled bank, so they
+always came first. Pinned (never behind "more") and first are different
+properties; only the first was ever wanted. The free-paragraph question is
+now pinned the same way, for the reason it was missing from Nitzan's test: it
+is DESIGN's own "free paragraph" requirement, and a random draw of six out of
+forty-two hid it most of the time.
+
+**"איזו חיה הכי מדברת אליך" is free text now.** Two real options plus three
+meta-options ("both", "neither", "something else") was, in Nitzan's word,
+overkill - and with a universal "אחר" on every choice question, the last of
+them was a duplicate anyway.
+
+**Saving the host profile returns home; there is no separate back button.**
+
+Evidence: `npm run build`, `npm test` (149, up from 140), `npm run
+test:rules` (255, up from 248). One guard mutation-checked: reverting the
+custom-question shuffle to concatenation reddens exactly "mixes the host's own
+question into the shuffle instead of pinning it first". A separate test caught
+a real bug before it shipped - an already-named group, closed, would have been
+shown the "no group was created" message.
+
+### 2026-09-23, third pass
+
+**"Don't save the group" now leaves straight away, reversing the second
+pass.** The second pass made the close/transfer flow always end on a stage
+saying what happened, offering an unnamed group one last look. Nitzan's
+verdict on seeing it: after choosing not to save, no "the answers were kept,
+view and edit?" screen should appear at all - only a save with a name earns
+the follow-up ("view and edit now, or leave it and edit later"). The second
+pass had misread the original complaint: "I don't know what that did" was
+about the old button *label* ("בלי שם, רק לשמור" - "just save, without a
+name", which then created no group), not about a missing confirmation. Once
+the button says "לא לשמור קבוצה", the choice is its own explanation. The
+underlying fact stands and is recorded in CLAUDE.md: that evening's facts are
+still written, and an unnamed group is unreachable from any screen. That is
+now an explicit, accepted consequence of an explicit choice, not a silent
+one.
+
+**A group refuses a second member with the same name** (`addGroupMember`
+throws `'member-name-taken'`, via `isMemberNameTaken`, the same `matchName`
+comparison as group names). Found live: a second "אלה" went into a group that
+already had one, after which nothing on the details screen could tell the two
+apart. Scoped to the one group - two different groups may each have an
+"אלה". Deliberately not applied to `ensureContacts`: two players in one room
+who type the same name still get two contacts, because that is two real
+people in a room, not a typo on the host's own screen (see milestone 7).
+
+**"נשמר ✓" disappears after three seconds** (`useFlash`,
+`SAVED_NOTICE_MS`), in both the lobby's question rows and the per-person
+question rows on the details screen. It used to stay indefinitely, and also
+showed on first render for any answer that already existed - so it never
+actually meant "just saved". It now appears only after a save.
+
+Evidence: `npm run build`, `npm test` (152, up from 149), `npm run
+test:rules` (258, up from 255). Three changes mutation-checked, each
+reddening exactly the named tests: forcing the follow-up stage on a decline
+reddens the two decline tests in `App.test.tsx`; making the notice never
+clear reddens the two notice tests; removing the duplicate-member check
+reddens the two refusal tests in `memory.test.ts` (the "allowed in a
+different group" test correctly stays green).
+
+### 2026-09-23, fourth pass
+
+**One question row for both screens** (`src/QuestionRow.tsx`). The group's
+details screen showed every question as a plain text field with the options
+joined into its placeholder, which cut most of them off; Nitzan asked why it
+wasn't "אמריקאי" (multiple choice) like the lobby. The lobby's row is now a
+shared component, and the details screen reuses it with its own `onSave`. A
+stored multi-choice fact ("a, b, custom") is split back into chips by
+`answerFromText`, the inverse of `answerToText` (which `writeProfileFacts`
+now also uses, so the separator lives in one place). Pieces matching no
+option are joined back into one "אחר" value, so a custom answer that itself
+contains ", " survives the round trip.
+
+**"אחר" is a real toggle that remembers its text - the third version.** The
+first threw the text away on toggling off; the second fixed that by making
+it a one-way reveal, which Nitzan then found could never be turned off, and
+in a single-choice question could not be picked again after moving to
+another option except by typing. The selection is now `picked` options plus
+`customOn` plus `customText`, and the answer is always derived from those
+three - never stored as a second copy that can drift. The box shows only
+while "אחר" is on, and its text is kept while it is off. Saving is disabled
+while "אחר" is on with nothing written: that is not an answer yet, and saving
+it would store the other options alone, or clear a single-choice answer.
+
+The lesson worth keeping is in how the first two versions went wrong: each
+fix was tested against the symptom just reported (text lost, then toggle
+stuck) and not against the whole interaction - on, off, on again, and
+switching away and back. The tests now cover all of it, in both kinds.
+
+Evidence: `npm run build`, `npm test` (156, up from 152), `npm run
+test:rules` (261, up from 258). Four mutations, each reddening exactly the
+named tests: "אחר" never turning off (2 tests), picking another
+single-choice option leaving "אחר" on (1), allowing a save with empty "אחר"
+(1), and the details screen skipping the chip parsing (1). Rendered at 400px
+wide against the built CSS: every option wraps as a chip, none cut off.

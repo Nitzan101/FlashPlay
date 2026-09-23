@@ -19,7 +19,12 @@ vi.mock('./lib/harvest', () => ({
 // evidence").
 const mockSaveProfileAnswer = vi.fn().mockResolvedValue(undefined)
 vi.mock('./lib/profileQuestions', () => ({
-  useMyProfileAnswers: () => ({ answers: {}, loading: false }),
+  // GuidedQuestions.tsx now shows the built-ins in a random per-mount order,
+  // with only a handful visible by default - an already-*answered* question
+  // is the one thing always shown regardless of where the shuffle put it, so
+  // seeding 'hobby' here is what keeps these tests from being a coin flip on
+  // whether that row happens to be visible.
+  useMyProfileAnswers: () => ({ answers: { hobby: 'תשובה קודמת' }, loading: false }),
   saveProfileAnswer: (...args: unknown[]) => mockSaveProfileAnswer(...args) as unknown,
 }))
 

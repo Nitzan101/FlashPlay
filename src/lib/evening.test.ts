@@ -198,8 +198,14 @@ describe('a whole evening', () => {
     const danaContact = session.contactIds[DANA]
     const danaFacts = await getDocs(collection(host, paths.contactFacts(HOST, danaContact)))
     expect(danaFacts.size).toBe(2)
+    // Prefixed with the prompt's own wording (writeFactsForGame), so a bare
+    // answer never shows up in the group's memory with no indication of what
+    // it was an answer to.
     expect(danaFacts.docs.map((d) => (d.data() as FactDoc).text).sort()).toEqual(
-      ['גבינה צהובה', 'הטלפון על הגג'].sort(),
+      [
+        'משהו ששברתם או קלקלתם בטעות: גבינה צהובה',
+        'משהו ששכחתם איפה שמתם אותו: הטלפון על הגג',
+      ].sort(),
     )
     // Every fact knows which question produced it, which is what decides the
     // drawer it lives in and how it can be re-asked later.

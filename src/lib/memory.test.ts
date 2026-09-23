@@ -26,8 +26,12 @@ import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { HARVEST_PROMPTS } from '../content/prompts'
 import {
+  addGroupMember,
   addManualFact,
   addManualGroupFact,
+  answerFromFactText,
+  answerFromText,
+  answerToText,
   createGroup,
   deleteContact,
   deleteFact,
@@ -39,6 +43,8 @@ import {
   nameGroup,
   shareGroup,
   recordFeedback,
+  setContactQuestionAnswer,
+  wipeGroupFacts,
   writeFactsForGame,
   writeProfileFacts,
   writeRemainingFacts,
@@ -223,6 +229,201 @@ describe('createGroup', () => {
     expect(group?.name).toBe('החברים')
     expect(group?.memberContactIds).toEqual([])
   })
+
+  // Found live: four different one-off evenings, each never opened for a
+  // saved group, all named "אלה" - four unrelated entries in the room picker
+  // instead of one continuing group.
+  it('refuses a second group with a name already in use', async () => {
+    await createGroup(asHost(), HOST, 'המשפחה')
+
+    await expect(createGroup(asHost(), HOST, 'המשפחה')).rejects.toThrow('group-name-taken')
+  })
+
+  it('is not confused by whitespace or case when checking for a duplicate name', async () => {
+    await createGroup(asHost(), HOST, 'המשפחה')
+
+    await expect(createGroup(asHost(), HOST, '  המשפחה  ')).rejects.toThrow('group-name-taken')
+  })
+})
+
+describe('nameGroup rejects a duplicate, but allows keeping your own name', () => {
+  it('refuses naming a group the same as a different saved group', async () => {
+    await createGroup(asHost(), HOST, 'המשפחה')
+    await ensureContacts(asHost(), HOST, SESSION, roster)
+
+    await expect(nameGroup(asHost(), HOST, SESSION, 'המשפחה')).rejects.toThrow(
+      'group-name-taken',
+    )
+  })
+
+  it('allows renaming a group to the name it already has', async () => {
+    const groupId = await createGroup(asHost(), HOST, 'המשפחה')
+
+    await expect(nameGroup(asHost(), HOST, groupId, 'המשפחה')).resolves.toBeUndefined()
+  })
+})
+
+describe('addGroupMember', () => {
+  it('adds a new contact and appends it to the group without a gathering', async () => {
+    const groupId = await createGroup(asHost(), HOST, 'המשפחה')
+
+    const contactId = await addGroupMember(asHost(), HOST, groupId, 'סבתא')
+
+    const group = (await getDoc(doc(asHost(), paths.group(HOST, groupId)))).data() as GroupDoc
+    expect(group.memberContactIds).toContain(contactId)
+    const contact = (await getDoc(doc(asHost(), paths.contact(HOST, contactId)))).data() as ContactDoc
+    expect(contact.name).toBe('סבתא')
+  })
+
+  // Found live 2026-09-23: a second "אלה" was accepted into a group that
+  // already had one.
+  it('refuses a name already in the group, whitespace and case aside', async () => {
+    const groupId = await createGroup(asHost(), HOST, 'המשפחה')
+    await addGroupMember(asHost(), HOST, groupId, 'אלה')
+
+    await expect(addGroupMember(asHost(), HOST, groupId, '  אלה ')).rejects.toThrow(
+      'member-name-taken',
+    )
+    const group = (await getDoc(doc(asHost(), paths.group(HOST, groupId)))).data() as GroupDoc
+    expect(group.memberContactIds).toHaveLength(1)
+  })
+
+  it('refuses a name matching someone who joined through a gathering', async () => {
+    await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+
+    await expect(addGroupMember(asHost(), HOST, SESSION, 'דוד')).rejects.toThrow(
+      'member-name-taken',
+    )
+  })
+
+  it('allows the same name in a different group', async () => {
+    const family = await createGroup(asHost(), HOST, 'המשפחה')
+    const friends = await createGroup(asHost(), HOST, 'החברים')
+    await addGroupMember(asHost(), HOST, family, 'אלה')
+
+    await expect(addGroupMember(asHost(), HOST, friends, 'אלה')).resolves.toEqual(
+      expect.any(String),
+    )
+  })
+})
+
+// The host answering or correcting one guided question for a person, from the
+// group's details screen rather than a live gathering.
+describe('setContactQuestionAnswer', () => {
+  const HOBBY = { id: 'hobby', text: 'התחביב שלך' }
+
+  it('writes the answer in the same shape and slot a live self-report would', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+
+    await setContactQuestionAnswer(asHost(), HOST, contactIds[PLAYER], HOBBY, 'ציור')
+
+    const fact = (
+      await getDoc(doc(asHost(), `${paths.contactFacts(HOST, contactIds[PLAYER])}/profile_hobby`))
+    ).data() as FactDoc
+    expect(fact.text).toBe('התחביב שלך: ציור')
+    expect(fact.promptId).toBe('hobby')
+  })
+
+  // One fact per question per person, whichever path wrote it - otherwise a
+  // host's correction and the person's own later answer would sit side by
+  // side as two competing answers to the same question.
+  it('converges with a live self-report answer rather than adding a second fact', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), paths.profileAnswer(SESSION, PLAYER, 'hobby')), {
+        questionId: 'hobby',
+        answer: 'ציור',
+        updatedAt: 0,
+      })
+    })
+    await writeProfileFacts(asHost(), HOST, SESSION, roster, [{ ...HOBBY, kind: 'text' }])
+
+    await setContactQuestionAnswer(asHost(), HOST, contactIds[PLAYER], HOBBY, 'ריצה')
+
+    const facts = await getDocs(
+      collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])),
+    )
+    expect(facts.size).toBe(1)
+    expect(facts.docs[0].data().text).toBe('התחביב שלך: ריצה')
+  })
+
+  it('keeps the use counter when correcting an answer', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await setContactQuestionAnswer(asHost(), HOST, contactIds[PLAYER], HOBBY, 'ציור')
+    const factPath = `${paths.contactFacts(HOST, contactIds[PLAYER])}/profile_hobby`
+    await updateDoc(doc(asHost(), factPath), { useCount: 2 })
+
+    await setContactQuestionAnswer(asHost(), HOST, contactIds[PLAYER], HOBBY, 'ריצה')
+
+    expect(((await getDoc(doc(asHost(), factPath))).data() as FactDoc).useCount).toBe(2)
+  })
+
+  it('removes the answer when it is saved empty', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await setContactQuestionAnswer(asHost(), HOST, contactIds[PLAYER], HOBBY, 'ציור')
+
+    await setContactQuestionAnswer(asHost(), HOST, contactIds[PLAYER], HOBBY, '   ')
+
+    expect(
+      (await getDoc(doc(asHost(), `${paths.contactFacts(HOST, contactIds[PLAYER])}/profile_hobby`)))
+        .exists(),
+    ).toBe(false)
+  })
+
+  it("refuses a guest writing an answer into the host's store", async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await expect(
+      setContactQuestionAnswer(asPlayer(), HOST, contactIds[PLAYER], HOBBY, 'x'),
+    ).rejects.toThrow()
+  })
+})
+
+describe('answerFromFactText', () => {
+  it('strips the question prefix to get back just the answer', () => {
+    expect(answerFromFactText('התחביב שלך: ציור', 'התחביב שלך')).toBe('ציור')
+  })
+
+  it('returns the whole text for a fact not in that shape', () => {
+    expect(answerFromFactText('שעון', 'התחביב שלך')).toBe('שעון')
+  })
+})
+
+describe('answerFromText / answerToText', () => {
+  const multi = { kind: 'multi-choice' as const, options: ['ציור', 'נגינה', 'גינון'] }
+
+  it('round-trips a multi-choice answer through fact text', () => {
+    expect(answerFromText(multi, answerToText(['ציור', 'גינון']))).toEqual(['ציור', 'גינון'])
+  })
+
+  it('keeps a custom answer containing the separator as one "other" value', () => {
+    expect(answerFromText(multi, 'ציור, לאכול, לשתות')).toEqual(['ציור', 'לאכול, לשתות'])
+  })
+
+  it('leaves text and single-choice answers as they are', () => {
+    expect(answerFromText({ kind: 'single-choice', options: ['א', 'ב'] }, 'א, ב')).toBe('א, ב')
+    expect(answerFromText({ kind: 'text' }, 'חופשי')).toBe('חופשי')
+  })
+})
+
+describe('wipeGroupFacts', () => {
+  it('clears every fact but keeps the group and its members', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await writeFactsForGame(asHost(), HOST, SESSION, GAME)
+    await addManualGroupFact(asHost(), HOST, SESSION, 'תמיד מאחרים')
+
+    await wipeGroupFacts(asHost(), HOST, SESSION)
+
+    expect(
+      (await getDocs(collection(asHost(), paths.contactFacts(HOST, contactIds[PLAYER])))).size,
+    ).toBe(0)
+    expect((await getDocs(collection(asHost(), paths.groupFacts(HOST, SESSION)))).size).toBe(0)
+    // The group itself, and who is in it, survives - only the memory is gone.
+    const group = (await getDoc(doc(asHost(), paths.group(HOST, SESSION)))).data() as GroupDoc
+    expect(group.memberContactIds).toContain(contactIds[PLAYER])
+    expect(
+      (await getDoc(doc(asHost(), paths.contact(HOST, contactIds[PLAYER])))).exists(),
+    ).toBe(true)
+  })
 })
 
 describe('ensureContacts', () => {
@@ -303,7 +504,9 @@ describe('writeFactsForGame', () => {
     )
     expect(facts.size).toBe(2)
     const fact = facts.docs.find((d) => d.id === 'played')?.data() as FactDoc
-    expect(fact.text).toBe('text of played')
+    // Prefixed with the prompt's own wording, so a bare answer never shows up
+    // on the group's details screen with nothing saying what it answered.
+    expect(fact.text).toBe(`${HARVEST_PROMPTS[0].text}: text of played`)
     expect(fact.promptId).toBe(PROMPT)
     expect(fact.useCount).toBe(0)
     expect(fact.sessionId).toBe(SESSION)
@@ -647,7 +850,7 @@ describe('what the reviews found', () => {
     const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster)
 
     await writeFactsForGame(asHost(), HOST, SESSION, GAME, [
-      { id: PROMPT, drawer: 'group' },
+      { id: PROMPT, text: 'שאלת קבוצה', drawer: 'group' },
     ])
 
     expect((await getDocs(collection(asHost(), paths.groupFacts(HOST, SESSION)))).size).toBe(2)

@@ -19,6 +19,8 @@ import {
 import {
   ensureContacts,
   importSharedGroup,
+  nameGroup,
+  useGroupName,
   writeProfileFacts,
   writeRemainingFacts,
 } from './lib/memory'
@@ -33,6 +35,7 @@ import type { QuestionKind } from './lib/model'
 import GroupDetails from './GroupDetails'
 import RoomPicker from './RoomPicker'
 import EmojiPicker from './EmojiPicker'
+import { PROFILE_QUESTIONS } from './content/profileQuestions'
 import { useAction } from './lib/useAction'
 
 const STORAGE_KEY = 'flashplay.session'
@@ -309,10 +312,14 @@ export default function App() {
    * screen that ever clears it - found during the first manual walkthrough,
    * on a browser still holding a session from an earlier test.
    */
-  function goHomeAfterLeaving() {
+  function goHomeAfterLeaving(openDetailsForGroupId?: string) {
     clearStoredSession()
     window.history.pushState({}, '', '/')
     setScreen({ kind: 'host-landing' })
+    // Right after naming a group in the leave flow, the host may have asked
+    // to view/edit it immediately rather than finding it later from the room
+    // picker - see LeaveRoomControl's 'group-saved' stage.
+    if (openDetailsForGroupId) setDetailsOf(openDetailsForGroupId)
   }
 
   async function handleJoinByCode() {
@@ -442,6 +449,30 @@ export default function App() {
               onOpenRoom={() => void handleCreateRoom(detailsOf)}
               onDeleted={() => setDetailsOf(null)}
             />
+          ) : editingProfile ? (
+            /* Takes over the landing page the same way GroupDetails does -
+               the room list and "open a room" showing underneath the profile
+               editor was a real bug: tapping "עריכת הפרופיל שלי" left every
+               other control on screen too. No separate "back" button here on
+               purpose, by request, 2026-09-22: "שמירה" saves and returns,
+               "ביטול" (inside ProfileEditor) discards and returns - a third
+               button that does neither is one control too many. */
+            <div className="flex w-full max-w-sm flex-col items-center gap-3">
+              <ProfileEditor
+                uid={user.uid}
+                fallbackName={user.displayName ?? ''}
+                profile={profile}
+                onDone={() => setEditingProfile(false)}
+              />
+            </div>
+          ) : editingQuestions ? (
+            <div className="flex w-full max-w-sm flex-col items-center gap-3">
+              <CustomQuestionsEditor
+                uid={user.uid}
+                questions={customQuestions.questions}
+                onDone={() => setEditingQuestions(false)}
+              />
+            </div>
           ) : (
             <div className="flex w-full max-w-sm flex-col items-center gap-3">
               <p>
@@ -455,38 +486,21 @@ export default function App() {
                   opened it would be a surprise, not a feature. */}
               {shareId && <ImportSharedGroup uid={user.uid} shareId={shareId} />}
 
-              {editingProfile ? (
-                <ProfileEditor
-                  uid={user.uid}
-                  fallbackName={user.displayName ?? ''}
-                  profile={profile}
-                  onDone={() => setEditingProfile(false)}
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setEditingProfile(true)}
-                  className="cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
-                >
-                  {t('editProfileButton')}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setEditingProfile(true)}
+                className="cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+              >
+                {t('editProfileButton')}
+              </button>
 
-              {editingQuestions ? (
-                <CustomQuestionsEditor
-                  uid={user.uid}
-                  questions={customQuestions.questions}
-                  onDone={() => setEditingQuestions(false)}
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setEditingQuestions(true)}
-                  className="cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
-                >
-                  {t('editCustomQuestionsButton')}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setEditingQuestions(true)}
+                className="cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+              >
+                {t('editQuestionsButton')}
+              </button>
 
               {/* A gathering opened for a group the host has saved adds to that
                   group's memory at the end instead of starting a second copy of
@@ -633,7 +647,7 @@ export default function App() {
               originalHostUid={liveSession.originalHostUid ?? liveSession.hostUid}
               groupId={liveSession.groupId}
               players={liveRoster}
-              onLeft={goHomeAfterLeaving}
+              onLeft={(openDetailsForGroupId) => goHomeAfterLeaving(openDetailsForGroupId)}
             />
           )}
         </>
@@ -665,36 +679,28 @@ function ProfileEditor({
   const [name, setName] = useState(profile.displayName || fallbackName)
   const [emoji, setEmoji] = useState(profile.emoji)
   const save = useAction()
-  const [saved, setSaved] = useState(false)
 
   return (
     <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 p-3">
       <input
         value={name}
-        onChange={(event) => {
-          setName(event.target.value)
-          setSaved(false)
-        }}
+        onChange={(event) => setName(event.target.value)}
         placeholder={t('profileNamePlaceholder')}
         maxLength={40}
         className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
       />
-      <EmojiPicker
-        value={emoji}
-        onChange={(value) => {
-          setEmoji(value)
-          setSaved(false)
-        }}
-        label={t('pickEmojiLabel')}
-      />
+      <EmojiPicker value={emoji} onChange={setEmoji} label={t('pickEmojiLabel')} />
       <div className="flex w-full items-center gap-2">
         <button
           type="button"
           disabled={save.busy || !name.trim()}
           onClick={() =>
+            // Saves and returns immediately, by request 2026-09-22: "שמירה
+            // שומרת ומחזירה ללובי" - no confirmation message to linger on,
+            // since there is no longer a screen left to show it on.
             void save.run(async () => {
               await saveUserProfile(db, uid, { displayName: name.trim(), emoji })
-              setSaved(true)
+              onDone()
             })
           }
           className="grow cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
@@ -709,7 +715,6 @@ function ProfileEditor({
           {t('addGroupCancel')}
         </button>
       </div>
-      {saved && <p className="text-xs text-accent-3">{t('profileSaved')}</p>}
       {save.error && (
         <p role="alert" className="text-xs text-danger">
           {t('profileSaveError')}{' '}
@@ -723,12 +728,24 @@ function ProfileEditor({
 }
 
 /**
- * The host's own question bank - milestone 8's "questions the host chooses
- * themselves, with answers", persisted so it is offered again in every future
- * gathering (see `SessionDoc.customQuestions`, taken as a snapshot at
- * `createRoom` time). Add and delete only, deliberately - editing an existing
- * question is left out of this first pass, and deleting and re-adding covers
- * the rare case of a genuine mistake.
+ * The full picture of "guided questions" for a host to review and extend -
+ * the built-in bank (read-only: what every gathering already offers, shown
+ * in a random subset per room) plus the host's own question bank, milestone
+ * 8's "questions the host chooses themselves, with answers", persisted so it
+ * is offered again in every future gathering (see `SessionDoc.customQuestions`,
+ * taken as a snapshot at `createRoom` time). Add and delete only, deliberately
+ * - editing an existing question is left out of this first pass, and deleting
+ * and re-adding covers the rare case of a genuine mistake.
+ *
+ * **Both halves shown together, unlike the in-lobby GuidedQuestions screen.**
+ * That screen paginates - a handful of the built-ins at a time, so the wait
+ * screen never turns into a wall of text - but this is a review/edit context,
+ * not a wait, so the whole built-in bank is listed plainly. Asked for
+ * directly: "איפה כל השאלות המנחות שדיברנו עליהן בתוך עריכת המשחק?" and,
+ * separately, "לא הבנתי מהו ה'שאלות מותאמות אישית' שיש בעמוד הבית" - both
+ * point at the same gap: nothing here explained what the built-in bank even
+ * was, or that "custom questions" only ever meant the host's own additions
+ * on top of it.
  */
 function CustomQuestionsEditor({
   uid,
@@ -743,6 +760,7 @@ function CustomQuestionsEditor({
   const [text, setText] = useState('')
   const [kind, setKind] = useState<QuestionKind>('text')
   const [optionsInput, setOptionsInput] = useState('')
+  const [showBuiltins, setShowBuiltins] = useState(false)
   const add = useAction()
   const remove = useAction()
 
@@ -753,7 +771,38 @@ function CustomQuestionsEditor({
 
   return (
     <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 p-3">
-      {questions.length > 0 && (
+      <button
+        type="button"
+        onClick={() => setShowBuiltins((prev) => !prev)}
+        className="flex w-full cursor-pointer items-center justify-between text-start"
+      >
+        <span className="text-sm font-medium text-accent-2">{t('builtinQuestionsTitle')}</span>
+        <span className="text-xs text-muted">{PROFILE_QUESTIONS.length}</span>
+      </button>
+      {showBuiltins && (
+        <>
+          <p className="text-start text-xs text-muted">{t('builtinQuestionsHint')}</p>
+          <ul className="flex max-h-48 w-full flex-col gap-1 overflow-y-auto">
+            {PROFILE_QUESTIONS.map((question) => (
+              <li
+                key={question.id}
+                className="rounded-lg border border-line bg-surface/60 px-2 py-1.5 text-start text-sm text-muted"
+              >
+                {question.text}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <div className="w-full border-t border-line pt-2">
+        <p className="text-start text-sm font-medium text-accent-2">{t('customQuestionsTitle')}</p>
+        <p className="text-start text-xs text-muted">{t('customQuestionsHint')}</p>
+      </div>
+
+      {questions.length === 0 ? (
+        <p className="w-full text-start text-xs text-muted">{t('noCustomQuestionsYet')}</p>
+      ) : (
         <ul className="flex w-full flex-col gap-1">
           {questions.map((question) => (
             <li
@@ -954,15 +1003,23 @@ function ImportSharedGroup({ uid, shareId }: { uid: string; shareId: string }) {
  * Finale normally, the same lesson the milestone-8 abandoned-session fix
  * already applies elsewhere in this app.
  *
- * **Transferring** only ever moves `hostUid` (who runs the controls) -
- * `originalHostUid` (whose memory the evening banks into) never moves, see
- * both fields' own comments in model.ts. The warning shown before a
- * transfer-and-leave is not decoration: only the true owner's own client can
- * ever write into their private store (firestore.rules), so if they transfer
- * away control *and* leave, nobody is left in a position to collect
- * anything for them - see the comment on `BetweenGames`'s fallback
- * collection effect for the mechanism that keeps working as long as they at
- * least stay.
+ * **Transferring-and-leaving now runs that same collection pass too**, not
+ * just closing - fixed 2026-09-22. The evening not ending is not a reason to
+ * skip it: only the true owner's own client can ever write into their private
+ * store (firestore.rules), and unlike the fallback effect in
+ * `BetweenGames.tsx` (which only fires for someone who stays in the room),
+ * someone who transfers away control *and leaves in the same tap* is never
+ * again in a position to write anything for themselves - this is the one
+ * moment their own client is still both able to and definitely present.
+ *
+ * **Both paths now also offer to name the group before finishing**, the same
+ * offer Finale.tsx already makes at the natural end of an evening - closing
+ * or transferring-and-leaving are the *other* ways an evening ends, and
+ * skipping the offer there is why four unrelated one-off evenings could each
+ * separately end up named "אלה" instead of one continuing group. Naming is
+ * optional (skippable, same as at Finale); naming is what makes a "view/edit
+ * now" offer meaningful afterwards. A group already named needs asking again
+ * no more than Finale does.
  */
 function LeaveRoomControl({
   sessionId,
@@ -979,18 +1036,40 @@ function LeaveRoomControl({
   originalHostUid: string
   groupId: string | null
   players: { id: string; name: string; leftAt: number | null }[]
-  onLeft: () => void
+  onLeft: (openDetailsForGroupId?: string) => void
 }) {
   const { t } = useTranslation()
   const [stage, setStage] = useState<
-    'idle' | 'confirm-guest' | 'menu' | 'confirm-close' | 'pick-transfer' | 'confirm-transfer'
+    | 'idle'
+    | 'confirm-guest'
+    | 'menu'
+    | 'confirm-close'
+    | 'pick-transfer'
+    | 'confirm-transfer'
+    | 'name-group'
+    | 'group-saved'
+    | 'evening-kept'
   >('idle')
   const [target, setTarget] = useState<{ id: string; name: string } | null>(null)
+  const [pendingAction, setPendingAction] = useState<'close' | 'transfer-leave' | null>(null)
+  const [groupNameInput, setGroupNameInput] = useState('')
+  const [justNamed, setJustNamed] = useState<string | null>(null)
   const action = useAction()
+
+  const effectiveGroupId = groupId ?? sessionId
+  // Whether this evening's group already has a name from an earlier point
+  // (a returning saved group, or named at a previous close/transfer/Finale) -
+  // if so there is nothing new to ask here, the same way Finale.tsx only
+  // offers the name once.
+  const { name: savedGroupName, loading: nameLoading } = useGroupName(
+    originalHostUid,
+    effectiveGroupId,
+  )
+  const alreadyNamed = !nameLoading && savedGroupName !== ''
 
   const others = players.filter((p) => p.id !== uid && !p.leftAt)
 
-  async function doLeave() {
+  async function doLeave(openDetailsForGroupId?: string) {
     try {
       await leaveRoom(db, sessionId, uid)
     } catch (error) {
@@ -1000,38 +1079,93 @@ function LeaveRoomControl({
       // everyone else's roster.
       console.error('[FlashPlay] leaveRoom failed:', error)
     }
-    onLeft()
+    onLeft(openDetailsForGroupId)
   }
 
-  async function doClose() {
-    await action.run(async () => {
+  /** The collection pass both closing and transferring-and-leaving need
+   *  before they finish - see the module comment above for why
+   *  transfer-and-leave now runs this too. Never blocks on a failure here:
+   *  a delegate host acting on a room they were only handed, rather than
+   *  opened, cannot write into the true owner's store at all
+   *  (firestore.rules), and that owner's own client will still collect
+   *  independently once it sees the gathering finish, as long as they have
+   *  not also left. */
+  async function collectTheEvening() {
+    try {
+      await ensureContacts(db, originalHostUid, sessionId, players, groupId)
+      await writeRemainingFacts(db, originalHostUid, sessionId)
+      await writeProfileFacts(db, originalHostUid, sessionId, players)
+    } catch (error) {
+      console.error(
+        '[FlashPlay] keeping the evening before leaving failed:',
+        errorCode(error),
+        error,
+      )
+    }
+  }
+
+  // `startClose`/`startTransferLeave` pass the action explicitly to `finish`
+  // rather than relying on the `pendingAction` state they also set - reading
+  // that state back inside the very same call would read its pre-update
+  // value (a `setState` call does not apply before the next render), so a
+  // group already named would silently do nothing at all on "close"/
+  // "transfer and leave". `pendingAction` still exists for the 'name-group'
+  // stage's own buttons below, which render on a later, already-updated pass.
+  function startClose() {
+    if (alreadyNamed) {
+      void action.run(() => finish('close'))
+    } else {
+      setPendingAction('close')
+      setStage('name-group')
+    }
+  }
+
+  function startTransferLeave() {
+    if (alreadyNamed) {
+      void action.run(() => finish('transfer-leave'))
+    } else {
+      setPendingAction('transfer-leave')
+      setStage('name-group')
+    }
+  }
+
+  /** Runs after the naming step (named or explicitly skipped) - the
+   *  collection pass, the action itself (ending the gathering, or moving
+   *  hostUid), and naming the group if a name was given. When a name was
+   *  just given (or this evening's group already had one), leaving is
+   *  deferred to the 'group-saved' stage, so the host can choose to
+   *  view/edit before this screen disappears. */
+  async function finish(which: 'close' | 'transfer-leave', name?: string) {
+    await collectTheEvening()
+    if (name) {
       try {
-        await ensureContacts(db, originalHostUid, sessionId, players, groupId)
-        await writeRemainingFacts(db, originalHostUid, sessionId)
-        await writeProfileFacts(db, originalHostUid, sessionId, players)
+        await nameGroup(db, originalHostUid, effectiveGroupId, name)
       } catch (error) {
-        // Never block closing on this - a delegate host closing a room they
-        // were only handed, rather than opened, cannot write into the true
-        // owner's store at all (firestore.rules), and that owner's own
-        // client will still collect independently once it sees the
-        // gathering finish, as long as they have not also left.
-        console.error(
-          '[FlashPlay] keeping the evening before closing failed:',
-          errorCode(error),
-          error,
-        )
+        console.error('[FlashPlay] naming the group failed:', errorCode(error), error)
       }
-      await endGathering(db, sessionId)
+    }
+    if (which === 'close') await endGathering(db, sessionId)
+    else if (target) await transferHost(db, sessionId, target.id)
+
+    if (name || alreadyNamed) {
+      setJustNamed(name ?? savedGroupName)
+      setStage('group-saved')
+    } else {
+      // Explicitly declined to save (the 'dontSaveGroup' button on the
+      // 'name-group' stage) - leave straight away, with no "saved, view it
+      // now?" screen. That screen used to show unconditionally so a skip
+      // wasn't a silent no-op, but Nitzan asked for the opposite once the
+      // "don't save" button's own label already says what happens
+      // (2026-09-23): a choice this explicit needs no follow-up message.
       await doLeave()
-    })
+    }
   }
 
-  async function doTransfer(stay: boolean) {
+  async function doTransferAndStay() {
     if (!target) return
     await action.run(async () => {
       await transferHost(db, sessionId, target.id)
-      if (stay) setStage('idle')
-      else await doLeave()
+      setStage('idle')
     })
   }
 
@@ -1113,7 +1247,7 @@ function LeaveRoomControl({
           <button
             type="button"
             disabled={action.busy}
-            onClick={() => void doClose()}
+            onClick={() => startClose()}
             className="grow cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger disabled:opacity-50"
           >
             {action.busy ? t('closingRoom') : t('closeRoomYes')}
@@ -1184,7 +1318,7 @@ function LeaveRoomControl({
           <button
             type="button"
             disabled={action.busy}
-            onClick={() => void doTransfer(false)}
+            onClick={() => startTransferLeave()}
             className="cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger disabled:opacity-50"
           >
             {action.busy ? t('transferringHost') : t('transferAndLeave')}
@@ -1192,7 +1326,7 @@ function LeaveRoomControl({
           <button
             type="button"
             disabled={action.busy}
-            onClick={() => void doTransfer(true)}
+            onClick={() => void doTransferAndStay()}
             className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-50"
           >
             {action.busy ? t('transferringHost') : t('transferAndStay')}
@@ -1214,6 +1348,80 @@ function LeaveRoomControl({
             </span>
           </p>
         )}
+      </div>
+    )
+  }
+
+  // Offered before closing or transferring-and-leave finishes, unless this
+  // evening's group already has a name - see the module comment above and
+  // Finale.tsx's own identical offer at the natural end of an evening.
+  if (stage === 'name-group') {
+    return (
+      <div className={panelClass}>
+        <p className="text-center text-sm">{t('saveGroupOffer')}</p>
+        <input
+          value={groupNameInput}
+          onChange={(event) => setGroupNameInput(event.target.value)}
+          placeholder={t('groupNamePlaceholder')}
+          maxLength={40}
+          className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
+        />
+        <div className="flex w-full flex-col gap-2">
+          <button
+            type="button"
+            disabled={action.busy || !groupNameInput.trim() || !pendingAction}
+            onClick={() =>
+              pendingAction && void action.run(() => finish(pendingAction, groupNameInput.trim()))
+            }
+            className="cursor-pointer rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {action.busy ? t('savingGroup') : t('saveGroup')}
+          </button>
+          <button
+            type="button"
+            disabled={action.busy || !pendingAction}
+            onClick={() => pendingAction && void action.run(() => finish(pendingAction))}
+            className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted disabled:opacity-50"
+          >
+            {t('dontSaveGroup')}
+          </button>
+        </div>
+        {action.error && (
+          <p role="alert" className="text-xs text-danger">
+            {pendingAction === 'close' ? t('closeRoomError') : t('transferError')}{' '}
+            <span dir="ltr" className="font-mono">
+              ({action.error})
+            </span>
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  // Only reached when the group has a name - just given here, or already
+  // saved from before - since `finish` leaves straight away on a genuine
+  // "don't save" skip (see its own comment).
+  if (stage === 'group-saved') {
+    return (
+      <div className={panelClass}>
+        <p className="text-center text-sm">{t('groupSavedNamed', { name: justNamed })}</p>
+        <p className="text-center text-xs text-muted">{t('viewGroupNowQuestion')}</p>
+        <div className="flex w-full flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => void doLeave(effectiveGroupId)}
+            className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2"
+          >
+            {t('viewGroupNowYes')}
+          </button>
+          <button
+            type="button"
+            onClick={() => void doLeave()}
+            className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
+          >
+            {t('viewGroupNowLater')}
+          </button>
+        </div>
       </div>
     )
   }

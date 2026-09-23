@@ -55,7 +55,7 @@ export const PROFILE_QUESTIONS: readonly ProfileQuestion[] = [
     id: 'music',
     text: 'הסגנון המוזיקלי שהכי מדבר אליך',
     kind: 'single-choice',
-    options: ['פופ', 'רוק', 'מזרחי', 'היפ הופ', 'קלאסי', 'אחר'],
+    options: ['פופ', 'רוק', 'מזרחי', 'היפ הופ', 'קלאסי'],
   },
   {
     id: 'season',
@@ -75,12 +75,13 @@ export const PROFILE_QUESTIONS: readonly ProfileQuestion[] = [
     kind: 'single-choice',
     options: ['שקט לבד', 'עם חברים', 'בטבע', 'מול מסך'],
   },
-  {
-    id: 'animalPerson',
-    text: 'איזו חיה הכי מדברת אליך',
-    kind: 'single-choice',
-    options: ['כלב', 'חתול', 'שניהם', 'אף אחת', 'משהו אחר'],
-  },
+  // Free text rather than a choice list, since 2026-09-22: with a universal
+  // "אחר" chip now offered on every choice question (see GuidedQuestions.tsx),
+  // stacking "שניהם"/"אף אחת"/"משהו אחר" on top of the two real options here
+  // was three meta-options answering a question that only had two real ones -
+  // "overkill", in Nitzan's own word. A question this open-ended was never a
+  // good fit for a fixed list to begin with.
+  { id: 'animalPerson', text: 'איזו חיה הכי מדברת אליך', kind: 'text' },
   {
     id: 'freeTime',
     text: 'איך הכי אוהב/ת לבלות זמן פנוי',
@@ -98,5 +99,72 @@ export const PROFILE_QUESTIONS: readonly ProfileQuestion[] = [
     text: 'מה הכי חשוב לך בחיים',
     kind: 'multi-choice',
     options: ['משפחה', 'קריירה', 'הרפתקאות', 'יצירתיות', 'למידה', 'בריאות', 'חברים'],
+  },
+
+  // Added 2026-09-22, in response to "20 questions is nothing - at least 40":
+  // a second batch, same three constraints as the first (behaviour/fact, not
+  // opinion-only; thirty seconds; no common answer), same mix of kind and
+  // topic so a much longer list still reads as variety rather than padding.
+  { id: 'firstJob', text: 'העבודה הכי מוזרה שהייתה לך אי פעם', kind: 'text' },
+  { id: 'collection', text: 'משהו שאת/ה אוסף/ת בלי סיבה טובה', kind: 'text' },
+  { id: 'nickname', text: 'כינוי שקראו לך בעבר', kind: 'text' },
+  { id: 'fear', text: 'דבר קטן שממש מפחיד אותך ולא הגיוני', kind: 'text' },
+  { id: 'wordUse', text: 'מילה או ביטוי שאת/ה אומר/ת יותר מדי', kind: 'text' },
+  { id: 'weirdCombo', text: 'שילוב אוכל מוזר שאת/ה דווקא אוהב/ת', kind: 'text' },
+  { id: 'skillToLearn', text: 'דבר אחד שהיית רוצה ללמוד לעשות', kind: 'text' },
+  { id: 'movieQuote', text: 'משפט מסרט או סדרה שאת/ה מצטט/ת בלי הפסקה', kind: 'text' },
+  { id: 'lostItem', text: 'הדבר הכי יקר שאיבדת אי פעם', kind: 'text' },
+  { id: 'superstition', text: 'הרגל או אמונה טפלה קטנה שיש לך', kind: 'text' },
+  { id: 'bestGift', text: 'המתנה הכי טובה שקיבלת אי פעם', kind: 'text' },
+  { id: 'unpopularOpinion', text: 'דעה לא פופולרית שיש לך על משהו של יומיום', kind: 'text' },
+  { id: 'firstMemoryOfGroup', text: 'הזיכרון הראשון שלך מהקבוצה הזאת', kind: 'text' },
+  { id: 'dailyRitual', text: 'משהו קטן שאת/ה עושה כל בוקר בלי לחשוב', kind: 'text' },
+  {
+    id: 'sleepSchedule',
+    text: 'איזה טיפוס את/ה יותר',
+    kind: 'single-choice',
+    options: ['ינשוף לילה', 'ציפור בוקר', 'משתנה לפי מצב רוח'],
+  },
+  {
+    id: 'phoneHabit',
+    text: 'מה קורה לטלפון שלך יותר',
+    kind: 'single-choice',
+    options: ['סוללה על אפס', 'זיכרון על אפס', 'שניהם', 'אף אחד'],
+  },
+  {
+    id: 'weatherPreference',
+    text: 'מזג האוויר שהכי מתאים לך',
+    kind: 'single-choice',
+    options: ['שמש חזקה', 'קור צונן', 'גשם', 'רוח'],
+  },
+  {
+    id: 'travelStyle',
+    text: 'איך את/ה מעדיף/ה לתכנן טיול',
+    kind: 'single-choice',
+    options: ['תוכנית מסודרת מראש', 'ספונטני לגמרי', 'משהו באמצע'],
+  },
+  {
+    id: 'competitiveness',
+    text: 'עד כמה את/ה תחרותי/ת במשחקים',
+    kind: 'single-choice',
+    options: ['מאוד', 'קצת', 'ממש לא', 'תלוי במשחק'],
+  },
+  {
+    id: 'hobbies2',
+    text: 'דברים שאת/ה נהנה/ית לעשות עם הידיים',
+    kind: 'multi-choice',
+    options: ['ציור', 'נגינה', 'תפירה', 'נגרות', 'גינון', 'הרכבות', 'כלום מזה'],
+  },
+  {
+    id: 'comfortFood',
+    text: 'מה עוזר לך כשיום קשה',
+    kind: 'multi-choice',
+    options: ['אוכל', 'שינה', 'שיחה עם מישהו', 'סרט', 'הליכה', 'מוזיקה'],
+  },
+  {
+    id: 'socialBattery',
+    text: 'מה הכי ממלא לך את המצברים החברתיים',
+    kind: 'multi-choice',
+    options: ['מסיבה גדולה', 'שיחה אחת על אחת', 'זמן לבד', 'משפחה', 'חברים ותיקים'],
   },
 ] as const

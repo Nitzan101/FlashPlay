@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import QuestionRow from './QuestionRow'
 import { PROFILE_QUESTIONS } from './content/profileQuestions'
 import { db } from './lib/firebase'
-import { PROFILE_ANSWER_MAX_LENGTH, type ProfileQuestion } from './lib/model'
+import type { ProfileQuestion } from './lib/model'
 import { saveProfileAnswer, useMyProfileAnswers } from './lib/profileQuestions'
-import { useAction } from './lib/useAction'
 
 interface GuidedQuestionsProps {
   sessionId: string
@@ -28,37 +28,80 @@ interface GuidedQuestionsProps {
  * tell which answers actually landed if the write failed partway through a
  * batch.
  */
+/** The free-paragraph built-in ("משהו כללי שתרצה/י לספר על עצמך") is always
+ *  shown, never subject to the random reveal below - it is the direct answer
+ *  to DESIGN's own "a free paragraph" requirement, not one option among many,
+ *  and a random shuffle hiding it defeats the point of it being there at all.
+ *  Asked about directly, 2026-09-22: "לא ראיתי אפשרות לפסקה חופשית... בתוך
+ *  המשחק" turned out to be exactly this - it simply hadn't been drawn into
+ *  the first six. */
+const ALWAYS_VISIBLE_BUILTIN_IDS = new Set(['general'])
+
 /** How many of the built-in questions show before "more questions" is
- *  needed. Twenty exist precisely so different people can find one that
- *  resonates (see the module comment on PROFILE_QUESTIONS) - stacking all
- *  twenty in the lobby by default would turn "pick what flows for you" into
- *  a wall of text competing with the roster and the start-game button for the
- *  same screen. The host's own custom questions are never behind this: they
- *  were added specifically for this gathering, presumably because they
- *  matter more here than the shipped defaults do. */
+ *  needed, and how many more each tap of that button reveals. The bank is
+ *  large precisely so different people can find one that resonates (see the
+ *  module comment on PROFILE_QUESTIONS) - stacking all of it in the lobby by
+ *  default would turn "pick what flows for you" into a wall of text
+ *  competing with the roster and the start-game button for the same screen.
+ *  Asked for directly: "בטעינת שאלות נוספות הוספת עוד כמה מלמטה" - a few more
+ *  each time, not everything at once. The host's own custom questions are
+ *  never behind this: they were added specifically for this gathering,
+ *  presumably because they matter more here than the shipped defaults do. */
 const DEFAULT_VISIBLE_BUILTINS = 6
+const REVEAL_BATCH_SIZE = 8
+
+/** A pure Fisher-Yates shuffle - never mutates its input, so the shipped
+ *  content array stays stable across calls. */
+function shuffled<T>(items: readonly T[]): T[] {
+  const copy = [...items]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
+
+function isAnswered(answer: string | string[] | undefined): boolean {
+  if (answer === undefined) return false
+  return Array.isArray(answer) ? answer.length > 0 : answer.trim() !== ''
+}
 
 export default function GuidedQuestions({ sessionId, uid, customQuestions }: GuidedQuestionsProps) {
   const { t } = useTranslation()
-  const allQuestions = [...customQuestions, ...PROFILE_QUESTIONS]
+  // Shuffled together, once per mount (a different order per gathering, not a
+  // reshuffle on every render) - see REVEAL_BATCH_SIZE's comment for why a
+  // random subset is the point. The host's own questions used to be
+  // concatenated in front of the shuffled built-ins, which always put them
+  // first rather than mixed in - reported directly, 2026-09-22: "שאלה
+  // שהוספתי תמיד מופיעה ראשונה ולא מערובבת עם האחרות". Being *pinned*
+  // (never hidden behind "more") and being *first* are different things; only
+  // the first was ever the point.
+  const [allQuestions] = useState(() => shuffled([...customQuestions, ...PROFILE_QUESTIONS]))
+  const customQuestionIds = new Set(customQuestions.map((q) => q.id))
   const { answers, loading } = useMyProfileAnswers(
     sessionId,
     uid,
     allQuestions.map((q) => q.id),
   )
   const [open, setOpen] = useState(true)
-  const [showAll, setShowAll] = useState(false)
+  const [revealCount, setRevealCount] = useState(DEFAULT_VISIBLE_BUILTINS)
 
-  const hiddenCount = Math.max(0, PROFILE_QUESTIONS.length - DEFAULT_VISIBLE_BUILTINS)
-  const visibleQuestions = showAll
-    ? allQuestions
-    : [...customQuestions, ...PROFILE_QUESTIONS.slice(0, DEFAULT_VISIBLE_BUILTINS)]
-
-  const answeredCount = Object.values(answers).filter((a) =>
-    Array.isArray(a) ? a.length > 0 : a.trim() !== '',
-  ).length
+  const answeredCount = Object.values(answers).filter(isAnswered).length
 
   if (loading) return null // avoids a flash of empty, unsaved-looking inputs
+
+  // Pinned - always shown, wherever the shuffle put them: the host's own
+  // questions (added specifically for this gathering), the free-paragraph
+  // built-in (see ALWAYS_VISIBLE_BUILTIN_IDS), and anything already answered
+  // (so editing a saved answer is never a step behind a "more" tap). Only the
+  // rest is subject to the reveal count.
+  const isPinned = (q: ProfileQuestion) =>
+    customQuestionIds.has(q.id) || ALWAYS_VISIBLE_BUILTIN_IDS.has(q.id) || isAnswered(answers[q.id])
+  const unpinned = allQuestions.filter((q) => !isPinned(q))
+  const hiddenUnpinned = unpinned.slice(revealCount)
+  const hiddenIds = new Set(hiddenUnpinned.map((q) => q.id))
+  const visibleQuestions = allQuestions.filter((q) => !hiddenIds.has(q.id))
+  const hiddenCount = hiddenUnpinned.length
 
   return (
     <div className="flex w-full max-w-sm flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
@@ -79,138 +122,23 @@ export default function GuidedQuestions({ sessionId, uid, customQuestions }: Gui
             {visibleQuestions.map((question) => (
               <QuestionRow
                 key={question.id}
-                sessionId={sessionId}
-                uid={uid}
                 question={question}
                 initialAnswer={answers[question.id]}
+                onSave={(answer) => saveProfileAnswer(db, sessionId, uid, question.id, answer)}
               />
             ))}
           </div>
-          {!showAll && hiddenCount > 0 && (
+          {hiddenCount > 0 && (
             <button
               type="button"
-              onClick={() => setShowAll(true)}
+              onClick={() => setRevealCount((count) => count + REVEAL_BATCH_SIZE)}
               className="cursor-pointer self-start text-xs text-accent-2 underline decoration-dotted underline-offset-4"
             >
-              {t('showMoreQuestions', { count: hiddenCount })}
+              {t('showMoreQuestions', { count: Math.min(hiddenCount, REVEAL_BATCH_SIZE) })}
             </button>
           )}
         </>
       )}
-    </div>
-  )
-}
-
-function QuestionRow({
-  sessionId,
-  uid,
-  question,
-  initialAnswer,
-}: {
-  sessionId: string
-  uid: string
-  question: ProfileQuestion
-  initialAnswer: string | string[] | undefined
-}) {
-  const { t } = useTranslation()
-  const empty = question.kind === 'multi-choice' ? ([] as string[]) : ''
-  const [draft, setDraft] = useState<string | string[]>(initialAnswer ?? empty)
-  const [saved, setSaved] = useState<string | string[]>(initialAnswer ?? empty)
-  const action = useAction()
-
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
-  const isSaved = !dirty && (Array.isArray(saved) ? saved.length > 0 : saved.trim() !== '')
-
-  async function save() {
-    await action.run(async () => {
-      await saveProfileAnswer(db, sessionId, uid, question.id, draft)
-      setSaved(draft)
-    })
-  }
-
-  function toggleOption(option: string) {
-    const current = Array.isArray(draft) ? draft : []
-    setDraft(
-      current.includes(option) ? current.filter((o) => o !== option) : [...current, option],
-    )
-  }
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <p className="text-sm">{question.text}</p>
-
-      {question.kind === 'text' && (
-        <textarea
-          value={typeof draft === 'string' ? draft : ''}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={t('profileAnswerTextPlaceholder')}
-          maxLength={PROFILE_ANSWER_MAX_LENGTH}
-          rows={2}
-          className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted"
-        />
-      )}
-
-      {question.kind === 'single-choice' && (
-        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={question.text}>
-          {question.options?.map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={draft === option}
-              onClick={() => setDraft(draft === option ? '' : option)}
-              className={
-                draft === option
-                  ? 'cursor-pointer rounded-full border-2 border-accent bg-accent/15 px-3 py-1 text-xs'
-                  : 'cursor-pointer rounded-full border border-line bg-surface/60 px-3 py-1 text-xs'
-              }
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {question.kind === 'multi-choice' && (
-        <div className="flex flex-wrap gap-1.5">
-          {question.options?.map((option) => {
-            const checked = Array.isArray(draft) && draft.includes(option)
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={checked}
-                onClick={() => toggleOption(option)}
-                className={
-                  checked
-                    ? 'cursor-pointer rounded-full border-2 border-accent bg-accent/15 px-3 py-1 text-xs'
-                    : 'cursor-pointer rounded-full border border-line bg-surface/60 px-3 py-1 text-xs'
-                }
-              >
-                {option}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled={action.busy || !dirty}
-          onClick={() => void save()}
-          aria-label={`${t('saveAnswer')} - ${question.text}`}
-          className="cursor-pointer rounded-lg border border-accent-2 px-3 py-1 text-xs text-accent-2 disabled:opacity-40"
-        >
-          {action.busy ? t('savingAnswer') : t('saveAnswer')}
-        </button>
-        {isSaved && <span className="text-xs text-accent-3">{t('questionSaved')}</span>}
-        {action.error && (
-          <span role="alert" className="text-xs text-danger">
-            {t('answerSaveError')}
-          </span>
-        )}
-      </div>
     </div>
   )
 }

@@ -183,6 +183,39 @@ export async function ensureContacts(
 }
 
 /**
+ * Whether another one of this host's *named* groups already uses this name -
+ * matched the same crude way a returning person is (see matchName), since two
+ * spellings of "המשפחה" are exactly as much the same group as two spellings of
+ * a person's name are the same person.
+ *
+ * **Why this needs checking at all, and cannot be left to the id.** Every
+ * gathering that is not opened for an existing saved group gets its own
+ * groupId (see ensureContacts, `groupId = existingGroupId ?? sessionId`) - so
+ * naming two different, unrelated one-off evenings the same thing produces
+ * two separate "families" that both show up in the room picker under an
+ * identical label, each with its own half of what should have been one
+ * group's memory. Found live: four evenings, never opened against a saved
+ * group, all named "אלה" - four unrelated entries in the picker, 2026-09-22.
+ */
+async function isGroupNameTaken(
+  firestore: Firestore,
+  hostUid: string,
+  name: string,
+  /** The group being (re)named itself, excluded from the check - renaming a
+   *  group to the name it already has is not a collision. */
+  excludeGroupId: string | null = null,
+): Promise<boolean> {
+  const normalized = matchName(name)
+  if (!normalized) return false
+  const snap = await getDocs(collection(firestore, paths.groups(hostUid)))
+  return snap.docs.some((groupDoc) => {
+    if (groupDoc.id === excludeGroupId) return false
+    const existing = groupDoc.data() as GroupDoc
+    return existing.name !== '' && matchName(existing.name) === normalized
+  })
+}
+
+/**
  * A group made before any gathering, from the host's own room picker.
  *
  * Every other group in this store is born as a side effect of an evening (see
@@ -191,13 +224,18 @@ export async function ensureContacts(
  * and no way to add one they had simply forgotten to name. It starts empty:
  * the first gathering opened for it fills in its members.
  *
- * Returns the new group's id, so the caller can select it immediately.
+ * Returns the new group's id, so the caller can select it immediately. Throws
+ * `'group-name-taken'` rather than silently creating a same-named duplicate -
+ * see isGroupNameTaken.
  */
 export async function createGroup(
   firestore: Firestore,
   hostUid: string,
   name: string,
 ): Promise<string> {
+  if (await isGroupNameTaken(firestore, hostUid, name)) {
+    throw new Error('group-name-taken')
+  }
   const groupId = crypto.randomUUID()
   await step('create-group', () =>
     setDoc(doc(firestore, paths.group(hostUid, groupId)), {
@@ -243,13 +281,18 @@ export async function linkPlayerToContact(
 /** The host's end-of-evening offer: keep this group, under this name, so the
  *  next gathering with these people continues their memory instead of
  *  starting a parallel one. Everything it names already exists - see
- *  ensureContacts. Also how the details screen renames one. */
+ *  ensureContacts. Also how the details screen renames one. Throws
+ *  `'group-name-taken'` if a *different* saved group already has this name -
+ *  see isGroupNameTaken. */
 export async function nameGroup(
   firestore: Firestore,
   hostUid: string,
   groupId: string,
   name: string,
 ): Promise<void> {
+  if (await isGroupNameTaken(firestore, hostUid, name, groupId)) {
+    throw new Error('group-name-taken')
+  }
   await step('name-group', () =>
     setDoc(doc(firestore, paths.group(hostUid, groupId)), { name }, { merge: true }),
   )
@@ -290,12 +333,12 @@ export async function writeFactsForGame(
   hostUid: string,
   sessionId: string,
   gameId: string,
-  /** The pool the drawer is read from. A parameter only so that a test can
-   *  exercise the group drawer: every prompt shipped today is `personal`, so
-   *  the group path would otherwise be unreachable code with a guarantee
-   *  written on it (DESIGN: "a group fact is confined to the group where it
-   *  was said and never crosses between groups"). */
-  prompts: readonly { id: string; drawer: 'personal' | 'group' }[] = HARVEST_PROMPTS,
+  /** The pool the drawer (and the question wording) is read from. A parameter
+   *  only so that a test can exercise the group drawer: every prompt shipped
+   *  today is `personal`, so the group path would otherwise be unreachable
+   *  code with a guarantee written on it (DESIGN: "a group fact is confined
+   *  to the group where it was said and never crosses between groups"). */
+  prompts: readonly { id: string; text: string; drawer: 'personal' | 'group' }[] = HARVEST_PROMPTS,
 ): Promise<number> {
   const sessionSnap = await step('read-session', () =>
     getDoc(doc(firestore, paths.session(sessionId))),
@@ -346,8 +389,13 @@ export async function writeFactsForGame(
     const contactId = contactIds[authorPlayerId]
     if (!contactId) continue
 
+    // Prefixed with the prompt's own wording, the same shape writeProfileFacts
+    // already uses ("{question}: {answer}") - a bare answer with no question
+    // attached reads as noise on the group's details screen (e.g. "שעון" on
+    // its own says nothing about what it was an answer to). Found by Nitzan
+    // asking directly, 2026-09-22.
     const fact: FactDoc = {
-      text: item.text,
+      text: `${prompt.text}: ${item.text}`,
       promptId: item.promptId,
       authorContactId: contactId,
       useCount: 0,
@@ -442,7 +490,7 @@ export async function writeProfileFacts(
       )
       if (!answerSnap.exists()) continue
       const { answer } = answerSnap.data() as ProfileAnswerDoc
-      const text = Array.isArray(answer) ? answer.join(', ') : answer
+      const text = answerToText(answer)
       if (!text.trim()) continue // an explicitly cleared answer is a retraction, not a fact
 
       const factPath = `${paths.contactFacts(hostUid, contactId)}/profile_${question.id}`
@@ -642,6 +690,89 @@ export async function addManualGroupFact(
   )
 }
 
+/**
+ * The host setting or correcting one guided question's answer for a person
+ * directly, from the group's own details screen - asked for directly,
+ * 2026-09-22: "רשימת השאלות עבור אדם בלחיצה על עריכתו". Unlike addManualFact,
+ * this is tied to a specific question rather than free text.
+ *
+ * **Same document id and text shape as writeProfileFacts** (`profile_{id}`,
+ * "{question}: {answer}"), deliberately: if the same person later answers the
+ * same question for themselves in a live gathering, the two converge on one
+ * fact rather than leaving two competing answers to the same question side by
+ * side. Whichever wrote last wins, the same idempotent-by-id rule every other
+ * fact path here already follows.
+ *
+ * An empty answer deletes the fact - the same "a cleared answer is a
+ * retraction, not a fact" rule writeProfileFacts applies.
+ */
+export async function setContactQuestionAnswer(
+  firestore: Firestore,
+  hostUid: string,
+  contactId: string,
+  question: { id: string; text: string },
+  answer: string,
+): Promise<void> {
+  const factRef = doc(firestore, `${paths.contactFacts(hostUid, contactId)}/profile_${question.id}`)
+  const trimmed = answer.trim()
+  if (!trimmed) {
+    await step('clear-contact-question-answer', () => deleteDoc(factRef))
+    return
+  }
+  const text = `${question.text}: ${trimmed}`
+  const existing = await step('read-contact-question-answer', () => getDoc(factRef))
+  if (existing.exists()) {
+    // Only the text changes - useCount is preserved, same as writeProfileFacts.
+    await step('update-contact-question-answer', () => updateDoc(factRef, { text }))
+    return
+  }
+  await step('write-contact-question-answer', () =>
+    setDoc(factRef, {
+      text,
+      promptId: question.id,
+      authorContactId: contactId,
+      useCount: 0,
+      sessionId: '',
+      createdAt: Date.now(),
+    } satisfies FactDoc),
+  )
+}
+
+/** The answer part of a question-tied fact's text, for pre-filling an edit
+ *  field - the inverse of the "{question}: {answer}" shape both
+ *  writeProfileFacts and setContactQuestionAnswer write. Falls back to the
+ *  whole text for anything not in that shape (a fact written before the
+ *  prefix existed, or by some other path), so an edit field is never shown
+ *  empty when there is in fact something there. */
+export function answerFromFactText(factText: string, questionText: string): string {
+  const prefix = `${questionText}: `
+  return factText.startsWith(prefix) ? factText.slice(prefix.length) : factText
+}
+
+/** How a multi-choice answer is flattened into one fact's text. */
+const MULTI_CHOICE_SEPARATOR = ', '
+
+export function answerToText(answer: string | string[]): string {
+  return Array.isArray(answer) ? answer.join(MULTI_CHOICE_SEPARATOR) : answer
+}
+
+/** The inverse of answerToText, for one question - so the host's editor can
+ *  show a stored multi-choice answer as chips again. Pieces matching none of
+ *  the question's options are joined back into a single "אחר" answer, so a
+ *  custom answer that itself contains the separator is not split apart. */
+export function answerFromText(
+  question: Pick<ProfileQuestion, 'kind' | 'options'>,
+  text: string,
+): string | string[] {
+  if (question.kind !== 'multi-choice') return text
+  if (!text.trim()) return []
+  const options = question.options ?? []
+  const pieces = text.split(MULTI_CHOICE_SEPARATOR)
+  const chosen = pieces.filter((piece) => options.includes(piece))
+  const rest = pieces.filter((piece) => !options.includes(piece))
+  return rest.length > 0 ? [...chosen, rest.join(MULTI_CHOICE_SEPARATOR)] : chosen
+}
+
 /** The host's own note on how the evening went. Keyed by session id, so
  *  answering again corrects it rather than adding a second answer. */
 export async function recordFeedback(
@@ -659,6 +790,63 @@ export async function recordFeedback(
       createdAt: Date.now(),
     } satisfies SessionFeedbackDoc),
   )
+}
+
+/** Whether this one group already has a member matching this name - the same
+ *  crude comparison as isGroupNameTaken and a returning player (see
+ *  matchName). Scoped to the group's own members, not every contact this host
+ *  has ever recorded: two different groups are allowed to each have their own
+ *  "אלה". Found live 2026-09-23 - adding a member let a second "אלה" into a
+ *  group that already had one, with nothing to tell the two apart afterwards. */
+async function isMemberNameTaken(
+  firestore: Firestore,
+  hostUid: string,
+  groupId: string,
+  name: string,
+): Promise<boolean> {
+  const normalized = matchName(name)
+  if (!normalized) return false
+  const groupSnap = await getDoc(doc(firestore, paths.group(hostUid, groupId)))
+  const memberContactIds = (groupSnap.data() as GroupDoc | undefined)?.memberContactIds ?? []
+  const contactSnaps = await Promise.all(
+    memberContactIds.map((contactId) => getDoc(doc(firestore, paths.contact(hostUid, contactId)))),
+  )
+  return contactSnaps.some((contactSnap) => {
+    const contact = contactSnap.data() as ContactDoc | undefined
+    return !!contact && matchName(contact.name) === normalized
+  })
+}
+
+/** The host adding someone the group already includes but who was never a
+ *  player yet - e.g. someone who missed every gathering so far, or a person
+ *  without a phone the host wants to keep notes on. Asked for directly:
+ *  "אי אפשר להוסיף בן אדם לקבוצה." Throws `'member-name-taken'` rather than
+ *  silently creating a second contact for the same person - see
+ *  isMemberNameTaken. Returns the new contact's id. */
+export async function addGroupMember(
+  firestore: Firestore,
+  hostUid: string,
+  groupId: string,
+  name: string,
+): Promise<string> {
+  const trimmed = name.trim()
+  if (await isMemberNameTaken(firestore, hostUid, groupId, trimmed)) {
+    throw new Error('member-name-taken')
+  }
+  const contactId = crypto.randomUUID()
+  await step('add-group-member', async () => {
+    await setDoc(doc(firestore, paths.contact(hostUid, contactId)), {
+      name: trimmed,
+      claimedByUid: null,
+      createdAt: Date.now(),
+    } satisfies ContactDoc)
+    const groupSnap = await getDoc(doc(firestore, paths.group(hostUid, groupId)))
+    const group = groupSnap.data() as GroupDoc | undefined
+    await updateDoc(doc(firestore, paths.group(hostUid, groupId)), {
+      memberContactIds: [...(group?.memberContactIds ?? []), contactId],
+    })
+  })
+  return contactId
 }
 
 /**
@@ -732,6 +920,40 @@ export async function deleteGroup(
   await step('delete-group', () => deleteDoc(doc(firestore, paths.group(hostUid, groupId))))
 }
 
+/**
+ * Wipes what is remembered *about* a group without deleting the group or its
+ * members - the second of the two things "מחיקת הכל על הקבוצה" used to
+ * conflate into one irreversible button: this keeps the roster (so a
+ * returning person is still matched by name next time) and clears only the
+ * facts. `deleteGroup` above is the other one, for when the whole group
+ * should stop existing. Asked for directly, 2026-09-22.
+ */
+export async function wipeGroupFacts(
+  firestore: Firestore,
+  hostUid: string,
+  groupId: string,
+): Promise<void> {
+  const groupSnap = await step('read-group', () =>
+    getDoc(doc(firestore, paths.group(hostUid, groupId))),
+  )
+  const group = groupSnap.data() as GroupDoc | undefined
+
+  const groupFactsSnap = await step('read-group-facts', () =>
+    getDocs(collection(firestore, paths.groupFacts(hostUid, groupId))),
+  )
+  for (const fact of groupFactsSnap.docs) {
+    await step('delete-fact', () => deleteDoc(fact.ref))
+  }
+  for (const contactId of group?.memberContactIds ?? []) {
+    const factsSnap = await step('read-contact-facts', () =>
+      getDocs(collection(firestore, paths.contactFacts(hostUid, contactId))),
+    )
+    for (const fact of factsSnap.docs) {
+      await step('delete-fact', () => deleteDoc(fact.ref))
+    }
+  }
+}
+
 export interface RememberedFact {
   /** Full Firestore path, so deleting one needs no knowledge of which drawer
    *  it came from. */
@@ -739,6 +961,11 @@ export interface RememberedFact {
   text: string
   /** The contact this fact is attributed to, named. */
   who: string
+  /** The prompt or guided question it answers, if any - what lets the
+   *  per-person question editor find an existing answer to pre-fill.
+   *  Optional so a test double that builds facts by hand need not supply it;
+   *  absent means "free-form, no question behind it". */
+  promptId?: string | null
 }
 
 /**
@@ -815,11 +1042,10 @@ export function useGroupMemory(
         members.push({
           contactId,
           name,
-          facts: contactFacts.docs.map((factDoc) => ({
-            path: factDoc.ref.path,
-            text: (factDoc.data() as FactDoc).text,
-            who: name,
-          })),
+          facts: contactFacts.docs.map((factDoc) => {
+            const fact = factDoc.data() as FactDoc
+            return { path: factDoc.ref.path, text: fact.text, who: name, promptId: fact.promptId ?? null }
+          }),
         })
       }
       // By name, so the list does not reshuffle between visits: member ids come

@@ -2,17 +2,28 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import HostButton from './HostButton'
 import LoadFailure from './LoadFailure'
+import QuestionRow from './QuestionRow'
+import { PROFILE_QUESTIONS } from './content/profileQuestions'
 import { db } from './lib/firebase'
 import {
+  addGroupMember,
   addManualFact,
   addManualGroupFact,
+  answerFromFactText,
+  answerFromText,
+  answerToText,
+  deleteContact,
   deleteFact,
   deleteGroup,
   nameGroup,
+  setContactQuestionAnswer,
   shareGroup,
   useGroupMemory,
+  wipeGroupFacts,
   type RememberedFact,
 } from './lib/memory'
+import type { ProfileQuestion } from './lib/model'
+import { useCustomQuestions } from './lib/profileQuestions'
 import { useAction } from './lib/useAction'
 
 interface GroupDetailsProps {
@@ -63,6 +74,9 @@ export default function GroupDetails({
   const rename = useAction()
   const addFact = useAction()
   const share = useAction()
+  const removeMember = useAction()
+  const addMember = useAction()
+  const wipeInfo = useAction()
   // Which person's (or the group's, keyed '') add-a-fact box is open - at
   // most one at a time, so opening a new one does not leave a half-typed note
   // behind in another.
@@ -78,10 +92,27 @@ export default function GroupDetails({
   // gesture on a phone - so it asks, per row, the same way the whole-group
   // wipe already did.
   const [confirmingFact, setConfirmingFact] = useState<string | null>(null)
-  const [confirmingWipe, setConfirmingWipe] = useState(false)
+  // Two different confirms for two different, easily confused actions - see
+  // the module comment: "מחיקת הכל על הקבוצה" used to mean "delete the whole
+  // group" while reading like "just wipe what we remember".
+  const [confirmingDeleteGroup, setConfirmingDeleteGroup] = useState(false)
+  const [confirmingWipeInfo, setConfirmingWipeInfo] = useState(false)
   const [wiped, setWiped] = useState(false)
+  const [infoWiped, setInfoWiped] = useState(false)
   const [nameInput, setNameInput] = useState('')
   const [renamed, setRenamed] = useState(false)
+  // Which member is being asked to confirm their own deletion, and whether
+  // the "add a person" box is open - same one-at-a-time reasoning as
+  // addingTo above.
+  const [confirmingMemberDelete, setConfirmingMemberDelete] = useState<string | null>(null)
+  const [removedMembers, setRemovedMembers] = useState<string[]>([])
+  const [addingMember, setAddingMember] = useState(false)
+  const [newMemberName, setNewMemberName] = useState('')
+  // Whose guided-question list is open - at most one person at a time, since
+  // each list is the whole question bank and two open at once is a wall.
+  const [questionsFor, setQuestionsFor] = useState<string | null>(null)
+  const { questions: customQuestions } = useCustomQuestions(hostUid)
+  const allQuestions: ProfileQuestion[] = [...PROFILE_QUESTIONS, ...customQuestions]
 
   // The name arrives with the group, one round trip after this mounts, so the
   // field cannot simply be initialised from it. Only seeded while untouched:
@@ -204,13 +235,19 @@ export default function GroupDetails({
               </button>
             </div>
             {renamed && <p className="text-start text-xs text-accent-3">{t('renameGroupSaved')}</p>}
-            {rename.error && (
+            {rename.error === 'group-name-taken' ? (
               <p role="alert" className="text-start text-xs text-danger">
-                {t('renameGroupError')}{' '}
-                <span dir="ltr" className="font-mono">
-                  ({rename.error})
-                </span>
+                {t('groupNameTaken')}
               </p>
+            ) : (
+              rename.error && (
+                <p role="alert" className="text-start text-xs text-danger">
+                  {t('renameGroupError')}{' '}
+                  <span dir="ltr" className="font-mono">
+                    ({rename.error})
+                  </span>
+                </p>
+              )
             )}
           </div>
 
@@ -222,31 +259,188 @@ export default function GroupDetails({
 
           <p className="w-full text-start text-xs tracking-wide text-muted">{t('membersTitle')}</p>
           {members.length === 0 && <p className="text-sm text-muted">{t('noMembersYet')}</p>}
-          {members.map((member) => {
-            const facts = member.facts.filter(isVisible)
-            return (
-              <div
-                key={member.contactId}
-                className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3"
+          {members
+            .filter((member) => !removedMembers.includes(member.contactId))
+            .map((member) => {
+              const facts = member.facts.filter(isVisible)
+              return (
+                <div
+                  key={member.contactId}
+                  data-testid={`member-${member.contactId}`}
+                  className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-start font-medium text-accent-2">{member.name}</p>
+                    {confirmingMemberDelete === member.contactId ? (
+                      <span className="flex shrink-0 items-center gap-2 text-xs">
+                        <button
+                          type="button"
+                          disabled={removeMember.busy}
+                          onClick={() =>
+                            void removeMember
+                              .run(async () => {
+                                await deleteContact(db, hostUid, member.contactId, groupId)
+                                setRemovedMembers((prev) => [...prev, member.contactId])
+                              })
+                              .finally(() => setConfirmingMemberDelete(null))
+                          }
+                          className="cursor-pointer rounded-lg bg-danger/15 px-2 py-1 text-danger"
+                        >
+                          {t('deleteMemberYes')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingMemberDelete(null)}
+                          className="cursor-pointer rounded-lg px-2 py-1 text-muted"
+                        >
+                          {t('deleteFactNo')}
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingMemberDelete(member.contactId)}
+                        aria-label={`${t('deleteMember')} - ${member.name}`}
+                        className="shrink-0 cursor-pointer rounded-lg border border-danger/40 px-2 py-1 text-xs text-danger"
+                      >
+                        {t('deleteMember')}
+                      </button>
+                    )}
+                  </div>
+                  {facts.length === 0 ? (
+                    <p className="text-start text-xs text-muted">{t('memberNoFacts')}</p>
+                  ) : (
+                    facts.map((fact) => <FactRow key={fact.path} fact={fact} />)
+                  )}
+                  <AddFactRow
+                    isOpen={addingTo === member.contactId}
+                    value={factInput}
+                    busy={addFact.busy}
+                    onOpen={() => openAddFact(member.contactId)}
+                    onChange={setFactInput}
+                    onSave={() => saveFact(member.contactId)}
+                    onCancel={() => setAddingTo(null)}
+                  />
+                  {/* The guided questions, per person - asked for directly:
+                      "רשימת השאלות עבור אדם בלחיצה על עריכתו". Every question
+                      in the bank (built-in and the host's own), each with that
+                      person's current answer ready to edit. */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setQuestionsFor((current) =>
+                        current === member.contactId ? null : member.contactId,
+                      )
+                    }
+                    aria-expanded={questionsFor === member.contactId}
+                    className="cursor-pointer self-start text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+                  >
+                    {questionsFor === member.contactId
+                      ? t('hideMemberQuestions')
+                      : t('editMemberQuestions')}
+                  </button>
+                  {questionsFor === member.contactId && (
+                    <div className="flex flex-col gap-3 border-t border-line pt-2">
+                      {allQuestions.map((question) => {
+                        const existing = member.facts.find((f) => f.promptId === question.id)
+                        return (
+                          <QuestionRow
+                            key={question.id}
+                            question={question}
+                            initialAnswer={
+                              existing
+                                ? answerFromText(
+                                    question,
+                                    answerFromFactText(existing.text, question.text),
+                                  )
+                                : undefined
+                            }
+                            onSave={async (answer) => {
+                              await setContactQuestionAnswer(
+                                db,
+                                hostUid,
+                                member.contactId,
+                                question,
+                                answerToText(answer),
+                              )
+                              setRefreshToken((token) => token + 1)
+                            }}
+                          />
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          {removeMember.error && (
+            <p role="alert" className="text-xs text-danger">
+              {t('deleteMemberError')}{' '}
+              <span dir="ltr" className="font-mono">
+                ({removeMember.error})
+              </span>
+            </p>
+          )}
+
+          {/* Adding someone the group already includes but who has no contact
+              yet - someone who has missed every gathering so far, or a person
+              without a phone the host wants to keep notes on. */}
+          {addingMember ? (
+            <div className="flex w-full items-center gap-2">
+              <input
+                value={newMemberName}
+                onChange={(event) => setNewMemberName(event.target.value)}
+                placeholder={t('addMemberPlaceholder')}
+                maxLength={40}
+                autoFocus
+                className="w-full min-w-0 rounded-xl border border-line bg-surface px-3 py-2 text-ink placeholder:text-muted"
+              />
+              <button
+                type="button"
+                disabled={addMember.busy || !newMemberName.trim()}
+                onClick={() =>
+                  void addMember.run(async () => {
+                    await addGroupMember(db, hostUid, groupId, newMemberName.trim())
+                    setNewMemberName('')
+                    setAddingMember(false)
+                    setRefreshToken((token) => token + 1)
+                  })
+                }
+                className="shrink-0 cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
               >
-                <p className="text-start font-medium text-accent-2">{member.name}</p>
-                {facts.length === 0 ? (
-                  <p className="text-start text-xs text-muted">{t('memberNoFacts')}</p>
-                ) : (
-                  facts.map((fact) => <FactRow key={fact.path} fact={fact} />)
-                )}
-                <AddFactRow
-                  isOpen={addingTo === member.contactId}
-                  value={factInput}
-                  busy={addFact.busy}
-                  onOpen={() => openAddFact(member.contactId)}
-                  onChange={setFactInput}
-                  onSave={() => saveFact(member.contactId)}
-                  onCancel={() => setAddingTo(null)}
-                />
-              </div>
+                {t('addGroupSave')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddingMember(false)}
+                className="shrink-0 cursor-pointer rounded-xl px-2 py-2 text-sm text-muted"
+              >
+                {t('addGroupCancel')}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAddingMember(true)}
+              className="cursor-pointer self-start text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+            >
+              + {t('addMember')}
+            </button>
+          )}
+          {addMember.error === 'member-name-taken' ? (
+            <p role="alert" className="text-xs text-danger">
+              {t('memberNameTaken')}
+            </p>
+          ) : (
+            addMember.error && (
+              <p role="alert" className="text-xs text-danger">
+                {t('addMemberError')}{' '}
+                <span dir="ltr" className="font-mono">
+                  ({addMember.error})
+                </span>
+              </p>
             )
-          })}
+          )}
 
           <div className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
             <p className="text-start text-xs tracking-wide text-muted">{t('groupFactsTitle')}</p>
@@ -339,14 +533,64 @@ export default function GroupDetails({
         </div>
       )}
 
+      {/* Two separate, easily confused actions - kept as two separate
+          buttons rather than one, per Nitzan's own correction: "'למחוק הכל
+          על הקבוצה' נשמע כמו מחיקת המידע בלבד. צריך שיהיה כפתור 'מחיקת
+          הקבוצה' וכפתור 'מחיקת כל המידע על הקבוצה'." */}
+      {!wiped && !loading && (
+        <>
+          {infoWiped ? (
+            <p className="text-sm text-accent-3">{t('wipeInfoDone')}</p>
+          ) : confirmingWipeInfo ? (
+            <>
+              <p className="text-center text-sm">{t('wipeInfoConfirm')}</p>
+              <HostButton
+                busy={wipeInfo.busy}
+                onClick={() =>
+                  void wipeInfo.run(async () => {
+                    await wipeGroupFacts(db, hostUid, groupId)
+                    setConfirmingWipeInfo(false)
+                    setInfoWiped(true)
+                    setRefreshToken((token) => token + 1)
+                  })
+                }
+                primary
+              >
+                {t('wipeInfoYes')}
+              </HostButton>
+              <HostButton busy={wipeInfo.busy} onClick={() => setConfirmingWipeInfo(false)}>
+                {t('wipeInfoNo')}
+              </HostButton>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={wipeInfo.busy}
+              onClick={() => setConfirmingWipeInfo(true)}
+              className="cursor-pointer rounded-xl border border-danger/50 px-4 py-2 text-sm text-danger disabled:opacity-50"
+            >
+              {t('wipeInfoButton')}
+            </button>
+          )}
+          {wipeInfo.error && (
+            <p role="alert" className="text-xs text-danger">
+              {t('wipeInfoError')}{' '}
+              <span dir="ltr" className="font-mono">
+                ({wipeInfo.error})
+              </span>
+            </p>
+          )}
+        </>
+      )}
+
       {/* Deleting the group takes its facts and its contacts with it -
           Firestore does not cascade, and a half-deleted memory is worse than
           none: the screen says it is gone while the documents remain. */}
       {!wiped &&
         !loading &&
-        (confirmingWipe ? (
+        (confirmingDeleteGroup ? (
           <>
-            <p className="text-center text-sm">{t('forgetGroupConfirm')}</p>
+            <p className="text-center text-sm">{t('deleteGroupConfirm')}</p>
             <HostButton
               busy={remove.busy}
               onClick={() =>
@@ -358,20 +602,20 @@ export default function GroupDetails({
               }
               primary
             >
-              {t('forgetGroupYes')}
+              {t('deleteGroupYes')}
             </HostButton>
-            <HostButton busy={remove.busy} onClick={() => setConfirmingWipe(false)}>
-              {t('forgetGroupNo')}
+            <HostButton busy={remove.busy} onClick={() => setConfirmingDeleteGroup(false)}>
+              {t('deleteGroupNo')}
             </HostButton>
           </>
         ) : (
           <button
             type="button"
             disabled={remove.busy}
-            onClick={() => setConfirmingWipe(true)}
-            className="cursor-pointer rounded-xl border border-danger/50 px-4 py-2 text-sm text-danger disabled:opacity-50"
+            onClick={() => setConfirmingDeleteGroup(true)}
+            className="cursor-pointer rounded-xl border border-danger/50 px-4 py-2 text-sm font-medium text-danger disabled:opacity-50"
           >
-            {t('forgetGroup')}
+            {t('deleteGroupButton')}
           </button>
         ))}
 
