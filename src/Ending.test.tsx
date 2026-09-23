@@ -239,7 +239,7 @@ describe('the evening leaves something behind', () => {
     await waitFor(() => expect(mockWriteRemainingFacts).toHaveBeenCalledTimes(1))
     expect(mockEnsureContacts.mock.calls[0][4]).toBe('g1')
     expect(screen.queryByText('שמירת הקבוצה')).not.toBeInTheDocument()
-    expect(screen.getByText('הקבוצה «המשפחה» שמורה - בפעם הבאה היא תחכה לכם')).toBeInTheDocument()
+    expect(screen.getByText('הקבוצה "המשפחה" שמורה - בפעם הבאה היא תחכה לכם')).toBeInTheDocument()
   })
 
   it('writes nothing from a guest’s phone - they have no store to write to', async () => {

@@ -471,6 +471,21 @@ so there is no reason to co-locate them.
   2026-09-22 - pass the value as a plain argument to anything that needs it
   in the same call that just set it; only trust reading the state back once a
   later render has actually happened (e.g. a subsequent stage's own button).
+- **A client-side "already deleted" list keyed by document path goes stale
+  the moment that path can be written again.** GroupDetails hid deleted
+  facts by path until remount; a guided-question fact always lives at
+  `profile_{questionId}`, so one deleted and then re-saved stayed hidden.
+  Clear such a list when the next load lands (GroupDetails now does), and
+  anything else derived from the same data (the question field) has to
+  follow the delete too. Found live, 2026-09-23.
+- **An effect that sets state to a fresh literal (`[]`, `{}`) on every run
+  loops forever when its dependency is a new object each render - and under
+  Vitest that is a hang, not a red test.** A test double for
+  `useGroupMemory` that returns new arrays per call turned
+  `useEffect(() => setDeleted([]), [members])` into an endless render loop;
+  one worker grew past 2.7 GB and `npm test` never finished. Write it as
+  `setX((prev) => (prev.length === 0 ? prev : []))` so an unchanged value
+  bails out, and when the suite hangs, look for exactly this first.
 - **A fix for a reported interaction bug is tested against the whole
   interaction, not just the symptom reported.** "אחר" on the guided
   questions took three versions: the first lost its text when toggled off;

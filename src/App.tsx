@@ -1054,6 +1054,7 @@ function LeaveRoomControl({
   const [pendingAction, setPendingAction] = useState<'close' | 'transfer-leave' | null>(null)
   const [groupNameInput, setGroupNameInput] = useState('')
   const [justNamed, setJustNamed] = useState<string | null>(null)
+  const [skippingSave, setSkippingSave] = useState(false)
   const action = useAction()
 
   const effectiveGroupId = groupId ?? sessionId
@@ -1366,24 +1367,36 @@ function LeaveRoomControl({
           maxLength={40}
           className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
         />
+        {/* Each button shows its own busy label - they share one action, and
+            "don't save" used to light up "שומרים..." on the save button. */}
         <div className="flex w-full flex-col gap-2">
           <button
             type="button"
             disabled={action.busy || !groupNameInput.trim() || !pendingAction}
-            onClick={() =>
-              pendingAction && void action.run(() => finish(pendingAction, groupNameInput.trim()))
-            }
+            onClick={() => {
+              if (!pendingAction) return
+              setSkippingSave(false)
+              void action.run(() => finish(pendingAction, groupNameInput.trim()))
+            }}
             className="cursor-pointer rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {action.busy ? t('savingGroup') : t('saveGroup')}
+            {action.busy && !skippingSave ? t('savingGroup') : t('saveGroup')}
           </button>
           <button
             type="button"
             disabled={action.busy || !pendingAction}
-            onClick={() => pendingAction && void action.run(() => finish(pendingAction))}
+            onClick={() => {
+              if (!pendingAction) return
+              setSkippingSave(true)
+              void action.run(() => finish(pendingAction))
+            }}
             className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted disabled:opacity-50"
           >
-            {t('dontSaveGroup')}
+            {action.busy && skippingSave
+              ? pendingAction === 'close'
+                ? t('closingRoom')
+                : t('transferringHost')
+              : t('dontSaveGroup')}
           </button>
         </div>
         {action.error && (
@@ -1404,8 +1417,7 @@ function LeaveRoomControl({
   if (stage === 'group-saved') {
     return (
       <div className={panelClass}>
-        <p className="text-center text-sm">{t('groupSavedNamed', { name: justNamed })}</p>
-        <p className="text-center text-xs text-muted">{t('viewGroupNowQuestion')}</p>
+        <p className="text-center text-sm">{t('groupSavedInto', { name: justNamed })}</p>
         <div className="flex w-full flex-col gap-2">
           <button
             type="button"

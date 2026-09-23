@@ -163,7 +163,8 @@ export const resources = {
       savingGroup: 'שומרים...',
       saveGroupError: 'אי אפשר לשמור את הקבוצה כרגע.',
       groupSaved: 'הקבוצה נשמרה',
-      groupSavedNamed: 'הקבוצה «{{name}}» שמורה - בפעם הבאה היא תחכה לכם',
+      groupSavedNamed: 'הקבוצה "{{name}}" שמורה - בפעם הבאה היא תחכה לכם',
+      groupSavedInto: 'המידע נשמר בקבוצה "{{name}}"',
       keptFromTonight: 'נשמרו {{count}} תשובות מהערב',
       keptFromTonightOne: 'נשמרה תשובה אחת מהערב',
       keptNothing: 'לא נשמרו תשובות מהערב',
@@ -288,9 +289,8 @@ export const resources = {
       transferError: 'אי אפשר להעביר כרגע.',
       backToOptions: 'חזרה',
       dontSaveGroup: 'לא לשמור קבוצה',
-      viewGroupNowQuestion: 'לצפות ולערוך את המידע על הקבוצה עכשיו?',
-      viewGroupNowYes: 'כן, לצפות ולערוך',
-      viewGroupNowLater: 'לא, אפשר אחר כך מעמוד הבית',
+      viewGroupNowYes: 'צפייה ועריכה',
+      viewGroupNowLater: 'דלג (ניתן לערוך בהמשך מעמוד הבית)',
 
       // --- host links a returning player to someone the group already knows ---
       linkPlayersTitle: 'מישהו כאן שכבר מוכר לקבוצה?',

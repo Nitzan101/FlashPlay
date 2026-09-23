@@ -796,6 +796,28 @@ describe('the host leaving a room', () => {
     await waitFor(() => expect(mockLeaveRoom).toHaveBeenCalled())
   })
 
+  // Reported 2026-09-23: while "don't save" was closing the room, the save
+  // button read "שומרים..." - both share one busy state.
+  it('labels only the tapped button as busy while declining to save', async () => {
+    let finishClose: () => void = () => {}
+    mockEndGathering.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishClose = resolve)),
+    )
+    asHostInRoom()
+    await enterRoom()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'סגירת החדר לכולם' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'כן, לסגור' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'לא לשמור קבוצה' }))
+
+    expect(await screen.findByRole('button', { name: 'סוגרים...' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'שמירת הקבוצה' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'שומרים...' })).not.toBeInTheDocument()
+
+    finishClose()
+    await waitFor(() => expect(mockLeaveRoom).toHaveBeenCalled())
+  })
+
   it('names the group before closing, then offers to view it right away', async () => {
     asHostInRoom()
     await enterRoom()
@@ -816,9 +838,9 @@ describe('the host leaving a room', () => {
     )
     // Not left yet - the host is asked first whether to view/edit now.
     expect(mockLeaveRoom).not.toHaveBeenCalled()
-    expect(await screen.findByText('הקבוצה «המשפחה» שמורה - בפעם הבאה היא תחכה לכם')).toBeInTheDocument()
+    expect(await screen.findByText('המידע נשמר בקבוצה "המשפחה"')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'כן, לצפות ולערוך' }))
+    fireEvent.click(screen.getByRole('button', { name: 'צפייה ועריכה' }))
 
     await waitFor(() => expect(mockLeaveRoom).toHaveBeenCalled())
     // Routed straight to that group's details, not the bare room picker.
@@ -838,10 +860,10 @@ describe('the host leaving a room', () => {
     // Still offered the view-now choice, under the name it already has - not
     // the "no group was created" message a genuine skip gets.
     expect(
-      await screen.findByText('הקבוצה «המשפחה» שמורה - בפעם הבאה היא תחכה לכם'),
+      await screen.findByText('המידע נשמר בקבוצה "המשפחה"'),
     ).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'לא, אפשר אחר כך מעמוד הבית' }))
+    fireEvent.click(screen.getByRole('button', { name: 'דלג (ניתן לערוך בהמשך מעמוד הבית)' }))
 
     await waitFor(() => expect(mockLeaveRoom).toHaveBeenCalled())
   })

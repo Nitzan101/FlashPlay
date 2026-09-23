@@ -121,6 +121,18 @@ export default function GroupDetails({
     if (!loading) setNameInput((current) => current || groupName)
   }, [loading, groupName])
 
+  // `deleted` only has to hide a fact until the next load lands - from then on
+  // the store itself is the truth. Kept forever, it went on hiding a guided-
+  // question fact the host saved again afterwards, because that fact always
+  // lives at the same path (`profile_{questionId}`). Found live, 2026-09-23.
+  // Safe to clear on any load: useGroupMemory discards a load that a newer
+  // refresh has superseded, so the one that lands started after the delete.
+  // Returns the same array when already empty, so a caller handing in fresh
+  // arrays every render cannot turn this into an endless re-render loop.
+  useEffect(() => {
+    setDeleted((prev) => (prev.length === 0 ? prev : []))
+  }, [members, groupFacts])
+
   if (error) return <LoadFailure message={t('memoryLoadError')} code={error} />
 
   const isVisible = (fact: RememberedFact) => !deleted.includes(fact.path)
@@ -132,6 +144,7 @@ export default function GroupDetails({
       .run(async () => {
         await deleteFact(db, path)
         setDeleted((prev) => [...prev, path])
+        setRefreshToken((token) => token + 1)
       })
       .finally(() => setDeleting(null))
   }
@@ -342,7 +355,9 @@ export default function GroupDetails({
                   {questionsFor === member.contactId && (
                     <div className="flex flex-col gap-3 border-t border-line pt-2">
                       {allQuestions.map((question) => {
-                        const existing = member.facts.find((f) => f.promptId === question.id)
+                        const existing = member.facts.find(
+                          (f) => f.promptId === question.id && isVisible(f),
+                        )
                         return (
                           <QuestionRow
                             key={question.id}

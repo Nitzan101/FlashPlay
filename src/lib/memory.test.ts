@@ -370,6 +370,20 @@ describe('setContactQuestionAnswer', () => {
     ).toBe(false)
   })
 
+  // The host can also delete this fact from the person's list (deleteFact),
+  // and then answer the question again - found live, 2026-09-23.
+  it('writes the answer again after its fact was deleted from the list', async () => {
+    const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    const factPath = `${paths.contactFacts(HOST, contactIds[PLAYER])}/profile_hobby`
+    await setContactQuestionAnswer(asHost(), HOST, contactIds[PLAYER], HOBBY, 'להכין שניצלים')
+    await deleteFact(asHost(), factPath)
+
+    await setContactQuestionAnswer(asHost(), HOST, contactIds[PLAYER], HOBBY, 'לאפות')
+
+    const fact = (await getDoc(doc(asHost(), factPath))).data() as FactDoc
+    expect(fact.text).toBe('התחביב שלך: לאפות')
+  })
+
   it("refuses a guest writing an answer into the host's store", async () => {
     const contactIds = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
     await expect(

@@ -77,10 +77,24 @@ export default function QuestionRow({
 }) {
   const { t } = useTranslation()
   const options = question.options ?? []
+  const stored = composeAnswer(question.kind, initialSelection(question, initialAnswer))
   const [selection, setSelection] = useState(() => initialSelection(question, initialAnswer))
-  const [saved, setSaved] = useState<Answer>(() =>
-    composeAnswer(question.kind, initialSelection(question, initialAnswer)),
-  )
+  const [saved, setSaved] = useState<Answer>(stored)
+
+  // The stored answer can change under this row - on the details screen the
+  // host can delete the same fact from the person's list. When it changes to
+  // something this row did not save itself, adopt it; otherwise the field kept
+  // showing the deleted answer as "saved", with no way to save it again.
+  // Found live, 2026-09-23. A change this row caused (its own save coming
+  // back) is left alone, so it cannot wipe what is still on screen.
+  const [lastStored, setLastStored] = useState<Answer>(stored)
+  if (!sameAnswer(stored, lastStored)) {
+    setLastStored(stored)
+    if (!sameAnswer(stored, saved)) {
+      setSelection(initialSelection(question, initialAnswer))
+      setSaved(stored)
+    }
+  }
   // Focus the "אחר" box only when a tap just opened it - not when it opens
   // already filled on first render, which would pull focus down the lobby.
   const [focusCustom, setFocusCustom] = useState(false)

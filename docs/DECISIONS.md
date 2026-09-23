@@ -1765,3 +1765,28 @@ named tests: "אחר" never turning off (2 tests), picking another
 single-choice option leaving "אחר" on (1), allowing a save with empty "אחר"
 (1), and the details screen skipping the chip parsing (1). Rendered at 400px
 wide against the built CSS: every option wraps as a chip, none cut off.
+
+### 2026-09-23, fifth pass: a deleted answer that would not come back
+
+Nitzan saved an answer from a person's question list, deleted its row from
+the person's facts, and found the field still showing the answer as saved
+(so it could not be saved again), and that saving a changed answer never
+brought the row back. Two bugs. GroupDetails hid deleted facts with a
+client-side list of paths kept until remount, and a guided-question fact is
+always written to the same path (`profile_{questionId}`), so a re-saved one
+stayed hidden; the list is now cleared whenever a fresh load lands, and a
+delete triggers one. And `QuestionRow` only read its stored answer once, on
+mount; it now adopts a stored answer that changed to something it did not
+save itself, and the details screen stops feeding it a fact that has just
+been deleted.
+
+The first version of the list-clearing effect set a fresh `[]` on every run
+and hung `npm test` in an endless render loop against `App.test.tsx`'s
+`useGroupMemory` double, which returns new arrays per call - recorded in
+CLAUDE.md's pitfalls, since a hang gives no failing test to point at it.
+
+Evidence: `npm test` (158, up from 157), `npm run test:rules` (262, up from
+261 - re-writing an answer at the same path after `deleteFact`, against the
+emulator). Three mutations, each reddening the one new details-screen test:
+never clearing the deleted list, the row ignoring a changed stored answer,
+and the field still reading a just-deleted fact.

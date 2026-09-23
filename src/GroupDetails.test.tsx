@@ -238,6 +238,42 @@ describe("a person's guided questions", () => {
     )
   })
 
+  // Found live 2026-09-23, step by step: an answer saved from here appeared
+  // as a row in the person's list; deleting that row left the field still
+  // showing the answer, as already saved (so it could not be saved again),
+  // and saving a changed answer never brought the row back.
+  it('clears the field when its row is deleted, and shows the row again once re-saved', async () => {
+    const fact = {
+      path: 'users/host-uid/contacts/c1/facts/profile_hobby',
+      text: 'התחביב שלך: להכין שניצלים',
+      who: 'אלה',
+      promptId: 'hobby',
+    }
+    memoryOf([{ contactId: 'c1', name: 'אלה', facts: [fact] }])
+    render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
+    const card = within(screen.getByTestId('member-c1'))
+    fireEvent.click(card.getByRole('button', { name: 'עריכת השאלות המנחות' }))
+    expect(card.getByRole('textbox', { name: 'התחביב שלך' })).toHaveValue('להכין שניצלים')
+
+    fireEvent.click(card.getByRole('button', { name: `מחיקה - ${fact.text}` }))
+    fireEvent.click(card.getByRole('button', { name: 'כן, למחוק' }))
+
+    await waitFor(() =>
+      expect(card.getByRole('textbox', { name: 'התחביב שלך' })).toHaveValue(''),
+    )
+    expect(card.queryByText(fact.text)).not.toBeInTheDocument()
+
+    // The next load finds the fact written again, at the same fixed path.
+    memoryOf([{ contactId: 'c1', name: 'אלה', facts: [{ ...fact }] }])
+    fireEvent.change(card.getByRole('textbox', { name: 'התחביב שלך' }), {
+      target: { value: 'להכין שניצלים' },
+    })
+    fireEvent.click(card.getByRole('button', { name: 'שמירה - התחביב שלך' }))
+
+    await waitFor(() => expect(mockSetContactQuestionAnswer).toHaveBeenCalled())
+    expect(await card.findByText(fact.text)).toBeInTheDocument()
+  })
+
   // Asked 2026-09-23 why these were not "אמריקאי" like the lobby: a plain
   // field with the options crammed into its placeholder cut most of them off.
   it('shows a stored multi-choice answer as chips, and saves it back as text', async () => {
