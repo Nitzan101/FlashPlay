@@ -101,9 +101,9 @@ export default function Finale({
 
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-4">
-      <p className="text-xl font-medium">{t('gatheringOver')}</p>
+      <p className="font-display text-xl font-semibold">{t('gatheringOver')}</p>
       {winners.length > 0 && (
-        <p className="text-center text-lg">
+        <p className="font-display text-center text-lg font-medium">
           {t(
             // Hebrew has no "1 points": the singular gets its own string, the
             // same way memberCountOne does.

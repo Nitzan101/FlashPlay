@@ -37,6 +37,7 @@ import RoomPicker from './RoomPicker'
 import EmojiPicker from './EmojiPicker'
 import { PROFILE_QUESTIONS } from './content/profileQuestions'
 import { useAction } from './lib/useAction'
+import { HelpButton, useScreenTour } from './Tutorial'
 
 const STORAGE_KEY = 'flashplay.session'
 
@@ -175,6 +176,13 @@ export default function App() {
   const [editingProfile, setEditingProfile] = useState(false)
   const [editingQuestions, setEditingQuestions] = useState(false)
   const [joinEmoji, setJoinEmoji] = useState<string | null>(null)
+  useScreenTour(
+    screen.kind === 'host-landing' && !detailsOf && !editingProfile && !editingQuestions
+      ? user && !user.isAnonymous
+        ? 'home'
+        : 'welcome'
+      : null,
+  )
 
   useEffect(() => {
     if (screen.kind !== 'loading') {
@@ -379,8 +387,9 @@ export default function App() {
   }
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center">
-      <h1 className="text-3xl font-black text-accent drop-shadow-[0_0_18px_rgba(255,46,154,0.6)]">
+    <main className="relative flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center">
+      <HelpButton />
+      <h1 className="font-display text-3xl font-bold text-accent drop-shadow-glow">
         {t('appName')}
       </h1>
       <p className="text-muted">{t('tagline')}</p>
@@ -400,7 +409,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
+                className="cursor-pointer rounded-full bg-accent-2/15 px-4 py-2 text-accent-2"
               >
                 {t('retryButton')}
               </button>
@@ -420,7 +429,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
+            className="cursor-pointer rounded-full bg-accent-2/15 px-4 py-2 text-accent-2"
           >
             {t('retryButton')}
           </button>
@@ -489,7 +498,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setEditingProfile(true)}
-                className="cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+                data-tour="edit-profile"
+                className="cursor-pointer text-xs text-accent-2 rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 font-medium"
               >
                 {t('editProfileButton')}
               </button>
@@ -497,7 +507,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setEditingQuestions(true)}
-                className="cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+                data-tour="edit-questions"
+                className="cursor-pointer text-xs text-accent-2 rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 font-medium"
               >
                 {t('editQuestionsButton')}
               </button>
@@ -536,14 +547,14 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => void signOutUser()}
-                      className="cursor-pointer rounded-xl border border-danger/50 px-4 py-2 text-sm text-danger"
+                      className="cursor-pointer rounded-full bg-danger/15 px-4 py-2 text-sm text-danger"
                     >
                       {t('signOutYes')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setConfirmingSignOut(false)}
-                      className="cursor-pointer rounded-xl px-4 py-2 text-sm text-muted"
+                      className="cursor-pointer rounded-full px-4 py-2 text-sm text-muted"
                     >
                       {t('signOutNo')}
                     </button>
@@ -553,7 +564,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setConfirmingSignOut(true)}
-                  className="cursor-pointer text-sm text-muted underline decoration-dotted underline-offset-4"
+                  className="cursor-pointer text-sm text-muted rounded-full bg-ink/8 px-3 py-1"
                 >
                   {t('signOut')}
                 </button>
@@ -568,7 +579,8 @@ export default function App() {
             <button
               type="button"
               onClick={() => void signInWithGoogle()}
-              className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)]"
+              data-tour="sign-in"
+              className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-2 font-semibold text-white shadow-glow"
             >
               {t('signInWithGoogle')}
             </button>
@@ -625,7 +637,7 @@ export default function App() {
           <button
             type="submit"
             disabled={busy || !nameInput.trim()}
-            className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-2 font-semibold text-white shadow-glow disabled:opacity-50"
           >
             {busy ? t('joining') : t('joinButton')}
           </button>
@@ -703,14 +715,14 @@ function ProfileEditor({
               onDone()
             })
           }
-          className="grow cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+          className="grow cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
         >
           {save.busy ? t('savingProfile') : t('saveProfile')}
         </button>
         <button
           type="button"
           onClick={onDone}
-          className="cursor-pointer rounded-xl px-3 py-2 text-sm text-muted"
+          className="cursor-pointer rounded-full px-3 py-2 text-sm text-muted"
         >
           {t('addGroupCancel')}
         </button>
@@ -776,7 +788,7 @@ function CustomQuestionsEditor({
         onClick={() => setShowBuiltins((prev) => !prev)}
         className="flex w-full cursor-pointer items-center justify-between text-start"
       >
-        <span className="text-sm font-medium text-accent-2">{t('builtinQuestionsTitle')}</span>
+        <span className="font-display text-sm font-semibold text-accent-2">{t('builtinQuestionsTitle')}</span>
         <span className="text-xs text-muted">{PROFILE_QUESTIONS.length}</span>
       </button>
       {showBuiltins && (
@@ -796,7 +808,7 @@ function CustomQuestionsEditor({
       )}
 
       <div className="w-full border-t border-line pt-2">
-        <p className="text-start text-sm font-medium text-accent-2">{t('customQuestionsTitle')}</p>
+        <p className="font-display text-start text-sm font-semibold text-accent-2">{t('customQuestionsTitle')}</p>
         <p className="text-start text-xs text-muted">{t('customQuestionsHint')}</p>
       </div>
 
@@ -863,14 +875,14 @@ function CustomQuestionsEditor({
               setOptionsInput('')
             })
           }
-          className="grow cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+          className="grow cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
         >
           {add.busy ? t('savingProfile') : t('addCustomQuestion')}
         </button>
         <button
           type="button"
           onClick={onDone}
-          className="cursor-pointer rounded-xl px-3 py-2 text-sm text-muted"
+          className="cursor-pointer rounded-full px-3 py-2 text-sm text-muted"
         >
           {t('backButton')}
         </button>
@@ -910,6 +922,7 @@ function JoinByCode({
   const { t } = useTranslation()
   return (
     <div
+      data-tour="join-code"
       className={
         bordered
           ? 'flex w-full flex-col items-center gap-2 border-t border-line pt-4'
@@ -933,7 +946,7 @@ function JoinByCode({
           type="button"
           onClick={onSubmit}
           disabled={busy || !CODE_PATTERN.test(codeInput.trim())}
-          className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2 disabled:opacity-50"
+          className="cursor-pointer rounded-full bg-accent-2/15 px-4 py-2 text-accent-2 disabled:opacity-50"
         >
           {busy ? t('joining') : t('joinByCode')}
         </button>
@@ -977,7 +990,7 @@ function ImportSharedGroup({ uid, shareId }: { uid: string; shareId: string }) {
             window.history.replaceState({}, '', '/')
           })
         }
-        className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-sm text-accent-2 disabled:opacity-40"
+        className="cursor-pointer rounded-full bg-accent-2/15 px-4 py-2 text-sm text-accent-2 disabled:opacity-40"
       >
         {action.busy ? t('importingSharedGroup') : t('importSharedGroup')}
       </button>
@@ -1175,7 +1188,8 @@ function LeaveRoomControl({
       <button
         type="button"
         onClick={() => setStage(isActiveHost ? 'menu' : 'confirm-guest')}
-        className="mt-2 cursor-pointer rounded-full border border-line px-4 py-1.5 text-xs text-muted"
+        data-tour="leave-room"
+        className="mt-2 cursor-pointer rounded-full bg-ink/8 px-4 py-1.5 text-xs text-muted"
       >
         {t('leaveRoom')}
       </button>
@@ -1193,14 +1207,14 @@ function LeaveRoomControl({
           <button
             type="button"
             onClick={() => void doLeave()}
-            className="grow cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger"
+            className="grow cursor-pointer rounded-full bg-danger/15 px-3 py-2 text-sm font-medium text-danger"
           >
             {t('leaveRoomConfirmYes')}
           </button>
           <button
             type="button"
             onClick={() => setStage('idle')}
-            className="grow cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
+            className="grow cursor-pointer rounded-full bg-ink/8 px-3 py-2 text-sm text-muted"
           >
             {t('leaveRoomConfirmNo')}
           </button>
@@ -1217,21 +1231,21 @@ function LeaveRoomControl({
           <button
             type="button"
             onClick={() => setStage('confirm-close')}
-            className="cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger"
+            className="cursor-pointer rounded-full bg-danger/15 px-3 py-2 text-sm font-medium text-danger"
           >
             {t('closeRoomForEveryone')}
           </button>
           <button
             type="button"
             onClick={() => setStage('pick-transfer')}
-            className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2"
+            className="cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2"
           >
             {t('transferHostOption')}
           </button>
           <button
             type="button"
             onClick={() => setStage('idle')}
-            className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
+            className="cursor-pointer rounded-full bg-ink/8 px-3 py-2 text-sm text-muted"
           >
             {t('leaveRoomConfirmNo')}
           </button>
@@ -1249,7 +1263,7 @@ function LeaveRoomControl({
             type="button"
             disabled={action.busy}
             onClick={() => startClose()}
-            className="grow cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger disabled:opacity-50"
+            className="grow cursor-pointer rounded-full bg-danger/15 px-3 py-2 text-sm font-medium text-danger disabled:opacity-50"
           >
             {action.busy ? t('closingRoom') : t('closeRoomYes')}
           </button>
@@ -1257,7 +1271,7 @@ function LeaveRoomControl({
             type="button"
             disabled={action.busy}
             onClick={() => setStage('menu')}
-            className="grow cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted disabled:opacity-50"
+            className="grow cursor-pointer rounded-full bg-ink/8 px-3 py-2 text-sm text-muted disabled:opacity-50"
           >
             {t('backToOptions')}
           </button>
@@ -1290,7 +1304,7 @@ function LeaveRoomControl({
                   setTarget(player)
                   setStage('confirm-transfer')
                 }}
-                className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2"
+                className="cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2"
               >
                 {player.name}
               </button>
@@ -1300,7 +1314,7 @@ function LeaveRoomControl({
         <button
           type="button"
           onClick={() => setStage('menu')}
-          className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
+          className="cursor-pointer rounded-full bg-ink/8 px-3 py-2 text-sm text-muted"
         >
           {t('backToOptions')}
         </button>
@@ -1320,7 +1334,7 @@ function LeaveRoomControl({
             type="button"
             disabled={action.busy}
             onClick={() => startTransferLeave()}
-            className="cursor-pointer rounded-xl bg-danger/15 px-3 py-2 text-sm font-medium text-danger disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-danger/15 px-3 py-2 text-sm font-medium text-danger disabled:opacity-50"
           >
             {action.busy ? t('transferringHost') : t('transferAndLeave')}
           </button>
@@ -1328,7 +1342,7 @@ function LeaveRoomControl({
             type="button"
             disabled={action.busy}
             onClick={() => void doTransferAndStay()}
-            className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2 disabled:opacity-50"
           >
             {action.busy ? t('transferringHost') : t('transferAndStay')}
           </button>
@@ -1336,7 +1350,7 @@ function LeaveRoomControl({
             type="button"
             disabled={action.busy}
             onClick={() => setStage('pick-transfer')}
-            className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-ink/8 px-3 py-2 text-sm text-muted disabled:opacity-50"
           >
             {t('backToOptions')}
           </button>
@@ -1378,7 +1392,7 @@ function LeaveRoomControl({
               setSkippingSave(false)
               void action.run(() => finish(pendingAction, groupNameInput.trim()))
             }}
-            className="cursor-pointer rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 shadow-glow"
           >
             {action.busy && !skippingSave ? t('savingGroup') : t('saveGroup')}
           </button>
@@ -1390,7 +1404,7 @@ function LeaveRoomControl({
               setSkippingSave(true)
               void action.run(() => finish(pendingAction))
             }}
-            className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-ink/8 px-3 py-2 text-sm text-muted disabled:opacity-50"
           >
             {action.busy && skippingSave
               ? pendingAction === 'close'
@@ -1422,14 +1436,14 @@ function LeaveRoomControl({
           <button
             type="button"
             onClick={() => void doLeave(effectiveGroupId)}
-            className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2"
+            className="cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2"
           >
             {t('viewGroupNowYes')}
           </button>
           <button
             type="button"
             onClick={() => void doLeave()}
-            className="cursor-pointer rounded-xl border border-line px-3 py-2 text-sm text-muted"
+            className="cursor-pointer rounded-full bg-ink/8 px-3 py-2 text-sm text-muted"
           >
             {t('viewGroupNowLater')}
           </button>

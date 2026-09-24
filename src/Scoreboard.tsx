@@ -25,7 +25,7 @@ export default function Scoreboard({ players, scores, title }: ScoreboardProps) 
       <p className="mb-1 text-sm font-medium text-accent-3">{title}</p>
       {ranked.map((player) => (
         <p key={player.id} className="flex justify-between text-sm">
-          <span>{player.name}</span>
+          <span className="font-display font-medium">{player.name}</span>
           <span className="font-medium">{t('pointsValue', { points: player.points })}</span>
         </p>
       ))}

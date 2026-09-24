@@ -50,16 +50,22 @@ export default function RoomPicker({
     <div className="flex w-full flex-col gap-3">
       <p className="text-start text-sm text-muted">{t('chooseRoomTitle')}</p>
 
-      <div className="flex w-full flex-col gap-2" role="radiogroup" aria-label={t('chooseRoomTitle')}>
+      <div
+        className="flex w-full flex-col gap-2"
+        role="radiogroup"
+        aria-label={t('chooseRoomTitle')}
+        data-tour="room-picker"
+      >
         <Option
           label={t('newRoomOption')}
           hint={t('newRoomHint')}
           selected={effectiveSelection === null}
           onSelect={() => setSelected(null)}
         />
-        {groups.map((group) => (
+        {groups.map((group, i) => (
           <Option
             key={group.id}
+            detailsTourId={i === 0 ? 'group-details' : undefined}
             label={group.name}
             selected={effectiveSelection === group.id}
             onSelect={() => setSelected(group.id)}
@@ -106,7 +112,7 @@ export default function RoomPicker({
             <button
               type="submit"
               disabled={add.busy || !newName.trim()}
-              className="grow cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+              className="grow cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
             >
               {t('addGroupSave')}
             </button>
@@ -116,7 +122,7 @@ export default function RoomPicker({
                 setAdding(false)
                 setNewName('')
               }}
-              className="cursor-pointer rounded-xl px-3 py-2 text-sm text-muted"
+              className="cursor-pointer rounded-full px-3 py-2 text-sm text-muted"
             >
               {t('addGroupCancel')}
             </button>
@@ -140,7 +146,8 @@ export default function RoomPicker({
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="cursor-pointer self-start text-sm text-accent-2 underline decoration-dotted underline-offset-4"
+          data-tour="add-group"
+          className="cursor-pointer self-start text-sm text-accent-2 rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 font-medium"
         >
           + {t('addGroup')}
         </button>
@@ -149,8 +156,9 @@ export default function RoomPicker({
       <button
         type="button"
         onClick={() => onOpenRoom(effectiveSelection)}
+        data-tour="open-room"
         disabled={busy}
-        className="cursor-pointer rounded-xl bg-accent px-4 py-3 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
+        className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-3 font-semibold text-white shadow-glow disabled:opacity-50"
       >
         {busy ? t('creatingRoom') : t('createRoom')}
       </button>
@@ -170,6 +178,7 @@ function Option({
   onSelect,
   onDetails,
   detailsLabel,
+  detailsTourId,
 }: {
   label: string
   hint?: string
@@ -177,6 +186,7 @@ function Option({
   onSelect: () => void
   onDetails?: () => void
   detailsLabel?: string
+  detailsTourId?: string
 }) {
   return (
     <div className="flex w-full items-stretch gap-2">
@@ -210,7 +220,8 @@ function Option({
         <button
           type="button"
           onClick={onDetails}
-          className="shrink-0 cursor-pointer rounded-xl border border-line px-3 text-sm text-muted"
+          data-tour={detailsTourId}
+          className="shrink-0 cursor-pointer rounded-full bg-ink/8 px-3 text-sm text-muted"
         >
           {detailsLabel}
         </button>

@@ -1,10 +1,12 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import './i18n'
 import { signOutUser, useAuthUser } from './lib/auth'
+import { TOURS, tourSeenKey } from './lib/tutorial'
+import { TOUR_START_DELAY_MS, TutorialProvider } from './Tutorial'
 
 vi.mock('./lib/auth', () => ({
   signInWithGoogle: vi.fn(),
@@ -896,5 +898,81 @@ describe('the host leaving a room', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'העברת הניהול למישהו אחר' }))
 
     expect(await screen.findByText('אין עוד משתתפים בחדר להעביר אליהם')).toBeInTheDocument()
+  })
+})
+
+// The tours find their controls by `data-tour`; a renamed or dropped anchor
+// silently removes a stop rather than failing, so each screen's anchors are
+// checked against the tour that points at them.
+describe('in-app help', () => {
+  const missingStops = (tour: keyof typeof TOURS) =>
+    TOURS[tour].map((step) => step.target).filter((target) => !document.querySelector(`[data-tour="${target}"]`))
+
+  it('has every control of the signed-out tour on screen', () => {
+    mockedUseAuthUser.mockReturnValue({ user: null, loading: false, redirectError: null })
+    render(<App />)
+    expect(missingStops('welcome')).toEqual([])
+  })
+
+  it("has every control of the signed-in host's home tour on screen", () => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockSavedGroups.mockReturnValue({
+      groups: [{ id: 'group-1', name: 'המשפחה', memberContactIds: [], createdAt: 0 }],
+      loading: false,
+      error: null,
+    })
+    render(<App />)
+    expect(missingStops('home')).toEqual([])
+  })
+
+  it("has the host lobby tour's controls on screen once a room is open", async () => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'host-uid', displayName: 'דוד', email: 'david@example.com' } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockCreateRoom.mockResolvedValue({ sessionId: 'session-1', roomCode: '1234' })
+    mockJoinRoom.mockResolvedValue(undefined)
+    mockUseSession.mockReturnValue({
+      session: {
+        phase: 'lobby',
+        currentGameId: null,
+        hostUid: 'host-uid',
+        originalHostUid: 'host-uid',
+        groupId: null,
+        contactIds: {},
+      },
+      error: null,
+    })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'פתיחת חדר' }))
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
+
+    // "link a known player" only appears for a saved group with an
+    // unrecognised name in the room - the tour leaves it out otherwise.
+    expect(missingStops('lobbyHost')).toEqual(['link-players'])
+  })
+
+  it('starts the welcome tour by itself on a first visit, from the real screen', () => {
+    vi.useFakeTimers()
+    try {
+      localStorage.removeItem(tourSeenKey('welcome'))
+      mockedUseAuthUser.mockReturnValue({ user: null, loading: false, redirectError: null })
+      render(
+        <TutorialProvider>
+          <App />
+        </TutorialProvider>,
+      )
+      act(() => vi.advanceTimersByTime(TOUR_START_DELAY_MS))
+
+      expect(screen.getByRole('dialog')).toHaveTextContent('התחברות')
+      expect(screen.getByText('1 מתוך 2')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

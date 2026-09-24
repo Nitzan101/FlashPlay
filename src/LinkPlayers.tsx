@@ -58,13 +58,13 @@ export default function LinkPlayers({
   if (loading || members.length === 0 || unmatched.length === 0) return null
 
   return (
-    <div className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
+    <div data-tour="link-players" className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         className="flex w-full cursor-pointer items-center justify-between text-start"
       >
-        <span className="text-sm font-medium text-accent-2">{t('linkPlayersTitle')}</span>
+        <span className="font-display text-sm font-semibold text-accent-2">{t('linkPlayersTitle')}</span>
         <span className="text-xs text-muted">{unmatched.length}</span>
       </button>
 

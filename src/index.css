@@ -5,17 +5,30 @@
  * (see the FlashPlay Directions artifact). A single committed dark identity,
  * not a light/dark toggle - that idea is deliberately deferred, see
  * BACKLOG.md, "a light/colourful second theme".
+ *
+ * Palette "sunset" (warm coral and gold on plum, peach for confirmations), pill buttons and chip
+ * links - picked by Nitzan 2026-09-23 from the "Neon Lab" comparison artifact.
+ * Confirmations were mint green until 2026-09-24; Nitzan replaced it with peach
+ * after trying periwinkle/orchid (see DECISIONS.md).
+ * Every glow lives here as a token, so a palette change is this block alone.
  */
 @theme {
-  --color-bg: #12081f;
-  --color-surface: #1d1030;
-  --color-line: #352a52;
-  --color-ink: #f5f1ff;
-  --color-muted: #a99bd1;
-  --color-accent: #ff2e9a;
-  --color-accent-2: #22f0d3;
-  --color-accent-3: #d4ff3d;
-  --color-danger: #ff6b5c;
+  --color-bg: #16091a;
+  --color-surface: #241029;
+  --color-line: #452447;
+  --color-ink: #fff2ec;
+  --color-muted: #cfa7b9;
+  --color-accent: #ff6a3d;
+  --color-accent-deep: #ff2e6e;
+  --color-accent-2: #ffc53d;
+  --color-accent-3: #ffb894;
+  --color-danger: #ff4f75;
+  --shadow-glow: 0 6px 22px rgba(255, 106, 61, 0.38);
+  --drop-shadow-glow: 0 0 18px rgba(255, 106, 61, 0.6);
+  --drop-shadow-glow-2: 0 0 10px rgba(255, 197, 61, 0.5);
+  /* Titles and people's names only (Nitzan's pick, 2026-09-23, round two of
+     the Neon Lab) - running text, answers and questions stay in Rubik. */
+  --font-display: 'Fredoka', 'Rubik', system-ui, 'Segoe UI', Arial, sans-serif;
 }
 
 /* Hebrew-first product. The document is RTL; English identifiers and numbers
@@ -29,7 +42,7 @@ body {
      reads as broken on a phone, and every screen here scrolls at some point
      (the roster, the memory list, the finale). */
   background:
-    radial-gradient(120% 60% at 50% 0%, #241242 0%, transparent 60%), var(--color-bg);
+    radial-gradient(120% 60% at 50% 0%, #3b1530 0%, transparent 60%), var(--color-bg);
   background-attachment: fixed;
   color: var(--color-ink);
   min-height: 100dvh;
@@ -38,7 +51,10 @@ body {
 /* The default blue focus ring is invisible against this background - most
    screens here are host controls tapped mid-gathering, not keyboard-driven,
    but a visible focus state still matters for anyone who does tab through. */
-:focus-visible {
+/* Not on tabindex="-1": a dialog container focused by script (the help
+   cards, a tour bubble) is not something the viewer tabbed to, and a ring
+   around the whole panel reads as a glitch. */
+:focus-visible:not([tabindex='-1']) {
   outline: 2px solid var(--color-accent-2);
   outline-offset: 2px;
 }

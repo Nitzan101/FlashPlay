@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import GroupDetails from './GroupDetails'
 import { PROFILE_QUESTIONS } from './content/profileQuestions'
 import './i18n'
+import { TOURS } from './lib/tutorial'
 import { SAVED_NOTICE_MS } from './lib/useFlash'
 
 vi.mock('./lib/firebase', () => ({ db: {}, auth: {}, firebaseApp: {} }))
@@ -58,27 +59,33 @@ function memoryOf(members: { contactId: string; name: string; facts: unknown[] }
   })
 }
 
-describe("adding a fact from a person's own card", () => {
+/** Opens one person's own page from the group page's list, and returns it. */
+function openPerson(contactId: string, name: string) {
+  fireEvent.click(within(screen.getByTestId(`member-${contactId}`)).getByRole('button', { name: new RegExp(`^${name}`) }))
+  return within(screen.getByTestId('person-page'))
+}
+
+describe("adding a fact from a person's own page", () => {
   it('is closed by default, and opens an input on tap', () => {
     memoryOf([{ contactId: 'c1', name: 'דוד', facts: [] }])
     render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
-    const davidCard = within(screen.getByTestId('member-c1'))
+    const davidPage = openPerson('c1', 'דוד')
 
-    expect(davidCard.queryByPlaceholderText('מה כדאי לזכור?')).not.toBeInTheDocument()
-    fireEvent.click(davidCard.getByRole('button', { name: '+ הוספת פרט' }))
-    expect(davidCard.getByPlaceholderText('מה כדאי לזכור?')).toBeInTheDocument()
+    expect(davidPage.queryByPlaceholderText('מה כדאי לזכור?')).not.toBeInTheDocument()
+    fireEvent.click(davidPage.getByRole('button', { name: '+ הוספת פרט' }))
+    expect(davidPage.getByPlaceholderText('מה כדאי לזכור?')).toBeInTheDocument()
   })
 
   it("saves the note against that person's own contact id", async () => {
     memoryOf([{ contactId: 'c1', name: 'דוד', facts: [] }])
     render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
-    const davidCard = within(screen.getByTestId('member-c1'))
+    const davidPage = openPerson('c1', 'דוד')
 
-    fireEvent.click(davidCard.getByRole('button', { name: '+ הוספת פרט' }))
-    fireEvent.change(davidCard.getByPlaceholderText('מה כדאי לזכור?'), {
+    fireEvent.click(davidPage.getByRole('button', { name: '+ הוספת פרט' }))
+    fireEvent.change(davidPage.getByPlaceholderText('מה כדאי לזכור?'), {
       target: { value: 'אוהב פיצה אננס' },
     })
-    fireEvent.click(davidCard.getByRole('button', { name: 'שמירה' }))
+    fireEvent.click(davidPage.getByRole('button', { name: 'שמירה' }))
 
     await waitFor(() =>
       expect(mockAddManualFact).toHaveBeenCalledWith(
@@ -90,23 +97,49 @@ describe("adding a fact from a person's own card", () => {
     )
     expect(mockAddManualGroupFact).not.toHaveBeenCalled()
   })
+})
 
-  it('opens at most one box at a time, across two different people', () => {
+// Asked for directly, 2026-09-23: with any real history, every person's
+// facts and questions stacked on one page became a wall.
+describe('the group page lists people; each person has their own page', () => {
+  const fact = (path: string, text: string, who: string) => ({ path, text, who, promptId: null })
+
+  it('shows each name with how much is saved, not the facts themselves', () => {
     memoryOf([
-      { contactId: 'c1', name: 'דוד', facts: [] },
-      { contactId: 'c2', name: 'שרה', facts: [] },
+      {
+        contactId: 'c1',
+        name: 'דוד',
+        facts: [fact('p1', 'אוהב פיצה', 'דוד'), fact('p2', 'גר בחיפה', 'דוד')],
+      },
+      { contactId: 'c2', name: 'שרה', facts: [fact('p3', 'מנגנת', 'שרה')] },
+      { contactId: 'c3', name: 'אלה', facts: [] },
     ])
     render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
 
-    const [davidToggle, saraToggle] = screen.getAllByRole('button', { name: '+ הוספת פרט' })
-    fireEvent.click(davidToggle)
-    expect(screen.getAllByPlaceholderText('מה כדאי לזכור?')).toHaveLength(1)
+    expect(within(screen.getByTestId('member-c1')).getByText('2 פרטים')).toBeInTheDocument()
+    expect(within(screen.getByTestId('member-c2')).getByText('פרט אחד')).toBeInTheDocument()
+    expect(within(screen.getByTestId('member-c3')).getByText('טרם נשמר מידע')).toBeInTheDocument()
+    expect(screen.queryByText('אוהב פיצה')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'עריכת השאלות המנחות' })).not.toBeInTheDocument()
+  })
 
-    fireEvent.click(saraToggle)
-    // Opening the second closed the first rather than allowing both at once -
-    // a half-typed note left behind in another row would be easy to lose
-    // track of.
-    expect(screen.getAllByPlaceholderText('מה כדאי לזכור?')).toHaveLength(1)
+  it("opens one person's page with only their facts, and goes back to the list", () => {
+    memoryOf([
+      { contactId: 'c1', name: 'דוד', facts: [fact('p1', 'אוהב פיצה', 'דוד')] },
+      { contactId: 'c2', name: 'שרה', facts: [fact('p3', 'מנגנת', 'שרה')] },
+    ])
+    render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
+
+    const page = openPerson('c1', 'דוד')
+
+    expect(page.getByText('אוהב פיצה')).toBeInTheDocument()
+    expect(screen.queryByText('מנגנת')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('member-c2')).not.toBeInTheDocument()
+
+    fireEvent.click(page.getAllByRole('button', { name: /חזרה לקבוצה/ })[0])
+
+    expect(screen.queryByTestId('person-page')).not.toBeInTheDocument()
+    expect(screen.getByTestId('member-c2')).toBeInTheDocument()
   })
 })
 
@@ -191,13 +224,13 @@ describe("a person's guided questions", () => {
   it('lists every question - built-in and the host\'s own - once opened', () => {
     memoryOf([{ contactId: 'c1', name: 'דוד', facts: [] }])
     render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
-    const davidCard = within(screen.getByTestId('member-c1'))
+    const davidPage = openPerson('c1', 'דוד')
 
-    expect(davidCard.queryByText('התחביב שלך')).not.toBeInTheDocument()
-    fireEvent.click(davidCard.getByRole('button', { name: 'עריכת השאלות המנחות' }))
+    expect(davidPage.queryByText('התחביב שלך')).not.toBeInTheDocument()
+    fireEvent.click(davidPage.getByRole('button', { name: 'עריכת השאלות המנחות' }))
 
-    expect(davidCard.getByText('התחביב שלך')).toBeInTheDocument()
-    expect(davidCard.getByText('שאלה של המארח')).toBeInTheDocument()
+    expect(davidPage.getByText('התחביב שלך')).toBeInTheDocument()
+    expect(davidPage.getByText('שאלה של המארח')).toBeInTheDocument()
   })
 
   it("pre-fills an existing answer with just the answer, not the question prefix", () => {
@@ -209,23 +242,23 @@ describe("a person's guided questions", () => {
       },
     ])
     render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
-    const davidCard = within(screen.getByTestId('member-c1'))
+    const davidPage = openPerson('c1', 'דוד')
 
-    fireEvent.click(davidCard.getByRole('button', { name: 'עריכת השאלות המנחות' }))
+    fireEvent.click(davidPage.getByRole('button', { name: 'עריכת השאלות המנחות' }))
 
-    expect(davidCard.getByRole('textbox', { name: 'התחביב שלך' })).toHaveValue('ציור')
+    expect(davidPage.getByRole('textbox', { name: 'התחביב שלך' })).toHaveValue('ציור')
   })
 
   it("saves an answer against that person and that question", async () => {
     memoryOf([{ contactId: 'c1', name: 'דוד', facts: [] }])
     render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
-    const davidCard = within(screen.getByTestId('member-c1'))
+    const davidPage = openPerson('c1', 'דוד')
 
-    fireEvent.click(davidCard.getByRole('button', { name: 'עריכת השאלות המנחות' }))
-    fireEvent.change(davidCard.getByRole('textbox', { name: 'התחביב שלך' }), {
+    fireEvent.click(davidPage.getByRole('button', { name: 'עריכת השאלות המנחות' }))
+    fireEvent.change(davidPage.getByRole('textbox', { name: 'התחביב שלך' }), {
       target: { value: 'ריצה' },
     })
-    fireEvent.click(davidCard.getByRole('button', { name: 'שמירה - התחביב שלך' }))
+    fireEvent.click(davidPage.getByRole('button', { name: 'שמירה - התחביב שלך' }))
 
     await waitFor(() =>
       expect(mockSetContactQuestionAnswer).toHaveBeenCalledWith(
@@ -251,7 +284,7 @@ describe("a person's guided questions", () => {
     }
     memoryOf([{ contactId: 'c1', name: 'אלה', facts: [fact] }])
     render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
-    const card = within(screen.getByTestId('member-c1'))
+    const card = openPerson('c1', 'אלה')
     fireEvent.click(card.getByRole('button', { name: 'עריכת השאלות המנחות' }))
     expect(card.getByRole('textbox', { name: 'התחביב שלך' })).toHaveValue('להכין שניצלים')
 
@@ -289,19 +322,19 @@ describe("a person's guided questions", () => {
       },
     ])
     render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
-    const davidCard = within(screen.getByTestId('member-c1'))
-    fireEvent.click(davidCard.getByRole('button', { name: 'עריכת השאלות המנחות' }))
-    const row = within(davidCard.getByRole('group', { name: multi.text }))
+    const davidPage = openPerson('c1', 'דוד')
+    fireEvent.click(davidPage.getByRole('button', { name: 'עריכת השאלות המנחות' }))
+    const row = within(davidPage.getByRole('group', { name: multi.text }))
 
     expect(row.getByRole('button', { name: first })).toHaveAttribute('aria-pressed', 'true')
     expect(row.getByRole('button', { name: second })).toHaveAttribute('aria-pressed', 'false')
     expect(row.getByRole('button', { name: 'אחר' })).toHaveAttribute('aria-pressed', 'true')
-    expect(davidCard.getByRole('textbox', { name: `אחר - ${multi.text}` })).toHaveValue(
+    expect(davidPage.getByRole('textbox', { name: `אחר - ${multi.text}` })).toHaveValue(
       'משהו משלי',
     )
 
     fireEvent.click(row.getByRole('button', { name: third }))
-    fireEvent.click(davidCard.getByRole('button', { name: `שמירה - ${multi.text}` }))
+    fireEvent.click(davidPage.getByRole('button', { name: `שמירה - ${multi.text}` }))
 
     await waitFor(() =>
       expect(mockSetContactQuestionAnswer).toHaveBeenCalledWith(
@@ -327,20 +360,20 @@ describe("a person's guided questions", () => {
         },
       ])
       render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
-      const davidCard = within(screen.getByTestId('member-c1'))
-      fireEvent.click(davidCard.getByRole('button', { name: 'עריכת השאלות המנחות' }))
+      const davidPage = openPerson('c1', 'דוד')
+      fireEvent.click(davidPage.getByRole('button', { name: 'עריכת השאלות המנחות' }))
 
       // An answer that was already there is not a save that just happened.
-      expect(davidCard.queryByText('נשמר ✓')).not.toBeInTheDocument()
+      expect(davidPage.queryByText('נשמר ✓')).not.toBeInTheDocument()
 
-      fireEvent.change(davidCard.getByRole('textbox', { name: 'התחביב שלך' }), {
+      fireEvent.change(davidPage.getByRole('textbox', { name: 'התחביב שלך' }), {
         target: { value: 'ריצה' },
       })
-      fireEvent.click(davidCard.getByRole('button', { name: 'שמירה - התחביב שלך' }))
-      expect(await davidCard.findByText('נשמר ✓')).toBeInTheDocument()
+      fireEvent.click(davidPage.getByRole('button', { name: 'שמירה - התחביב שלך' }))
+      expect(await davidPage.findByText('נשמר ✓')).toBeInTheDocument()
 
       act(() => vi.advanceTimersByTime(SAVED_NOTICE_MS))
-      expect(davidCard.queryByText('נשמר ✓')).not.toBeInTheDocument()
+      expect(davidPage.queryByText('נשמר ✓')).not.toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }
@@ -368,5 +401,24 @@ describe('adding a fact to the group itself', () => {
       ),
     )
     expect(mockAddManualFact).not.toHaveBeenCalled()
+  })
+})
+
+// See App.test.tsx, "in-app help": a missing anchor silently drops a stop.
+describe('in-app help anchors', () => {
+  const missingStops = (tour: 'group' | 'person') =>
+    TOURS[tour].map((step) => step.target).filter((target) => !document.querySelector(`[data-tour="${target}"]`))
+
+  it("has every control of the group page's tour on screen", () => {
+    memoryOf([{ contactId: 'c1', name: 'דוד', facts: [] }])
+    render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} onOpenRoom={() => {}} />)
+    expect(missingStops('group')).toEqual([])
+  })
+
+  it("has every control of a person page's tour on screen", () => {
+    memoryOf([{ contactId: 'c1', name: 'דוד', facts: [] }])
+    render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={() => {}} />)
+    openPerson('c1', 'דוד')
+    expect(missingStops('person')).toEqual([])
   })
 })

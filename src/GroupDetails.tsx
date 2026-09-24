@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import HostButton from './HostButton'
 import LoadFailure from './LoadFailure'
@@ -25,6 +25,7 @@ import {
 import type { ProfileQuestion } from './lib/model'
 import { useCustomQuestions } from './lib/profileQuestions'
 import { useAction } from './lib/useAction'
+import { useScreenTour } from './Tutorial'
 
 interface GroupDetailsProps {
   hostUid: string
@@ -111,6 +112,13 @@ export default function GroupDetails({
   // Whose guided-question list is open - at most one person at a time, since
   // each list is the whole question bank and two open at once is a wall.
   const [questionsFor, setQuestionsFor] = useState<string | null>(null)
+  // The person whose own page is open, if any. The group page lists names
+  // only; everything about one person lives on their page - asked for
+  // directly, 2026-09-23, since every person's facts and questions stacked on
+  // one page becomes a wall once a group has any real history.
+  const [openPerson, setOpenPerson] = useState<string | null>(null)
+  const listScroll = useRef(0)
+  const scrolledOnce = useRef(false)
   const { questions: customQuestions } = useCustomQuestions(hostUid)
   const allQuestions: ProfileQuestion[] = [...PROFILE_QUESTIONS, ...customQuestions]
 
@@ -132,6 +140,22 @@ export default function GroupDetails({
   useEffect(() => {
     setDeleted((prev) => (prev.length === 0 ? prev : []))
   }, [members, groupFacts])
+
+  // A person's page opens at its top; going back returns to where the list
+  // was, not to the top of the group page. Skipped on mount.
+  useEffect(() => {
+    if (!scrolledOnce.current) {
+      scrolledOnce.current = true
+      return
+    }
+    window.scrollTo(0, openPerson ? 0 : listScroll.current)
+  }, [openPerson])
+
+  const personPageOpen =
+    openPerson !== null &&
+    !removedMembers.includes(openPerson) &&
+    members.some((member) => member.contactId === openPerson)
+  useScreenTour(loading || wiped || error ? null : personPageOpen ? 'person' : 'group')
 
   if (error) return <LoadFailure message={t('memoryLoadError')} code={error} />
 
@@ -160,14 +184,14 @@ export default function GroupDetails({
             <button
               type="button"
               onClick={() => removeFact(fact.path)}
-              className="cursor-pointer rounded-lg bg-danger/15 px-2 py-1 text-danger"
+              className="cursor-pointer rounded-full bg-danger/15 px-2 py-1 text-danger"
             >
               {t('deleteFactYes')}
             </button>
             <button
               type="button"
               onClick={() => setConfirmingFact(null)}
-              className="cursor-pointer rounded-lg px-2 py-1 text-muted"
+              className="cursor-pointer rounded-full px-2 py-1 text-muted"
             >
               {t('deleteFactNo')}
             </button>
@@ -178,7 +202,7 @@ export default function GroupDetails({
             onClick={() => setConfirmingFact(fact.path)}
             disabled={deleting === fact.path}
             aria-label={`${t('deleteFact')} - ${fact.text}`}
-            className="shrink-0 cursor-pointer rounded-lg border border-line px-2 py-1 text-xs text-muted disabled:opacity-50"
+            className="shrink-0 cursor-pointer rounded-full bg-ink/8 px-2 py-1 text-xs text-muted disabled:opacity-50"
           >
             {t('deleteFact')}
           </button>
@@ -207,9 +231,147 @@ export default function GroupDetails({
     })
   }
 
+  function openPersonPage(contactId: string) {
+    listScroll.current = window.scrollY
+    setAddingTo(null)
+    setQuestionsFor(null)
+    setOpenPerson(contactId)
+  }
+
+  function closePersonPage() {
+    setAddingTo(null)
+    setQuestionsFor(null)
+    setOpenPerson(null)
+  }
+
+  const factErrors = (
+    <>
+      {remove.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
+      {remove.error && (
+        <p role="alert" className="text-xs text-danger">
+          {t('deleteFactError')}{' '}
+          <span dir="ltr" className="font-mono">
+            ({remove.error})
+          </span>
+        </p>
+      )}
+      {addFact.error && (
+        <p role="alert" className="text-xs text-danger">
+          {t('addFactError')}{' '}
+          <span dir="ltr" className="font-mono">
+            ({addFact.error})
+          </span>
+        </p>
+      )}
+    </>
+  )
+
+  // Falls back to the group page on its own if this person disappears (deleted,
+  // or the whole group's memory wiped) while their page is open.
+  const person =
+    openPerson && !removedMembers.includes(openPerson)
+      ? members.find((member) => member.contactId === openPerson)
+      : undefined
+
+  if (person && !loading && !wiped) {
+    const facts = person.facts.filter(isVisible)
+    const backButton = (
+      <button
+        type="button"
+        onClick={closePersonPage}
+        data-tour="back-to-group"
+        className="cursor-pointer self-start text-sm text-accent-2 rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 font-medium"
+      >
+        › {t('backToGroup')}
+      </button>
+    )
+    return (
+      <div data-testid="person-page" className="flex w-full max-w-sm flex-col items-center gap-3">
+        {backButton}
+        <div className="flex w-full flex-col items-center gap-0.5">
+          <p className="text-xs text-muted">{groupName}</p>
+          <p className="font-display text-lg font-semibold text-accent-2">{person.name}</p>
+        </div>
+
+        <div data-tour="person-facts" className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
+          {facts.length === 0 ? (
+            <p className="text-start text-xs text-muted">{t('memberNoFacts')}</p>
+          ) : (
+            facts.map((fact) => <FactRow key={fact.path} fact={fact} />)
+          )}
+          <AddFactRow
+            isOpen={addingTo === person.contactId}
+            value={factInput}
+            busy={addFact.busy}
+            onOpen={() => openAddFact(person.contactId)}
+            onChange={setFactInput}
+            onSave={() => saveFact(person.contactId)}
+            onCancel={() => setAddingTo(null)}
+          />
+        </div>
+
+        {/* The guided questions, per person - asked for directly: "רשימת
+            השאלות עבור אדם בלחיצה על עריכתו". Every question in the bank
+            (built-in and the host's own), each with this person's current
+            answer ready to edit. Still collapsed at first: the whole bank is
+            long, and the facts above are what the page is usually opened for. */}
+        <div data-tour="person-questions" className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
+          <button
+            type="button"
+            onClick={() =>
+              setQuestionsFor((current) =>
+                current === person.contactId ? null : person.contactId,
+              )
+            }
+            aria-expanded={questionsFor === person.contactId}
+            className="cursor-pointer self-start text-xs text-accent-2 rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 font-medium"
+          >
+            {questionsFor === person.contactId ? t('hideMemberQuestions') : t('editMemberQuestions')}
+          </button>
+          {questionsFor === person.contactId && (
+            <div className="flex flex-col gap-3 border-t border-line pt-2">
+              {allQuestions.map((question) => {
+                const existing = person.facts.find(
+                  (f) => f.promptId === question.id && isVisible(f),
+                )
+                return (
+                  <QuestionRow
+                    key={question.id}
+                    question={question}
+                    initialAnswer={
+                      existing
+                        ? answerFromText(question, answerFromFactText(existing.text, question.text))
+                        : undefined
+                    }
+                    onSave={async (answer) => {
+                      await setContactQuestionAnswer(
+                        db,
+                        hostUid,
+                        person.contactId,
+                        question,
+                        answerToText(answer),
+                      )
+                      setRefreshToken((token) => token + 1)
+                    }}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {factErrors}
+
+        <HostButton busy={false} onClick={closePersonPage}>
+          {t('backToGroup')}
+        </HostButton>
+      </div>
+    )
+  }
+
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-3">
-      <p className="text-lg font-medium">{groupName || t('memoryTitle')}</p>
+      <p className="font-display text-lg font-semibold">{groupName || t('memoryTitle')}</p>
 
       {loading && <p className="text-muted">{t('loadingRound')}</p>}
 
@@ -218,7 +380,7 @@ export default function GroupDetails({
           {/* Renaming lives here rather than on the list: the list is a
               chooser, and an editable field in every row of a chooser invites
               exactly the mis-tap the confirmations below exist to prevent. */}
-          <div className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
+          <div data-tour="rename-group" className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
             <label htmlFor="group-name" className="text-start text-xs text-muted">
               {t('renameGroupLabel')}
             </label>
@@ -242,7 +404,7 @@ export default function GroupDetails({
                     setRenamed(true)
                   })
                 }
-                className="shrink-0 cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+                className="shrink-0 cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
               >
                 {t('renameGroupSave')}
               </button>
@@ -265,7 +427,7 @@ export default function GroupDetails({
           </div>
 
           {onOpenRoom && (
-            <HostButton busy={false} onClick={onOpenRoom} primary>
+            <HostButton busy={false} onClick={onOpenRoom} primary tourId="group-open-room">
               {t('openRoomForGroup')}
             </HostButton>
           )}
@@ -274,116 +436,64 @@ export default function GroupDetails({
           {members.length === 0 && <p className="text-sm text-muted">{t('noMembersYet')}</p>}
           {members
             .filter((member) => !removedMembers.includes(member.contactId))
-            .map((member) => {
-              const facts = member.facts.filter(isVisible)
+            .map((member, memberIndex) => {
+              const factCount = member.facts.filter(isVisible).length
               return (
                 <div
                   key={member.contactId}
                   data-testid={`member-${member.contactId}`}
-                  className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3"
+                  data-tour={memberIndex === 0 ? 'member-row' : undefined}
+                  className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-line bg-surface/40 p-3"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-start font-medium text-accent-2">{member.name}</p>
-                    {confirmingMemberDelete === member.contactId ? (
-                      <span className="flex shrink-0 items-center gap-2 text-xs">
-                        <button
-                          type="button"
-                          disabled={removeMember.busy}
-                          onClick={() =>
-                            void removeMember
-                              .run(async () => {
-                                await deleteContact(db, hostUid, member.contactId, groupId)
-                                setRemovedMembers((prev) => [...prev, member.contactId])
-                              })
-                              .finally(() => setConfirmingMemberDelete(null))
-                          }
-                          className="cursor-pointer rounded-lg bg-danger/15 px-2 py-1 text-danger"
-                        >
-                          {t('deleteMemberYes')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmingMemberDelete(null)}
-                          className="cursor-pointer rounded-lg px-2 py-1 text-muted"
-                        >
-                          {t('deleteFactNo')}
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmingMemberDelete(member.contactId)}
-                        aria-label={`${t('deleteMember')} - ${member.name}`}
-                        className="shrink-0 cursor-pointer rounded-lg border border-danger/40 px-2 py-1 text-xs text-danger"
-                      >
-                        {t('deleteMember')}
-                      </button>
-                    )}
-                  </div>
-                  {facts.length === 0 ? (
-                    <p className="text-start text-xs text-muted">{t('memberNoFacts')}</p>
-                  ) : (
-                    facts.map((fact) => <FactRow key={fact.path} fact={fact} />)
-                  )}
-                  <AddFactRow
-                    isOpen={addingTo === member.contactId}
-                    value={factInput}
-                    busy={addFact.busy}
-                    onOpen={() => openAddFact(member.contactId)}
-                    onChange={setFactInput}
-                    onSave={() => saveFact(member.contactId)}
-                    onCancel={() => setAddingTo(null)}
-                  />
-                  {/* The guided questions, per person - asked for directly:
-                      "רשימת השאלות עבור אדם בלחיצה על עריכתו". Every question
-                      in the bank (built-in and the host's own), each with that
-                      person's current answer ready to edit. */}
                   <button
                     type="button"
-                    onClick={() =>
-                      setQuestionsFor((current) =>
-                        current === member.contactId ? null : member.contactId,
-                      )
-                    }
-                    aria-expanded={questionsFor === member.contactId}
-                    className="cursor-pointer self-start text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+                    onClick={() => openPersonPage(member.contactId)}
+                    className="flex min-w-0 grow cursor-pointer items-center justify-between gap-2 text-start"
                   >
-                    {questionsFor === member.contactId
-                      ? t('hideMemberQuestions')
-                      : t('editMemberQuestions')}
+                    <span className="min-w-0 break-words font-display font-semibold text-accent-2">{member.name}</span>
+                    <span className="shrink-0 text-xs text-muted">
+                      {factCount === 0
+                        ? t('memberNoFacts')
+                        : factCount === 1
+                          ? t('memberFactCountOne')
+                          : t('memberFactCount', { count: factCount })}
+                      <span aria-hidden="true"> ‹</span>
+                    </span>
                   </button>
-                  {questionsFor === member.contactId && (
-                    <div className="flex flex-col gap-3 border-t border-line pt-2">
-                      {allQuestions.map((question) => {
-                        const existing = member.facts.find(
-                          (f) => f.promptId === question.id && isVisible(f),
-                        )
-                        return (
-                          <QuestionRow
-                            key={question.id}
-                            question={question}
-                            initialAnswer={
-                              existing
-                                ? answerFromText(
-                                    question,
-                                    answerFromFactText(existing.text, question.text),
-                                  )
-                                : undefined
-                            }
-                            onSave={async (answer) => {
-                              await setContactQuestionAnswer(
-                                db,
-                                hostUid,
-                                member.contactId,
-                                question,
-                                answerToText(answer),
-                              )
-                              setRefreshToken((token) => token + 1)
-                            }}
-                          />
-                        )
-                      })}
-                    </div>
+                  {confirmingMemberDelete === member.contactId ? (
+                    <span className="flex shrink-0 items-center gap-2 text-xs">
+                      <button
+                        type="button"
+                        disabled={removeMember.busy}
+                        onClick={() =>
+                          void removeMember
+                            .run(async () => {
+                              await deleteContact(db, hostUid, member.contactId, groupId)
+                              setRemovedMembers((prev) => [...prev, member.contactId])
+                            })
+                            .finally(() => setConfirmingMemberDelete(null))
+                        }
+                        className="cursor-pointer rounded-full bg-danger/15 px-2 py-1 text-danger"
+                      >
+                        {t('deleteMemberYes')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingMemberDelete(null)}
+                        className="cursor-pointer rounded-full px-2 py-1 text-muted"
+                      >
+                        {t('deleteFactNo')}
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingMemberDelete(member.contactId)}
+                      aria-label={`${t('deleteMember')} - ${member.name}`}
+                      className="shrink-0 cursor-pointer rounded-full bg-danger/15 px-2 py-1 text-xs text-danger"
+                    >
+                      {t('deleteMember')}
+                    </button>
                   )}
                 </div>
               )
@@ -421,14 +531,14 @@ export default function GroupDetails({
                     setRefreshToken((token) => token + 1)
                   })
                 }
-                className="shrink-0 cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+                className="shrink-0 cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
               >
                 {t('addGroupSave')}
               </button>
               <button
                 type="button"
                 onClick={() => setAddingMember(false)}
-                className="shrink-0 cursor-pointer rounded-xl px-2 py-2 text-sm text-muted"
+                className="shrink-0 cursor-pointer rounded-full px-2 py-2 text-sm text-muted"
               >
                 {t('addGroupCancel')}
               </button>
@@ -437,7 +547,8 @@ export default function GroupDetails({
             <button
               type="button"
               onClick={() => setAddingMember(true)}
-              className="cursor-pointer self-start text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+              data-tour="add-member"
+              className="cursor-pointer self-start text-xs text-accent-2 rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 font-medium"
             >
               + {t('addMember')}
             </button>
@@ -457,7 +568,7 @@ export default function GroupDetails({
             )
           )}
 
-          <div className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
+          <div data-tour="group-facts" className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
             <p className="text-start text-xs tracking-wide text-muted">{t('groupFactsTitle')}</p>
             {groupFacts.filter(isVisible).map((fact) => (
               <FactRow key={fact.path} fact={fact} showWho />
@@ -477,29 +588,13 @@ export default function GroupDetails({
 
       {wiped && <p className="text-muted">{t('memoryEmpty')}</p>}
 
-      {remove.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
-      {remove.error && (
-        <p role="alert" className="text-xs text-danger">
-          {t('deleteFactError')}{' '}
-          <span dir="ltr" className="font-mono">
-            ({remove.error})
-          </span>
-        </p>
-      )}
-      {addFact.error && (
-        <p role="alert" className="text-xs text-danger">
-          {t('addFactError')}{' '}
-          <span dir="ltr" className="font-mono">
-            ({addFact.error})
-          </span>
-        </p>
-      )}
+      {factErrors}
 
       {/* Handing the whole group to another host - a one-time copy, never a
           live link, so both sides carry on independently afterwards. See
           GroupShareDoc in model.ts for why it works this way. */}
       {!wiped && !loading && (
-        <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 p-3">
+        <div data-tour="share-group" className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 p-3">
           {shareUrl ? (
             <>
               <p className="text-start text-xs text-muted">{t('shareGroupReady')}</p>
@@ -517,7 +612,7 @@ export default function GroupDetails({
                     .then(() => setShareCopied(true))
                     .catch(() => setShareCopied(false))
                 }}
-                className="cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2"
+                className="cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2"
               >
                 {shareCopied ? t('linkCopied') : t('copyLink')}
               </button>
@@ -532,7 +627,7 @@ export default function GroupDetails({
                   setShareUrl(`${window.location.origin}/share/${shareId}`)
                 })
               }
-              className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-sm text-accent-2 disabled:opacity-40"
+              className="cursor-pointer rounded-full bg-accent-2/15 px-4 py-2 text-sm text-accent-2 disabled:opacity-40"
             >
               {share.busy ? t('sharingGroup') : t('shareGroupButton')}
             </button>
@@ -582,7 +677,8 @@ export default function GroupDetails({
               type="button"
               disabled={wipeInfo.busy}
               onClick={() => setConfirmingWipeInfo(true)}
-              className="cursor-pointer rounded-xl border border-danger/50 px-4 py-2 text-sm text-danger disabled:opacity-50"
+              data-tour="wipe-info"
+              className="cursor-pointer rounded-full bg-danger/15 px-4 py-2 text-sm text-danger disabled:opacity-50"
             >
               {t('wipeInfoButton')}
             </button>
@@ -628,7 +724,7 @@ export default function GroupDetails({
             type="button"
             disabled={remove.busy}
             onClick={() => setConfirmingDeleteGroup(true)}
-            className="cursor-pointer rounded-xl border border-danger/50 px-4 py-2 text-sm font-medium text-danger disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-danger/15 px-4 py-2 text-sm font-medium text-danger disabled:opacity-50"
           >
             {t('deleteGroupButton')}
           </button>
@@ -674,7 +770,7 @@ function AddFactRow({
       <button
         type="button"
         onClick={onOpen}
-        className="cursor-pointer self-start text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+        className="cursor-pointer self-start text-xs text-accent-2 rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 font-medium"
       >
         + {t('addFact')}
       </button>
@@ -695,14 +791,14 @@ function AddFactRow({
         type="button"
         disabled={busy || !value.trim()}
         onClick={onSave}
-        className="shrink-0 cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+        className="shrink-0 cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
       >
         {t('addFactSave')}
       </button>
       <button
         type="button"
         onClick={onCancel}
-        className="shrink-0 cursor-pointer rounded-xl px-2 py-2 text-sm text-muted"
+        className="shrink-0 cursor-pointer rounded-full px-2 py-2 text-sm text-muted"
       >
         {t('addGroupCancel')}
       </button>

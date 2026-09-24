@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
+import { TutorialProvider } from './Tutorial.tsx'
 import './i18n.ts'
 import './index.css'
 import { canonicalUrlFor } from './lib/canonicalHost.ts'
@@ -16,7 +17,9 @@ if (canonical) {
 } else {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <TutorialProvider>
+        <App />
+      </TutorialProvider>
     </StrictMode>,
   )
 }

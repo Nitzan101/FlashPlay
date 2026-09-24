@@ -200,7 +200,7 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
               sentence to defend themselves - the social moment is the point,
               not the scoring, and without it the game is a survey." */}
           {mostVoted.length > 0 && (
-            <p className="text-center text-lg font-medium">
+            <p className="font-display text-center text-lg font-semibold">
               {t('mostVotedIs', { names: mostVoted.map(nameOf).join(', ') })}
             </p>
           )}

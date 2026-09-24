@@ -108,9 +108,10 @@ export default function GuidedQuestions({ sessionId, uid, customQuestions }: Gui
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
+        data-tour="guided-questions"
         className="flex w-full cursor-pointer items-center justify-between text-start"
       >
-        <span className="font-medium text-accent-2">{t('tellUsAboutYourself')}</span>
+        <span className="font-display font-semibold text-accent-2">{t('tellUsAboutYourself')}</span>
         <span className="text-xs text-muted">
           {answeredCount}/{allQuestions.length}
         </span>
@@ -132,7 +133,7 @@ export default function GuidedQuestions({ sessionId, uid, customQuestions }: Gui
             <button
               type="button"
               onClick={() => setRevealCount((count) => count + REVEAL_BATCH_SIZE)}
-              className="cursor-pointer self-start text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+              className="cursor-pointer self-start text-xs text-accent-2 rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 font-medium"
             >
               {t('showMoreQuestions', { count: Math.min(hiddenCount, REVEAL_BATCH_SIZE) })}
             </button>

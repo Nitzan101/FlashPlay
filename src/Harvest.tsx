@@ -190,7 +190,7 @@ export default function Harvest({
                 <button
                   type="submit"
                   disabled={answer.status === 'submitting' || !answer.text.trim()}
-                  className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
+                  className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-2 font-semibold text-white shadow-glow disabled:opacity-50"
                 >
                   {answer.status === 'submitting' ? t('submittingAnswer') : t('submitAnswer')}
                 </button>
@@ -218,7 +218,7 @@ export default function Harvest({
             type="button"
             onClick={() => void extend()}
             disabled={extendState === 'busy'}
-            className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2 disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-accent-2/15 px-4 py-2 text-accent-2 disabled:opacity-50"
           >
             {extendState === 'busy' ? t('extendingTime') : t('extendTime')}
           </button>
@@ -235,7 +235,7 @@ export default function Harvest({
             type="button"
             onClick={() => void continueToRounds()}
             disabled={advanceState === 'busy'}
-            className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-2 font-semibold text-white shadow-glow disabled:opacity-50"
           >
             {advanceState === 'busy' ? t('advancingPhase') : t('continueToRounds')}
           </button>

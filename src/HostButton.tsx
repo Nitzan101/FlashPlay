@@ -11,6 +11,7 @@ export default function HostButton({
   onClick,
   busy,
   primary = false,
+  tourId,
 }: {
   children: React.ReactNode
   /** What the button says while the write is in flight. A tap that only greys
@@ -19,16 +20,19 @@ export default function HostButton({
   onClick: () => void
   busy: boolean
   primary?: boolean
+  /** The element a screen's tour points at - see src/lib/tutorial.ts. */
+  tourId?: string
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={busy}
+      data-tour={tourId}
       className={
         primary
-          ? 'cursor-pointer rounded-xl bg-accent px-4 py-3 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50'
-          : 'cursor-pointer rounded-xl border border-accent-2 px-4 py-3 font-medium text-accent-2 shadow-[0_0_12px_rgba(34,240,211,0.25)] disabled:opacity-50'
+          ? 'cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-3 font-semibold text-white shadow-glow disabled:opacity-50'
+          : 'cursor-pointer rounded-full bg-accent-2/15 px-4 py-3 font-medium text-accent-2 disabled:opacity-50'
       }
     >
       {busy && busyLabel ? busyLabel : children}

@@ -196,7 +196,12 @@ can reach.
 - `src/RoomPicker.tsx` — the landing screen's room chooser: "a new room" or one
   of the host's saved groups, as a visible selection separate from the "open
   a room" tap itself, plus creating a new (empty) group.
-- `src/GroupDetails.tsx` — a saved group's details, owner only: per-person
+- `src/GroupDetails.tsx` — a saved group's details, owner only. Two views in
+  one component: the group page lists people as one-line rows (name, fact
+  count, delete), and tapping a name opens that person's own page (their
+  facts, adding one, their guided questions) - `openPerson` state, no router,
+  asked for 2026-09-23 because everyone's facts on one page became a wall.
+  Covers per-person
   facts (including "nothing recorded yet"), group-wide facts, inline renaming,
   per-fact deletion, adding/removing a person (`addGroupMember` - refuses a
   name already in that group - / `deleteContact`), two separate destructive actions (`wipeGroupFacts` keeps
@@ -213,6 +218,21 @@ can reach.
   now?" stage (`LeaveRoomControl`'s 'group-saved'). An earlier pass showed
   that stage after a decline too, and he rejected it; do not reintroduce it
   as a "safety net" without asking. See DECISIONS.md, "third pass".
+- **In-app help (2026-09-23), two halves.** `src/HowToPlay.tsx` - rule
+  cards, each with a small demo built from real i18n labels (the in-game
+  screens do not exist before a game runs, so a demo is how they are shown).
+  `src/Tour.tsx` - a spotlight over one screen's real controls, found by
+  `data-tour` attributes. `src/Tutorial.tsx` - the provider (mounted in
+  `main.tsx`, around App), `useScreenTour(id | null)` that a screen calls to
+  announce its tour (pass `null` until its content has loaded), and the "?"
+  `HelpButton`. `src/lib/tutorial.ts` - `TOURS` (every screen's stops) and
+  the per-device "seen" flags. First visit: rules first, then each screen's
+  tour the first time it is reached. **Adding, renaming or removing a control
+  on a toured screen means updating `TOURS`** - the anchor tests in
+  App/GroupDetails/Lobby tests fail on a stop whose control is gone, which is
+  the only thing that notices (a missing anchor otherwise just drops a stop).
+  `src/test/setup.ts` marks everything seen before each test so no other
+  suite gets an overlay; the tutorial's own tests clear the keys.
 - `src/lib/useAction.ts` — one host tap: busy, the error with its code, and the
   "still trying" notice a write that never settles needs.
 - `src/HostButton.tsx`, `src/Scoreboard.tsx`, `src/LoadFailure.tsx` — the
@@ -264,6 +284,24 @@ can reach.
   a screen quietly drifts from the rest of the app. One committed dark theme,
   not a light/dark toggle - deliberately deferred, see BACKLOG.md, "a
   light/colourful second theme".
+- **Palette "sunset", pill buttons, chip links (chosen 2026-09-23).** Glows
+  are tokens too (`shadow-glow`, `drop-shadow-glow`, `drop-shadow-glow-2`) -
+  never an `rgba(...)` literal in a component, which is how the old pink
+  glow survived in six places after the palette moved on. Button roles:
+  primary `rounded-full bg-linear-135 from-accent to-accent-deep
+  font-semibold text-white shadow-glow`; secondary `rounded-full
+  bg-accent-2/15 text-accent-2`; neutral/cancel `rounded-full bg-ink/8
+  text-muted`; destructive `rounded-full bg-danger/15 text-danger`; a
+  link-style action is a chip, `rounded-full border border-accent-2/30
+  bg-accent-2/12 px-3 py-1 font-medium text-accent-2`. Selection tiles and
+  answer chips (`border-2 border-accent bg-accent/15` when picked) keep
+  their own shape - they are choices, not buttons.
+- **Titles and people's names use `font-display` (Fredoka); everything else
+  stays Rubik.** Chosen 2026-09-23. That means screen titles, gold section
+  titles, reveal headlines, the room code, and names in lists and the
+  scoreboard - not answers, questions or running text. Both fonts load from
+  the one Google Fonts link in `index.html`; a weight used in a class has to
+  be in that link too (Rubik 600 was missing and silently rendered as 700).
 
 ## Where this lives
 `C:\Users\nitza\Dev\FlashPlay` — a plain folder, deliberately **not** inside the
@@ -486,6 +524,13 @@ so there is no reason to co-locate them.
   one worker grew past 2.7 GB and `npm test` never finished. Write it as
   `setX((prev) => (prev.length === 0 ? prev : []))` so an unchanged value
   bails out, and when the suite hangs, look for exactly this first.
+- **A plain rule in `index.css` beats every Tailwind utility, whatever the
+  specificity.** Tailwind v4 puts utilities in `@layer utilities`, and
+  unlayered CSS always wins over layered CSS - so the global
+  `:focus-visible` outline could not be switched off with `outline-none` on
+  the help dialog; the global rule itself had to exclude `[tabindex='-1']`.
+  When a utility "does nothing", check `index.css` for an unlayered rule on
+  the same property before anything else. Found 2026-09-24.
 - **A fix for a reported interaction bug is tested against the whole
   interaction, not just the symptom reported.** "אחר" on the guided
   questions took three versions: the first lost its text when toggled off;

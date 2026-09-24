@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import Lobby from './Lobby'
 import './i18n'
 import type { PlayerDoc } from './lib/model'
+import { TOURS } from './lib/tutorial'
 
 // Lobby.tsx reaches Firestore only through ./lib/room and ./lib/harvest;
 // mocking both keeps this suite independent of real Firestore/env config.
@@ -217,5 +218,23 @@ describe('the guided-questions panel', () => {
         'ציור',
       ),
     )
+  })
+})
+
+// See App.test.tsx, "in-app help": a missing anchor silently drops a stop.
+describe('in-app help anchors', () => {
+  const missingStops = (tour: 'lobbyHost' | 'lobbyGuest') =>
+    TOURS[tour].map((step) => step.target).filter((target) => !document.querySelector(`[data-tour="${target}"]`))
+
+  // "leave the room" belongs to App.tsx, around the lobby rather than in it,
+  // and is checked there; "link a known player" needs a saved group.
+  it("has the host lobby tour's own controls on screen", () => {
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+    expect(missingStops('lobbyHost')).toEqual(['link-players', 'leave-room'])
+  })
+
+  it("has the guest lobby tour's own controls on screen", () => {
+    render(<Lobby sessionId="s1" roomCode="1234" uid="guest-uid" isHost={false} hostUid="host-uid" />)
+    expect(missingStops('lobbyGuest')).toEqual(['leave-room'])
   })
 })

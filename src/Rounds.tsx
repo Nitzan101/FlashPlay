@@ -216,7 +216,7 @@ export default function Rounds({ sessionId, gameId, uid, isHost, scores }: Round
       {revealed && (
         <div className="flex w-full flex-col items-center gap-1">
           {authorPlayerId && (
-            <p className="text-lg font-medium">{t('authorWas', { name: nameOf(authorPlayerId) })}</p>
+            <p className="font-display text-lg font-semibold">{t('authorWas', { name: nameOf(authorPlayerId) })}</p>
           )}
           {(authorError || votesError) && (
             <p role="alert" className="text-xs text-danger">

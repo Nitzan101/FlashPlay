@@ -22,7 +22,7 @@ export default function LoadFailure({ message, code }: { message: string; code?:
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
+        className="cursor-pointer rounded-full bg-accent-2/15 px-4 py-2 text-accent-2"
       >
         {t('retryButton')}
       </button>

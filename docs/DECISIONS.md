@@ -1790,3 +1790,117 @@ Evidence: `npm test` (158, up from 157), `npm run test:rules` (262, up from
 emulator). Three mutations, each reddening the one new details-screen test:
 never clearing the deleted list, the row ignoring a changed stored answer,
 and the field still reading a just-deleted fact.
+
+### 2026-09-23: one page per person
+
+The group's details screen showed every person's facts, add-a-fact box and
+guided-question toggle stacked on one page - fine at three facts, a wall once
+a group has real history. Nitzan's call, from two options put to him: the
+group page lists people only (name, how many facts, and delete - which he
+asked to keep on the group page, next to the name), and tapping a name opens
+that person's own page with their facts, adding a fact, and their guided
+questions (still collapsed at first). The alternative, expanding a person in
+place, was rejected because one person opened with the whole question bank
+is itself a long scroll that pushes the rest of the list away.
+
+Built as a second view inside GroupDetails (`openPerson`), not a new route
+or component, so the delete tombstones, refresh token and fact rows stay one
+implementation. A person page opens at the top and going back restores the
+list's scroll position. There is no browser-history entry for it: the phone's
+back gesture leaves the whole screen, the same as it already did for
+GroupDetails itself.
+
+Evidence: `npm test` (159), with the details-screen tests moved onto the
+person page; run against the previous GroupDetails, the ten that depend on a
+person's page fail and the six covering the unchanged group page pass.
+Rendered at 400px wide against the built CSS, both pages.
+
+## A lighter coat of the same neon, 2026-09-23
+
+Nitzan asked for a small visual refresh that keeps the style. Three axes
+were mocked in a comparison artifact ("Neon Lab") on two real screens:
+palette (current, sunset, electric, soft neon), big buttons (current glow,
+pill, arcade press) and link-style actions (dotted underline, chip, icon in
+a circle). His pick: **sunset** (coral `#ff6a3d` to `#ff2e6e` for the main
+action, gold `#ffc53d` for the secondary, mint `#6ff0b0` for confirmations,
+on a plum base), **pill** buttons, **chip** links.
+
+Applied as tokens plus a mechanical class rewrite (71 class strings across
+10 files, reviewed as a dry run first): rounded-xl buttons became pills,
+outlined secondaries became tinted fills, dotted links became chips, and
+every glow moved into `@theme`. The old pink/teal glow had been hard-coded
+as `rgba(...)` in six components, which a token-only palette change would
+have silently left behind. Selection tiles (votes, room picker, emoji,
+answer chips) kept their shape on purpose.
+
+Known trade-off: white text on the coral end of the primary gradient is
+about 2.9:1 contrast (the old pink was about 3.4:1); the button text is
+semibold, and the gradient's pink end is about 3.6:1. If it reads poorly on
+a phone outdoors, the fix is darker button text or a deeper coral, not a
+new palette.
+
+Round two of the same comparison, inside the chosen direction (palette
+shade, primary button fill, cards, background, heading font): Nitzan kept
+everything as shipped and changed one thing, titles and names to **Fredoka**
+- rounded, which matches the pill buttons. Running text, answers and
+questions stay in Rubik for readability. Fredoka's Google Fonts build has a
+Hebrew subset (checked by loading it in the browser, not assumed), so there
+is no silent fallback to Rubik for Hebrew titles. The same pass added the
+Rubik 600 weight the buttons had been asking for and updated the phone's
+`theme-color` to the new background.
+
+## In-app help: rules and a tour, kept apart (2026-09-23)
+
+Asked for: a button that walks through the controls and explains the
+rules, opening by itself on a first visit with a skip. Put to Nitzan as one
+combined walkthrough or two parts; he took the recommendation, two parts.
+**"How to play"** is seven short cards (what it is, joining, answering, each
+game with its scoring, what the host controls, the end of the evening), each
+with a small demo, and opens on a device's first visit. **The tour** lights
+up the real controls of the screen you are on - signed-out welcome, the
+host's home, a group, a person, and the lobby for host and for guest - the
+first time each screen is reached, and never on top of the rules.
+
+Why apart: a guest arriving from a WhatsApp link while the room waits needs a
+minute of rules, not a walk through host buttons they will never see; and
+the in-game screens cannot be toured up front because they only exist once a
+game runs. Nitzan's suggestion covered that last gap: show them as demos
+inside the rules cards. The demos use the real i18n labels, so a renamed
+button cannot leave a demo showing the old name.
+
+Built without a library: a spotlight is a box-shadow cutout over the
+target's rect, and a missing target (a conditional control) drops that stop
+rather than pointing at nothing. The "seen" flags are per device in
+localStorage - a convenience, and a guest's account is new each gathering.
+The "?" sits at the top corner and scrolls away with the page rather than
+floating, so it can never cover a control lower down.
+
+Found while checking it in the browser, both fixed before shipping: the
+cards differed in height, so "next" moved up to 74px between cards and
+repeated taps missed it (the panel now keeps one height); and the global
+focus outline drew a ring around the whole dialog when it was focused by
+script, which no Tailwind utility could override (see CLAUDE.md pitfalls).
+
+Evidence: `npm test` 175 (16 new: the rules and tour behaviour, and one
+anchor check per toured screen against `TOURS`). Four mutations each
+reddened their tests: never auto-opening the rules, letting a tour open on
+top of them, keeping a tour open after its screen unmounts, and a one-letter
+typo in an anchor. Checked live on the signed-out screen at phone width: the
+rules open on first visit, skipping starts the welcome tour, "?" offers both.
+Not seen live: the tours on screens that need a signed-in host.
+
+## Confirmation colour, 2026-09-24
+
+Nitzan liked the sunset palette's coral and gold but the mint green for
+confirmations ("saved", the host label, the leading score row, who guessed
+right) bothered him. Three Neon Lab rounds looked at replacements for mint,
+then at replacing the gold as well. **Decision: gold `#ffc53d` stays as the
+secondary and mint becomes peach `#ffb894`.** Periwinkle `#9aa8ff` with
+orchid `#f09bff` was applied and deployed first, and he rejected it on
+seeing it in the app - so the mocked cards were not a reliable predictor,
+and a palette change is worth one look on a real screen before it is final.
+
+Contrast of peach against the base `#16091a` is 11.52. Known trade-off:
+peach sits close to both the coral primary and the gold, so a confirmation is
+told apart from a gold name mostly by being paler. The token names
+`accent-2` and `accent-3` are unchanged, so no component was touched.

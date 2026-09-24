@@ -217,7 +217,7 @@ export default function QuestionRow({
             })
           }
           aria-label={`${t('saveAnswer')} - ${question.text}`}
-          className="cursor-pointer rounded-lg border border-accent-2 px-3 py-1 text-xs text-accent-2 disabled:opacity-40"
+          className="cursor-pointer rounded-full bg-accent-2/15 px-3 py-1 text-xs text-accent-2 disabled:opacity-40"
         >
           {action.busy ? t('savingAnswer') : t('saveAnswer')}
         </button>

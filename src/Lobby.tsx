@@ -8,6 +8,7 @@ import { db } from './lib/firebase'
 import { MIN_PLAYERS_TO_START, type PlayerDoc, type ProfileQuestion } from './lib/model'
 import { renamePlayer, useRoster } from './lib/room'
 import { useAction } from './lib/useAction'
+import { useScreenTour } from './Tutorial'
 
 interface LobbyProps {
   sessionId: string
@@ -59,6 +60,7 @@ export default function Lobby({
   // fail outright. Host-editable identity for a participant with no device of
   // their own is real, deferred work - see BACKLOG.md.
   const [editingSelf, setEditingSelf] = useState(false)
+  useScreenTour(isHost ? 'lobbyHost' : 'lobbyGuest')
   const joinUrl = `${window.location.origin}/join/${roomCode}`
 
   async function startGame() {
@@ -88,12 +90,12 @@ export default function Lobby({
 
   return (
     <div className="flex w-full max-w-xs flex-col items-center gap-4">
-      <p className="text-lg font-bold text-accent-2 drop-shadow-[0_0_10px_rgba(34,240,211,0.5)]">
+      <p data-tour="room-code" className="font-display text-lg font-bold text-accent-2 drop-shadow-glow-2">
         {t('roomCodeLabel', { code: roomCode })}
       </p>
 
       {isHost && (
-        <div className="flex w-full flex-col items-center gap-2">
+        <div data-tour="share-link" className="flex w-full flex-col items-center gap-2">
           <p className="text-sm text-muted">{t('roomLinkLabel')}</p>
           <code
             dir="ltr"
@@ -104,7 +106,7 @@ export default function Lobby({
           <button
             type="button"
             onClick={() => void copyLink()}
-            className="cursor-pointer rounded-xl border border-accent-2 px-4 py-2 text-accent-2"
+            className="cursor-pointer rounded-full bg-accent-2/15 px-4 py-2 text-accent-2"
           >
             {copyState === 'copied' ? t('linkCopied') : t('copyLink')}
           </button>
@@ -137,7 +139,7 @@ export default function Lobby({
           above and the roster itself (both correct at every moment, since
           they come straight from who has actually joined) are the honest
           signal for this screen. See BACKLOG.md, "presence UI". */}
-      <ul className="flex w-full flex-col gap-1 rounded-xl border border-line bg-surface/60 p-2">
+      <ul data-tour="roster" className="flex w-full flex-col gap-1 rounded-xl border border-line bg-surface/60 p-2">
         {players.map((player) => (
           <li
             key={player.id}
@@ -149,7 +151,7 @@ export default function Lobby({
                 second line costs nothing; losing part of someone's name does. */}
             <span className="min-w-0 break-words">
               {player.emoji && <span className="me-1">{player.emoji}</span>}
-              <span className={player.leftAt ? 'text-muted' : undefined}>{player.name}</span>
+              <span className={player.leftAt ? 'font-display text-muted' : 'font-display'}>{player.name}</span>
               {player.id === uid && <span className="text-accent-2"> {t('youSuffix')}</span>}
               {player.id === hostUid && (
                 <span className="font-semibold text-accent-3"> {t('hostSuffix')}</span>
@@ -160,7 +162,7 @@ export default function Lobby({
               <button
                 type="button"
                 onClick={() => setEditingSelf(true)}
-                className="shrink-0 cursor-pointer text-xs text-accent-2 underline decoration-dotted underline-offset-4"
+                className="shrink-0 cursor-pointer text-xs text-accent-2 rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 font-medium"
               >
                 {t('editMyNameEmoji')}
               </button>
@@ -198,12 +200,12 @@ export default function Lobby({
       <GuidedQuestions sessionId={sessionId} uid={uid} customQuestions={customQuestions} />
 
       {isHost && (
-        <div className="flex flex-col items-center gap-2">
+        <div data-tour="start-game" className="flex flex-col items-center gap-2">
           <button
             type="button"
             onClick={() => void startGame()}
             disabled={startState === 'busy' || activeCount < MIN_PLAYERS_TO_START}
-            className="cursor-pointer rounded-xl bg-accent px-4 py-2 font-semibold text-white shadow-[0_0_18px_rgba(255,46,154,0.5)] disabled:opacity-50"
+            className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-2 font-semibold text-white shadow-glow disabled:opacity-50"
           >
             {startState === 'busy' ? t('startingGame') : t('startGame')}
           </button>
@@ -264,14 +266,14 @@ function SelfIdentityEditor({
               onDone()
             })
           }
-          className="grow cursor-pointer rounded-xl border border-accent-2 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
+          className="grow cursor-pointer rounded-full bg-accent-2/15 px-3 py-2 text-sm text-accent-2 disabled:opacity-40"
         >
           {save.busy ? t('savingProfile') : t('saveNameEmoji')}
         </button>
         <button
           type="button"
           onClick={onDone}
-          className="cursor-pointer rounded-xl px-3 py-2 text-sm text-muted"
+          className="cursor-pointer rounded-full px-3 py-2 text-sm text-muted"
         >
           {t('addGroupCancel')}
         </button>
