@@ -730,6 +730,20 @@ describe('editing the host profile', () => {
     expect(await screen.findByRole('button', { name: 'פתיחת חדר' })).toBeInTheDocument()
     expect(mockSaveUserProfile).not.toHaveBeenCalled()
   })
+
+  // The phone's Back gesture returns to the home screen instead of leaving.
+  it("returns to the home screen on the browser's Back", async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    window.history.replaceState(null, '')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'עריכת הפרופיל שלי' }))
+    expect(screen.queryByRole('button', { name: 'פתיחת חדר' })).not.toBeInTheDocument()
+
+    act(() => window.history.back())
+
+    expect(await screen.findByRole('button', { name: 'פתיחת חדר' })).toBeInTheDocument()
+    expect(mockSaveUserProfile).not.toHaveBeenCalled()
+  })
 })
 
 // Asked for directly: "כאשר מנהל בוחר לצאת מהחדר... שתהיה לו האפשרות לבחור

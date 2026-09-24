@@ -141,6 +141,27 @@ describe('the group page lists people; each person has their own page', () => {
     expect(screen.queryByTestId('person-page')).not.toBeInTheDocument()
     expect(screen.getByTestId('member-c2')).toBeInTheDocument()
   })
+
+  // The phone's Back gesture: one step up to the list, not out of the app.
+  it("returns from a person's page to the list on the browser's Back", async () => {
+    memoryOf([
+      { contactId: 'c1', name: 'דוד', facts: [fact('p1', 'אוהב פיצה', 'דוד')] },
+      { contactId: 'c2', name: 'שרה', facts: [] },
+    ])
+    // Earlier tests' unmounts pop their history entries asynchronously; start
+    // from a clean base entry, as a freshly opened page has.
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    window.history.replaceState(null, '')
+    const onClose = vi.fn()
+    render(<GroupDetails hostUid="host-uid" groupId="g1" onClose={onClose} />)
+    openPerson('c1', 'דוד')
+
+    act(() => window.history.back())
+
+    await waitFor(() => expect(screen.queryByTestId('person-page')).not.toBeInTheDocument())
+    expect(screen.getByTestId('member-c2')).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+  })
 })
 
 describe('deleting a person from the group', () => {

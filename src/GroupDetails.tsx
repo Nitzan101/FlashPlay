@@ -25,6 +25,7 @@ import {
 import type { ProfileQuestion } from './lib/model'
 import { useCustomQuestions } from './lib/profileQuestions'
 import { useAction } from './lib/useAction'
+import { useBackStep } from './lib/useBackStep'
 import { useScreenTour } from './Tutorial'
 
 interface GroupDetailsProps {
@@ -117,6 +118,11 @@ export default function GroupDetails({
   // directly, 2026-09-23, since every person's facts and questions stacked on
   // one page becomes a wall once a group has any real history.
   const [openPerson, setOpenPerson] = useState<string | null>(null)
+  useBackStep(openPerson !== null, () => {
+    setAddingTo(null)
+    setQuestionsFor(null)
+    setOpenPerson(null)
+  })
   const listScroll = useRef(0)
   const scrolledOnce = useRef(false)
   const { questions: customQuestions } = useCustomQuestions(hostUid)

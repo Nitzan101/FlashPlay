@@ -37,6 +37,7 @@ import RoomPicker from './RoomPicker'
 import EmojiPicker from './EmojiPicker'
 import { PROFILE_QUESTIONS } from './content/profileQuestions'
 import { useAction } from './lib/useAction'
+import { useBackStep } from './lib/useBackStep'
 import { HelpButton, useScreenTour } from './Tutorial'
 
 const STORAGE_KEY = 'flashplay.session'
@@ -176,6 +177,9 @@ export default function App() {
   const [editingProfile, setEditingProfile] = useState(false)
   const [editingQuestions, setEditingQuestions] = useState(false)
   const [joinEmoji, setJoinEmoji] = useState<string | null>(null)
+  useBackStep(detailsOf !== null, () => setDetailsOf(null))
+  useBackStep(editingProfile, () => setEditingProfile(false))
+  useBackStep(editingQuestions, () => setEditingQuestions(false))
   useScreenTour(
     screen.kind === 'host-landing' && !detailsOf && !editingProfile && !editingQuestions
       ? user && !user.isAnonymous
