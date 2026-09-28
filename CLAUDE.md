@@ -552,6 +552,21 @@ so there is no reason to co-locate them.
   side, in the same row. The bug only showed up as a Testing Library "found
   two elements" error, not as a compile or logic error, because nothing about
   either code path was individually wrong.
+- **An `assertFails` on a whole multi-write client function does not isolate
+  which write's rule actually caused the failure, when more than one of that
+  function's sequential writes enforces the same permission.**
+  `openNextSecondRound` (secondGame.ts) writes an item, then updates a fact,
+  then creates a round - and the round-create rule has always required
+  `isHost`. A first version of "refuses a non-host" called the whole function
+  as a non-host and asserted it threw; deleting the item rule's own,
+  independent `isHost` check left that assertion green, because the LATER
+  round-create write still failed for the same caller on its own separate
+  `isHost` check - the mutation check caught this only because the isolated
+  test (a direct `setDoc` on just the item, same game, only the caller
+  changed) was added specifically to rule it out. Test the specific write a
+  rule change is about directly, not the multi-step function around it,
+  whenever more than one of its writes could independently produce the same
+  rejected outcome. Found 2026-09-28, redesigning "most likely to".
 
 ## Milestone 3, implemented - what a fresh session needs to know
 
