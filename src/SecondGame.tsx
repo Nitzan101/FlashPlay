@@ -1,47 +1,49 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { HARVEST_PROMPTS } from './content/prompts'
 import HostButton from './HostButton'
 import LoadFailure from './LoadFailure'
 import Scoreboard from './Scoreboard'
 import { db } from './lib/firebase'
 import { MAX_ROUNDS } from './lib/model'
-import { castVote, finishGame, getMyVote, openVoting, revealRound, skipRound, useAuthor, useRounds, useVotes } from './lib/rounds'
-import { mostVotedPlayers, openNextSecondRound, scoreMajority, useRevealedItems } from './lib/secondGame'
+import { castVote, finishGame, getMyVote, openVoting, revealRound, skipRound, useItems, useRounds, useVotes } from './lib/rounds'
+import { mostVotedPlayers, openNextSecondRound, scoreMajority } from './lib/secondGame'
 import { errorCode, useRoster } from './lib/room'
 import { useAction } from './lib/useAction'
 
 interface SecondGameProps {
   sessionId: string
   gameId: string
+  /** Whoever's private store this gathering's memory lives in - see
+   *  `SessionDoc.originalHostUid`. Needed here because every round is built
+   *  fresh from that store (see `openNextSecondRound`), unlike the first
+   *  game, which never touches it mid-play. */
+  hostUid: string
   uid: string
   isHost: boolean
   scores: Record<string, number>
 }
 
 /**
- * "Most likely to" - milestone 6, and the second half of the loop this whole
- * project exists to prove: the material is what the room typed ten minutes
- * ago and has already heard attributed.
+ * "Most likely to" - milestone 6, redesigned 2026-09-28. Each round is a real
+ * fact from the group's stored memory (any past gathering, any source), quoted
+ * without ever naming whose it was - see secondGame.ts's module comment for
+ * why: naming the author (the original design) made this the same question
+ * as "who wrote this" the moment the room already knew the answer.
  *
- * Nothing is hidden here. The author is named in the question itself, which
- * is exactly what makes this a different question from the first game rather
- * than the same one again - so unlike Rounds.tsx, this screen has no secret
- * to keep, and the votes stay private only until the reveal so that the room
- * does not simply follow the first person to answer.
+ * Nothing is hidden about the VOTE mid-round, only about the fact's origin,
+ * which is never tracked on this screen at all - so unlike Rounds.tsx, this
+ * screen never asks who wrote anything. Votes stay private only until the
+ * reveal so the room does not simply follow the first person to answer.
  */
-export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: SecondGameProps) {
+export default function SecondGame({ sessionId, gameId, hostUid, uid, isHost, scores }: SecondGameProps) {
   const { t } = useTranslation()
   const { players, error: rosterError } = useRoster(sessionId)
   const { rounds, loading: roundsLoading, error: roundsError } = useRounds(sessionId, gameId)
-  const { items, loading: itemsLoading, error: itemsError } = useRevealedItems(sessionId)
+  const { items, loading: itemsLoading, error: itemsError } = useItems(sessionId, gameId)
 
   const round = rounds.length > 0 ? rounds[rounds.length - 1] : null
   const revealed = round?.phase === 'revealed'
   const { votes, error: votesError } = useVotes(sessionId, round?.id ?? null, revealed)
-  // The item is revealed by definition here, so its author is readable from
-  // the moment the round opens - it is part of the question, not the answer.
-  const { authorPlayerId, error: authorError } = useAuthor(sessionId, round?.itemId ?? null, true)
 
   const [myVote, setMyVote] = useState<string | null>(null)
   const host = useAction()
@@ -77,16 +79,15 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
   }
 
   const playedRounds = rounds.filter((r) => r.phase !== 'skipped')
-  const spent = new Set(rounds.map((r) => r.itemId))
-  const unplayed = Object.keys(items).filter((id) => !spent.has(id)).length
-  // "Nothing left to play" and "not loaded yet" look identical from an empty
-  // map, and they call for opposite host controls - the review found this
-  // screen telling a host the second game had no material, with "end the game"
-  // as the only button, while its first snapshot was still in flight.
+  // Unlike the first game, an item here is created on demand from the group's
+  // ever-shrinking fact store rather than existing upfront - so there is
+  // nothing to count in advance the way `unplayed` does in Rounds.tsx. Instead
+  // `storeExhausted` is set from openNext()'s own return value the one time it
+  // comes back empty.
+  const [storeExhausted, setStoreExhausted] = useState(false)
   const loading = roundsLoading || itemsLoading
-  const exhausted = !loading && (playedRounds.length >= MAX_ROUNDS || unplayed === 0)
+  const exhausted = !loading && (playedRounds.length >= MAX_ROUNDS || storeExhausted)
   const item = round ? items[round.itemId] : undefined
-  const prompt = item ? HARVEST_PROMPTS.find((p) => p.id === item.promptId) : undefined
   const votesCast = round ? players.filter((p) => p.votedRoundId === round.id).length : 0
   const awarded = round?.awarded ?? scoreMajority(votes)
   const mostVoted = revealed ? mostVotedPlayers(votes) : []
@@ -110,42 +111,25 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
       <p className="text-sm text-muted">{t('secondGameTitle')}</p>
       {round && (
         <p className="text-sm text-muted">
-          {t('roundCounter', {
-            current: playedRounds.length,
-            total: Math.min(MAX_ROUNDS, playedRounds.length + unplayed),
-          })}
+          {/* No forward-looking total to show here (see storeExhausted above)
+              - the cap is the only number known in advance. */}
+          {t('roundCounter', { current: playedRounds.length, total: MAX_ROUNDS })}
         </p>
       )}
 
       {loading && <p className="text-muted">{t('loadingRound')}</p>}
       {!loading && !round && !exhausted && !isHost && <p>{t('waitingForHostToRead')}</p>}
       {!loading && !round && exhausted && (
-        <p className="text-muted">{t('noRevealedItemsLeft')}</p>
+        <p className="text-muted">{t('noMemoryLeft')}</p>
       )}
 
       {round && item && round.phase !== 'skipped' && (
         <div className="flex w-full flex-col items-center gap-2 rounded-xl border border-line bg-surface/60 p-4">
-          {/* DESIGN's exact framing, and the reason each prompt carries its own
-              second-game question: an answer written in the first person
-              cannot be re-conjugated without a generator, so the question is
-              written to fit the bare answer rather than the other way round. */}
-          {/* The name IS the question here, so a placeholder would be worse
-              than a pause: "the answer of somebody" is not a game. */}
-          {authorPlayerId ? (
-            <p className="text-center">
-              {t('secondGameQuote', { name: nameOf(authorPlayerId), text: item.text })}
-            </p>
-          ) : authorError ? (
-            <p role="alert" className="text-center text-xs text-danger">
-              {t('revealLoadError')}{' '}
-              <span dir="ltr" className="font-mono">
-                ({authorError})
-              </span>
-            </p>
-          ) : (
-            <p className="text-center text-muted">{t('loadingRound')}</p>
-          )}
-          {prompt && <p className="text-center text-lg font-medium">{prompt.secondGameQuestion}</p>}
+          {/* item.text is already the whole, self-contained question - baked
+              in at creation time by composeSecondGameItemText, which is also
+              why nobody is named here: the fact's real author is never
+              tracked on this screen at all, see secondGame.ts. */}
+          <p className="text-center text-lg font-medium">{item.text}</p>
           {round.phase === 'preview' && (
             <p className="text-xs text-muted">
               {isHost ? t('hostPreviewOnly') : t('waitingForHostToRead')}
@@ -316,9 +300,7 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
             {t('finishGame')}
           </HostButton>
 
-          {exhausted && round && (
-            <p className="text-sm text-muted">{t('noRevealedItemsLeft')}</p>
-          )}
+          {exhausted && round && <p className="text-sm text-muted">{t('noMemoryLeft')}</p>}
 
           {host.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
           {host.error && (
@@ -337,6 +319,7 @@ export default function SecondGame({ sessionId, gameId, uid, isHost, scores }: S
   )
 
   async function openNext() {
-    await openNextSecondRound(db, sessionId, gameId)
+    const roundId = await openNextSecondRound(db, hostUid, sessionId, gameId)
+    if (roundId === null) setStoreExhausted(true)
   }
 }

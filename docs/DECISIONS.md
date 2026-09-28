@@ -1983,3 +1983,83 @@ awards points, place still undecided.
   proposed changes, do not assume which half of the list "these" refers to -
   ask, or restate the mapping back before applying it. This session inverted
   the meaning once and had to be corrected.
+
+---
+
+## "Most likely to", redesigned onto stored memory, 2026-09-28
+
+Following directly from the design flaw above: Nitzan asked for options for
+using the group's stored memory when an existing room is opened - "the most
+important thing," and the thing BACKLOG has called an open gap since
+milestone 7 ("nothing reads a fact yet"). Scope was narrowed deliberately
+across several rounds of questions before any code was written:
+
+- **Free/no-AI only, for now.** An AI-based game (the headline, imposter with
+  a harvested secret) is real and wanted, but costs money and needs a
+  provider decision - parked, not built. Ideas that need it are filed in
+  BACKLOG rather than attempted half-way.
+- **The immediate fix only, not a wizard or multi-game infrastructure.**
+  Asked directly whether to design now for several future memory-based
+  games; his answer was to build only this one and iterate, not to
+  generalise ahead of a second concrete need.
+- **Only `personal`-drawer facts, for now.** A `group` fact ("something that
+  happened to us") does not have a single subject the way "who is most
+  likely to..." needs one; folding it in is deferred, not rejected.
+
+**Every fact source is fair game, once he pointed it out.** Guided-question
+answers, a host's manual notes, and a host's own custom questions all land
+in the exact same `FactDoc` store a harvest answer does - there is no
+technical reason to prefer one origin over another, only a content one (does
+the text read well as a quoted question). See `composeSecondGameItemText` in
+secondGame.ts for the three cases this produces: a harvest fact keeps its
+existing tailored `secondGameQuestion`; a built-in guided-question fact gets
+one approved generic wrapper that quotes the question itself rather than
+asserting it (this is what keeps it grammatical even though a guided
+question is phrased in the second person, "your hobby" - quoting it as
+something that was *asked*, not asserted about whoever is under discussion,
+sidesteps the gender/person problem entirely, the same underlying issue
+`prompts.ts`'s own `secondGameQuestion` field exists to solve); anything
+else (a custom question, once renamed or deleted, or a free-form manual
+note with no question behind it at all) is quoted whole, since there is
+nothing reliable left to split into question and answer.
+
+**A harder version of an already-open problem, solved differently.** Nitzan
+independently re-derived BACKLOG's "identical or near-identical answers
+break 'who said that'" for this new game: two contacts who happen to have
+recorded the same fact make "who among you is most likely to..." trivial or
+meaningless. Fixed for free here by comparing the *stored* text across
+contacts (`ambiguousFactIds`) and simply skipping any fact more than one
+contact shares - catches literal duplicates, not a differently-worded answer
+with the same meaning, which still needs the AI generator BACKLOG already
+defers to. A genuinely non-AI alternative was also raised - let a voter pick
+up to two candidates, scoring correct if the true author is among them - and
+explicitly parked as real feature-sized work (a `VoteDoc` shape change, a
+rules/emulator cycle, a scoring decision, a multi-select UI) rather than
+built now; see BACKLOG.md.
+
+**Fairness in which contact gets asked about, raised by him mid-review.** A
+contact with many stored facts must not be drawn more often than one with
+few, purely because there is more of their material - and the fix must not
+require any visible round-robin bookkeeping, since nothing about a fact's
+origin is ever shown to the room and a queue would be a strange thing to
+build for a value nobody can observe. `selectSecondGameFact` draws in two
+steps instead of one: a contact uniformly at random from everyone with an
+eligible fact left, then a fact from that one contact's own pool (preferring
+the least-used, per DESIGN's "prefers unused facts") - so `useCount` only
+ever competes within one person's facts, never across people.
+
+**What stayed the same on purpose.** The round/vote/reveal mechanics
+(`openVoting`, `castVote`, `revealRound`) and majority scoring
+(`scoreMajority`) are untouched - only which items exist and how they are
+worded changed. The game keeps its `most-likely-to` type; this is a fix to
+the existing second game, not a new one, matching how he referred to it
+throughout the conversation that decided this.
+
+**Evidence:** `composeSecondGameItemText`, `ambiguousFactIds` and
+`selectSecondGameFact` are pure functions with their own fast-suite tests
+(`secondGame.selection.test.ts`) exercising the fairness draw and the
+duplicate-skip deterministically, without the emulator. `secondGame.test.ts`
+(emulator) proves the new `items` create rule is host-only, type- and
+phase-gated, that a memory-sourced item never gets a matching
+`ItemAuthorDoc`, that a fact is never drawn twice in one gathering, and that
+`useCount` increments in the host's own store.

@@ -3,9 +3,10 @@
  *
  * Every other suite proves one milestone's own contract. This one plays the
  * product: a host opens a room, three people join, everyone answers the
- * prompts, the room plays "who said that", then "most likely to" built from
- * what the first game revealed, the evening ends, and what was said that night
- * is in the host's store afterwards.
+ * prompts, the room plays "who said that", then "most likely to" - drawing on
+ * what "who said that" has already written into the host's store, per the
+ * 2026-09-28 redesign - the evening ends, and what was said that night is in
+ * the host's store afterwards.
  *
  * It exists because the milestone-7 review found a feature that was fully
  * implemented, fully unit-tested and a complete no-op in production - the
@@ -156,10 +157,11 @@ describe('a whole evening', () => {
     // Two of the four items were revealed, so two are attributable so far.
     expect(keptAfterFirstGame).toBe(2)
 
-    // --- "most likely to", built from what the first game revealed --------
+    // --- "most likely to", now built from the group's stored memory -------
     const secondGameId = await startSecondGame(host, sessionId, 1, () => 'game2')
     const secondRound = await openNextSecondRound(
       host,
+      HOST,
       sessionId,
       secondGameId,
       undefined,
@@ -169,9 +171,13 @@ describe('a whole evening', () => {
 
     const playedItem = (await getDoc(doc(host, paths.round(sessionId, secondRound!)))).data()
       ?.itemId as string
-    // Only an item the room already heard attributed, or the two games are
-    // the same question twice (DESIGN).
-    expect((await getDoc(doc(host, paths.item(sessionId, playedItem)))).data()?.revealed).toBe(true)
+    const secondGameItem = (await getDoc(doc(host, paths.item(sessionId, playedItem)))).data()
+    // Already revealed - there is no author in this room to hide - and never
+    // attributed to anyone, unlike the first game's items.
+    expect(secondGameItem?.revealed).toBe(true)
+    expect(
+      (await getDoc(doc(host, paths.itemAuthor(sessionId, playedItem)))).exists(),
+    ).toBe(false)
 
     await openVoting(host, sessionId, secondRound!)
     await castVote(host, sessionId, secondRound!, HOST, YOSSI)

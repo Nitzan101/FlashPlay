@@ -75,6 +75,19 @@ be settled together with how stored group facts feed the games, since both
 need the same generator. Open questions: detect duplicates at harvest time or
 at round time, and what a round does when two players wrote the same text.
 
+**A non-AI alternative was raised and deferred, 2026-09-28.** Instead of
+detecting duplicate/near-duplicate text at all, let a voter pick up to two
+candidates per round, scoring correct if the true author is among them
+(likely at reduced points, to avoid a "pick everyone" exploit). This would
+catch the harder case string-matching cannot - two different wordings of the
+same underlying answer - without needing AI. Nitzan's call: real feature-sized
+work (`VoteDoc` becomes an array, a rules change with its own emulator/
+mutation-check cycle, a `scoreRound` decision on partial credit, and a
+multi-select UI in `Rounds.tsx`) - bigger than the free win it buys right now.
+Parked alongside the AI solution rather than built standalone; revisit when
+the AI generator work happens, since that is when the underlying "duplicate
+answers" problem gets solved anyway.
+
 A second use of the same generator, raised the same day on `broke-something`:
 the second-game question is currently a fixed sentence per prompt, which fits
 some answers badly ("who is most likely to break a burnt dinner"). An AI could
@@ -381,7 +394,15 @@ the room most wants them.
 The ten serious findings were fixed in the same pass - see DECISIONS.md, "What
 the milestone-7 review found". These were left.
 
-**Nothing reads a fact yet, so DESIGN's Test 3 cannot run.** The store fills up
+**RESOLVED 2026-09-28.** "Most likely to" was redesigned to draw its rounds
+from the stored `FactDoc` pool instead of from this evening's revealed items
+- see DESIGN.md, "Most likely to", and DECISIONS.md, "'Most likely to',
+redesigned onto stored memory, 2026-09-28". `useCount` now increments for
+real, and DESIGN's Test 3 (does a returning group's second gathering benefit
+from the first) can actually be observed at a real multi-gathering session.
+The original note is kept below for the reasoning that led there.
+
+~~Nothing reads a fact yet, so DESIGN's Test 3 cannot run.~~ The store fills up
 correctly - attributed, drawered, deduplicated, deletable - and no game
 consumes it: "who said that" harvests fresh material every time, and "most
 likely to" uses what this evening revealed. So "did the material accumulated in

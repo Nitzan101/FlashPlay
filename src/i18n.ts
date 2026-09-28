@@ -123,7 +123,6 @@ export const resources = {
       scoreboardTitle: 'ניקוד',
       // --- milestone 6: "most likely to", the ending ---
       secondGameTitle: 'המשחק השני',
-      secondGameQuote: 'התשובה של {{name}}: «{{text}}»',
       majorityScoringHint: 'אין תשובה נכונה - נקודה למי שהצביע עם הרוב',
       // The second game's own reveal wording. Reusing the first game's
       // ("חשב/ה שזה") would say there was a right answer, which is exactly
@@ -136,7 +135,7 @@ export const resources = {
       endGatheringConfirm: 'לסיים את הערב?',
       endGatheringYes: 'כן, לסיים',
       endGatheringNo: 'עוד לא',
-      noRevealedItemsLeft: 'אין עוד תשובות שנחשפו',
+      noMemoryLeft: 'אין עוד עובדות זמינות מהקבוצה',
       firstGameOver: 'המשחק הראשון נגמר',
       secondGameOver: 'המשחק השני נגמר',
       startSecondGame: 'למשחק השני',

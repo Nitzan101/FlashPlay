@@ -766,12 +766,24 @@ gap between two writes is a state an attacker can sit in.
 run is the gate: a full evening with three to five real friends, and the
 listener fan-out check across browser profiles.
 
-**The second game has no harvest and no prompts of its own.** It is built from
-the items the first game **revealed**, which is the one thing that keeps it a
-different game: an unrevealed item makes "who is most likely to do this" the
-same question as "who wrote this". `openNextSecondRound` queries
-`revealed == true` and nothing else; the rules pair each game type with the
-only phase it may start in.
+**Redesigned 2026-09-28 - the paragraph below describes the ORIGINAL design,
+now superseded.** Nitzan found the flaw live during the September content
+review: naming the answer's real author before the vote makes the majority
+pick a foregone conclusion, the same collapse this section used to warn an
+*unrevealed* item would cause, just reached from the revealed side instead.
+`openNextSecondRound` no longer reads `items` at all - it draws a fact from
+the group's stored memory (`FactDoc`) and never names anyone. See
+`src/lib/secondGame.ts`'s module comment, DESIGN.md's "Most likely to", and
+DECISIONS.md, "'Most likely to', redesigned onto stored memory, 2026-09-28",
+for the full reasoning, the fairness draw, and the duplicate-fact skip.
+
+**The second game has no harvest and no prompts of its own** (still true).
+~~It is built from the items the first game **revealed**, which is the one
+thing that keeps it a different game: an unrevealed item makes "who is most
+likely to do this" the same question as "who wrote this". `openNextSecondRound`
+queries `revealed == true` and nothing else~~; the rules pair each game type
+with the only phase it may start in (still true, and now also gates a new
+host-authored `items` create clause for the memory-sourced item itself).
 
 **Each prompt carries the question its answers get asked in the second game**
 (`secondGameQuestion` in `src/content/prompts.ts`). A Hebrew answer is written

@@ -129,6 +129,7 @@ export default function Gathering({ sessionId, roomCode, uid }: GatheringProps) 
       <SecondGame
         sessionId={sessionId}
         gameId={game.id}
+        hostUid={originalHostUid}
         uid={uid}
         isHost={isActiveHost}
         scores={session.scores ?? {}}

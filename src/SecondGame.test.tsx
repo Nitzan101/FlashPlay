@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SecondGame from './SecondGame'
 import './i18n'
-import { HARVEST_PROMPTS } from './content/prompts'
 
 vi.mock('./lib/firebase', () => ({ db: {}, auth: {}, firebaseApp: {} }))
 
@@ -19,7 +18,7 @@ vi.mock('./lib/room', () => ({
 
 const mockRounds = vi.fn()
 const mockVotes = vi.fn()
-const mockAuthor = vi.fn()
+const mockItems = vi.fn()
 const mockGetMyVote = vi.fn()
 const mockCastVote = vi.fn()
 const mockRevealRound = vi.fn()
@@ -30,7 +29,7 @@ const mockFinishGame = vi.fn()
 vi.mock('./lib/rounds', () => ({
   useRounds: () => mockRounds(),
   useVotes: () => mockVotes(),
-  useAuthor: () => mockAuthor(),
+  useItems: () => mockItems(),
   getMyVote: (...args: unknown[]) => mockGetMyVote(...args),
   castVote: (...args: unknown[]) => mockCastVote(...args),
   revealRound: (...args: unknown[]) => mockRevealRound(...args),
@@ -39,7 +38,6 @@ vi.mock('./lib/rounds', () => ({
   finishGame: (...args: unknown[]) => mockFinishGame(...args),
 }))
 
-const mockItems = vi.fn()
 const mockOpenNext = vi.fn()
 
 vi.mock('./lib/secondGame', async () => {
@@ -48,12 +46,9 @@ vi.mock('./lib/secondGame', async () => {
     // Real arithmetic: the screen must agree with what the host writes.
     scoreMajority: actual.scoreMajority,
     mostVotedPlayers: actual.mostVotedPlayers,
-    useRevealedItems: () => mockItems(),
     openNextSecondRound: (...args: unknown[]) => mockOpenNext(...args),
   }
 })
-
-const prompt = HARVEST_PROMPTS[0]
 
 function round(phase: string, extra: Record<string, unknown> = {}) {
   return { id: 'g2r0', gameId: 'game2', itemId: 'item1', phase, order: 0, startedAt: 0, ...extra }
@@ -61,7 +56,14 @@ function round(phase: string, extra: Record<string, unknown> = {}) {
 
 function renderSecondGame(isHost = false, scores: Record<string, number> = {}) {
   return render(
-    <SecondGame sessionId="s1" gameId="game2" uid={THIRD} isHost={isHost} scores={scores} />,
+    <SecondGame
+      sessionId="s1"
+      gameId="game2"
+      hostUid={HOST}
+      uid={THIRD}
+      isHost={isHost}
+      scores={scores}
+    />,
   )
 }
 
@@ -75,27 +77,32 @@ beforeEach(() => {
   mockRounds.mockReturnValue({ rounds: [round('voting')], loading: false, error: null })
   mockItems.mockReturnValue({
     items: {
-      item1: { gameId: 'game1', text: 'the keys', promptId: prompt.id, revealed: true, createdAt: 0 },
+      item1: {
+        gameId: 'game2',
+        text: '«the keys». מי מכם הכי עלול לשכוח איפה שם את זה?',
+        promptId: 'forgot-where',
+        revealed: true,
+        createdAt: 0,
+      },
     },
     loading: false,
     error: null,
   })
   mockVotes.mockReturnValue({ votes: {}, error: null })
-  mockAuthor.mockReturnValue({ authorPlayerId: PLAYER, error: null })
   mockGetMyVote.mockResolvedValue(null)
   mockCastVote.mockResolvedValue(undefined)
   mockOpenNext.mockResolvedValue('g2r1')
 })
 
 describe('SecondGame', () => {
-  // The whole point of the second game: the item is attributed out loud, and
-  // the question is a new one about the person, not about the text.
-  it('quotes the item with its author named, and asks the prompt’s own question', () => {
+  // Unlike the pre-2026-09-28 design, nobody is named here at all: the item's
+  // text is already the whole, self-contained question, baked in when the
+  // round was opened - see secondGame.ts, composeSecondGameItemText.
+  it('shows the composed question without naming anyone', () => {
     renderSecondGame(false)
 
-    expect(screen.getByText(/התשובה של Player/)).toBeInTheDocument()
     expect(screen.getByText(/the keys/)).toBeInTheDocument()
-    expect(screen.getByText(prompt.secondGameQuestion)).toBeInTheDocument()
+    expect(screen.queryByText(/התשובה של/)).not.toBeInTheDocument()
   })
 
   // Unlike the first game, yourself included: "me" is an honest answer to
@@ -166,16 +173,8 @@ describe('SecondGame', () => {
     // The dangerous version of this screen told the host there was nothing to
     // play and offered "finish the game" as the only button, while its first
     // snapshot was still in flight.
-    expect(screen.queryByText('אין עוד תשובות שנחשפו')).not.toBeInTheDocument()
+    expect(screen.queryByText('אין עוד עובדות זמינות מהקבוצה')).not.toBeInTheDocument()
     expect(screen.getByText('רגע...')).toBeInTheDocument()
-  })
-
-  it('never renders a placeholder where the author’s name belongs', () => {
-    mockAuthor.mockReturnValue({ authorPlayerId: null, error: null })
-
-    renderSecondGame(false)
-
-    expect(screen.queryByText(/מישהו/)).not.toBeInTheDocument()
   })
 
   it('scores the round with majority scoring, not the first game’s', async () => {
@@ -190,11 +189,19 @@ describe('SecondGame', () => {
     expect(mockRevealRound.mock.calls[0][3]).toBeTypeOf('function')
   })
 
-  it('tells the room when the revealed items run out', () => {
+  // Unlike the first game, an item here is created on demand from an
+  // ever-shrinking store rather than existing upfront - so there is nothing
+  // to count in advance, and the host only learns the store is empty from
+  // openNextSecondRound's own return value.
+  it('tells the room when the group’s stored memory runs out', async () => {
     mockRounds.mockReturnValue({ rounds: [], loading: false, error: null })
     mockItems.mockReturnValue({ items: {}, loading: false, error: null })
+    mockOpenNext.mockResolvedValue(null)
 
-    renderSecondGame(false)
-    expect(screen.getByText('אין עוד תשובות שנחשפו')).toBeInTheDocument()
+    renderSecondGame(true)
+    fireEvent.click(screen.getByText('התחלת הסבב הראשון'))
+
+    await waitFor(() => expect(screen.getByText('אין עוד עובדות זמינות מהקבוצה')).toBeInTheDocument())
+    expect(mockOpenNext.mock.calls[0]).toEqual([{}, HOST, 's1', 'game2'])
   })
 })

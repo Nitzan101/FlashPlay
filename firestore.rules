@@ -536,6 +536,23 @@ service cloud.firestore {
           // an item created after the game has moved past harvesting" red.
           && game(sessionId, request.resource.data.gameId).phase == 'harvesting';
 
+        // A memory-sourced item for "most likely to" (redesigned 2026-09-28):
+        // the host writes this directly from the group's private store
+        // (`FactDoc`, milestone 7), already revealed, because there is no
+        // author in this room to hide - the whole point of drawing from the
+        // store rather than from tonight's harvest is that nobody here is
+        // named. See src/lib/secondGame.ts, openNextSecondRound.
+        allow create: if isHost(sessionId)
+          && request.resource.data.revealed == true
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          // Mirrors SECOND_GAME_ITEM_TEXT_MAX_LENGTH in src/lib/model.ts -
+          // longer than a harvest item's own bound, since this is a composed
+          // sentence (a wrapper plus the quoted fact), not a bare answer.
+          && request.resource.data.text.size() <= 500
+          && game(sessionId, request.resource.data.gameId).type == 'most-likely-to'
+          && game(sessionId, request.resource.data.gameId).phase == 'rounds';
+
         // Only the `revealed` flag may change on this write - an independent
         // review found that constraining the flag alone left every other
         // field open, so the host could rewrite `text` in the very update

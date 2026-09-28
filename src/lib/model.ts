@@ -485,7 +485,27 @@ export interface ItemDoc {
    *  reading. Host-only write. */
   revealed: boolean
   createdAt: number
+  /**
+   * The host's private-store `FactDoc` this item was generated from - set
+   * only for a memory-sourced item (see `openNextSecondRound` in
+   * secondGame.ts, 2026-09-28), absent for one a player actually submitted
+   * this evening. Two jobs: it is what lets a re-opened round skip facts
+   * already used earlier in the same gathering (DESIGN: "never repeats a
+   * fact twice in the same gathering"), and it is the reason such an item
+   * carries no `ItemAuthorDoc` at all - the whole point of drawing from the
+   * store is that nobody in the room can be told who it was really about.
+   */
+  sourceFactId?: string
 }
+
+/**
+ * Bounds a memory-sourced second-game item's *composed* text - the wrapper
+ * sentence plus the quoted fact, not the bare fact alone (see
+ * `ITEM_TEXT_MAX_LENGTH`, which bounds a harvest item's raw text and is
+ * reused separately as the eligibility filter on which stored facts are even
+ * short enough to quote). Enforced both here and in firestore.rules.
+ */
+export const SECOND_GAME_ITEM_TEXT_MAX_LENGTH = 500
 
 /**
  * PRIVATE until the matching item is revealed. Same document id as the item.

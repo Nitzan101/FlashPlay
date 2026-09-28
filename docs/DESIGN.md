@@ -438,12 +438,22 @@ see the reasoning below.
 
 ### Most likely to
 
-No harvest phase; it uses **items already revealed** in the first game, meaning ones
-where the room knows who wrote them. **This is critical:** an unrevealed item makes
-"who is most likely to do this" exactly the same question as "who wrote this", and
-the two games collapse into one. When it is known that David wrote it, the host
-reads "David left his phone on the car roof — which of you is most likely to do
-that?", which is a completely new question, and also a laugh at David's expense.
+No harvest phase. **Redesigned 2026-09-28** (see DECISIONS.md): each round draws a
+fact from the group's stored memory (`FactDoc`, milestone 7 - any past gathering
+with this group, any origin: a harvest answer, a guided-question answer, a
+host-authored note) and quotes it **without ever naming whose it was**.
+
+The original version instead reused whatever the first game had just **revealed**,
+naming the real author in the question itself ("David's answer: «...». Which of
+you is most likely to..."). That shipped with exactly the flaw this section used to
+warn against from the other direction: DESIGN was emphatic that an *unrevealed*
+item would make "who is most likely to do this" the same question as "who wrote
+this" - and naming a *revealed* item's real author produces the identical
+collapse, just reached by a different door, since the room already knows the
+answer either way. The fix is not a different wrapper sentence - it is never
+naming anyone, which is also what makes drawing from the store safe: nobody in
+the room needs to have heard the fact tonight, or even be the one it was really
+about.
 
 Everyone votes on a person. There is no correct answer, so **scoring is for voting
 with the majority** — whoever read the room correctly gets a point, which is
@@ -451,10 +461,11 @@ on-thesis because the game rewards familiarity with the group. **After each vote
 whoever got the most votes gets one sentence to defend themselves** — the social
 moment is the point, not the scoring, and without it the game is a survey.
 
-**Stated plainly:** this is the least exciting game on the approved list, and it was
-chosen for the first slice on engineering grounds — zero AI, and reuse of the first
-game's voting component. The choice is right for proving the loop cheaply, and
-should not be mistaken for the impressive part of the product.
+This is also the first game whose material comes from the store rather than from a
+fresh harvest - the thing BACKLOG called "the moat the whole product rests on".
+A first-ever gathering still plays almost identically to the original design in
+practice (its only available facts are what the first game just wrote), but a
+returning group now genuinely benefits from what earlier gatherings left behind.
 
 ### Scoring
 
