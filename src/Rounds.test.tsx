@@ -143,7 +143,7 @@ describe('Rounds', () => {
     mockRounds.mockReturnValue({ loading: false, rounds: [round('voting')], error: null })
     renderRounds(false)
 
-    expect(await screen.findByText('מי כתב/ה את זה?')).toBeInTheDocument()
+    expect(await screen.findByText('מי כתב את זה?')).toBeInTheDocument()
     // THIRD is the viewer: the author votes too, for someone else, so a
     // missing self-option is what keeps abstention from marking them out.
     // (Their name is still on the scoreboard, hence the button-only query.)
@@ -169,7 +169,7 @@ describe('Rounds', () => {
     renderRounds(false)
 
     expect(
-      await screen.findByText('ניחוש נכון שווה 2 נקודות - ומי שכתב/ה מרוויח/ה נקודה על כל מי שהוטעה'),
+      await screen.findByText('ניחוש נכון שווה 2 נקודות'),
     ).toBeInTheDocument()
   })
 
@@ -184,7 +184,7 @@ describe('Rounds', () => {
     renderRounds(true, { [HOST]: 2 })
 
     expect(
-      screen.getByText('2 נקודות לכל ניחוש נכון, נקודה לכותב/ת על כל מי שהוטעה'),
+      screen.getByText('2 נקודות לכל ניחוש נכון'),
     ).toBeInTheDocument()
   })
 

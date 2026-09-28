@@ -62,7 +62,7 @@ describe('how to play', () => {
     for (let i = 0; i < 6; i++) fireEvent.click(screen.getByRole('button', { name: 'הבא' }))
     expect(dialogTitle()).toBe('בסוף הערב')
     fireEvent.click(screen.getByRole('button', { name: 'הקודם' }))
-    expect(dialogTitle()).toBe('מי שמארח/ת מנהל/ת את הקצב')
+    expect(dialogTitle()).toBe('המארח מנהל את הקצב')
     fireEvent.click(screen.getByRole('button', { name: 'הבא' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'יאללה, משחקים' }))

@@ -425,8 +425,12 @@ Everyone submits two items to a prompt, ninety-second window. The app shuffles a
 picks items for rounds, **capped at ten rounds** — eleven people times two is
 twenty-two items, which drags. Each round: the host reads it out, everyone votes on
 who wrote it, and the writer votes too, for someone else, so as not to give
-themselves away. Reveal, then two points for each correct guess and one point to
-the writer for everyone they fooled.
+themselves away. Reveal, then two points for each correct guess.
+
+**Changed 2026-09-27:** the writer no longer scores a point for each voter
+they fooled. Nitzan found it gave the wrong incentive — rewarding an answer
+that does not fit you, for people whose stored answers are meant to be real
+facts about them. See DECISIONS.md.
 
 The round cap is a pacing decision only. The twelve items that were never revealed
 are **kept as facts for future gatherings** and are not used by the second game —

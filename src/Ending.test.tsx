@@ -77,7 +77,7 @@ describe('BetweenGames', () => {
     )
 
     expect(screen.getByText('המשחק הראשון נגמר')).toBeInTheDocument()
-    expect(screen.getByText('ממתינים שהמנחה ימשיך/תמשיך')).toBeInTheDocument()
+    expect(screen.getByText('ממתינים להמשך מהמארח')).toBeInTheDocument()
     const board = screen.getByText('ניקוד').parentElement
     expect(board?.textContent).toMatch(/Alice4.*Bob2.*Carol0/)
   })

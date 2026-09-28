@@ -106,7 +106,7 @@ describe('SecondGame', () => {
     renderSecondGame(false)
 
     expect(screen.getByRole('button', { name: 'Third' })).toBeInTheDocument()
-    expect(screen.getByText('אין תשובה נכונה - נקודה למי שהצביע/ה עם הרוב')).toBeInTheDocument()
+    expect(screen.getByText('אין תשובה נכונה - נקודה למי שהצביע עם הרוב')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Player' }))
     await waitFor(() => expect(mockCastVote).toHaveBeenCalledTimes(1))
@@ -154,7 +154,7 @@ describe('SecondGame', () => {
     expect(screen.getByText('Host בחר/ה בPlayer')).toBeInTheDocument()
     expect(screen.queryByText(/חשב\/ה שזה/)).not.toBeInTheDocument()
     // And the scoring rule is repeated on the screen where the points appear.
-    expect(screen.getByText('נקודה לכל מי שהצביע/ה עם הרוב')).toBeInTheDocument()
+    expect(screen.getByText('נקודה לכל מי שהצביע עם הרוב')).toBeInTheDocument()
   })
 
   it('waits rather than claiming the material has run out', () => {

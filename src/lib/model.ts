@@ -627,15 +627,18 @@ export const MAX_ROUNDS = 10
 export const MIN_PLAYERS_TO_START = 2
 
 /**
- * "Who said that" scoring, from DESIGN: "two points for each correct guess and
- * one point to the writer for everyone they fooled." Cumulative across the
- * gathering rather than per game, which is what gives the evening an arc.
+ * "Who said that" scoring, from DESIGN: "two points for each correct guess."
+ * Cumulative across the gathering rather than per game, which is what gives
+ * the evening an arc.
  *
  * The author votes too, for someone else, so as not to give themselves away -
  * their own vote is simply never scored, in either direction.
+ *
+ * There used to also be a point to the author for every voter fooled - removed
+ * 2026-09-27, Nitzan's call: it rewarded writing an answer that does not fit
+ * you, which works against harvest answers being real facts about the person.
  */
 export const POINTS_FOR_CORRECT_GUESS = 2
-export const POINTS_PER_FOOLED_VOTER = 1
 
 /**
  * "Most likely to" has no correct answer, so DESIGN scores reading the room:

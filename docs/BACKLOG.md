@@ -44,6 +44,43 @@ many seconds is the threshold beyond which it falls back to a template. Not
 relevant to the first slice, which has no generator; to be settled when the first
 AI game is built.
 
+**"Most likely to" is a giveaway when the author is named.** Found by Nitzan
+2026-09-24: the round quotes "the answer of Yossi" and asks who is most likely
+to do it, so nearly everyone votes for Yossi and the majority is known in
+advance - not the new question the second game was meant to be (milestone 6's
+gate asked exactly this and needs real people to answer it). His decision: do
+not patch it (hiding the name turns it back into the first game; barring the
+author changes the scoring); replace the second game with one built from the
+stored group facts, as part of the work of making the memory useful. Until
+that exists the current game stays, with this flaw.
+
+**"Who said that" pays the author for fooling people.** Raised by Nitzan
+2026-09-24 while reviewing the rules card: the author earns
+`POINTS_PER_FOOLED_VOTER` for every voter who guessed wrong. He finds it odd
+and unmotivated, and it rewards writing an answer that does not fit you -
+which works against the whole product, since harvest answers are stored as
+facts about the person. DECIDED 2026-09-24: remove the author's points. His related idea for
+later: a round where the room votes for the funniest answer, which awards
+points (where it fits is not decided). Touches `POINTS_PER_FOOLED_VOTER` in `model.ts`, `rounds.ts`'s scorer,
+the scoring tests and the rules card.
+
+**Identical or near-identical answers break "who said that".** Raised by
+Nitzan 2026-09-24 while reviewing the harvest prompts, as a general problem
+rather than a fault of one prompt: when several people write the same answer
+("keys", "phone", "glasses"), the round cannot be guessed, and a generic
+"who said this" has no answer worth finding. Not solved by rewording each
+prompt. His direction: solve the mechanism, probably with AI making the
+questions more specific, and not necessarily for the prompt under review. To
+be settled together with how stored group facts feed the games, since both
+need the same generator. Open questions: detect duplicates at harvest time or
+at round time, and what a round does when two players wrote the same text.
+
+A second use of the same generator, raised the same day on `broke-something`:
+the second-game question is currently a fixed sentence per prompt, which fits
+some answers badly ("who is most likely to break a burnt dinner"). An AI could
+choose or write the question from the actual answer. Until then each prompt's
+fixed question has to be worded to fit every plausible answer.
+
 **Fact staleness and duplication.** A fact about a job Yossi left two years ago, and
 five people who write the same thing. The "prefer unused" rule handles part of this
 and not all of it.

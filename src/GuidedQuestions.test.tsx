@@ -118,7 +118,7 @@ describe('GuidedQuestions - what is pinned, and where it lands', () => {
   it('always shows the free-paragraph question, whatever the shuffle drew', () => {
     render(<GuidedQuestions sessionId="s1" uid="u1" customQuestions={[]} />)
 
-    expect(screen.getByText('משהו כללי שתרצה/י לספר על עצמך')).toBeInTheDocument()
+    expect(screen.getByText('משהו כללי שכדאי לדעת עליך')).toBeInTheDocument()
   })
 
   // "שאלה שהוספתי תמיד מופיעה ראשונה ולא מערובבת עם האחרות" - the host's own
@@ -136,7 +136,7 @@ describe('GuidedQuestions - what is pinned, and where it lands', () => {
         />,
       )
       const custom = screen.getByText('שאלה של המארח')
-      const general = screen.getByText('משהו כללי שתרצה/י לספר על עצמך')
+      const general = screen.getByText('משהו כללי שכדאי לדעת עליך')
 
       expect(custom.compareDocumentPosition(general) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
     } finally {

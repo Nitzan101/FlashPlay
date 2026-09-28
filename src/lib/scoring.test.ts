@@ -18,8 +18,10 @@ describe('scoreRound - "who said that"', () => {
     expect(scoreRound({ [A]: AUTHOR }, AUTHOR)).toEqual({ [A]: 2 })
   })
 
-  it('pays the author one for each voter they fooled', () => {
-    expect(scoreRound({ [A]: B, [B]: C }, AUTHOR)).toEqual({ [AUTHOR]: 2 })
+  // Removed 2026-09-27: the author used to earn a point per fooled voter.
+  // Nitzan's call - it rewarded writing an answer that does not fit you.
+  it('pays the author nothing for a fooled voter', () => {
+    expect(scoreRound({ [A]: B, [B]: C }, AUTHOR)).toEqual({})
   })
 
   // The author votes for someone else purely so that not voting would not
@@ -35,10 +37,9 @@ describe('scoreRound - "who said that"', () => {
     expect(scoreRound({}, AUTHOR)).toEqual({})
   })
 
-  it('mixes both directions in one round', () => {
+  it('pays only the correct guessers, ignoring the fooled ones', () => {
     expect(scoreRound({ [A]: AUTHOR, [B]: C, [AUTHOR]: A }, AUTHOR)).toEqual({
       [A]: 2,
-      [AUTHOR]: 1,
     })
   })
 })

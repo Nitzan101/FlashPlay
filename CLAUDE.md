@@ -313,6 +313,12 @@ and why. Do not move it back. The vault keeps only the career-facing note at
 so there is no reason to co-locate them.
 
 ## Known pitfalls
+- **A harvest prompt's wording has a real, tested length ceiling** -
+  `MAX_PROMPT_CHARS = 60` in `prompts.test.ts` - and drafting content by ear
+  does not catch it: two approved rewordings during the 2026-09-24 to
+  2026-09-27 review read fine and turned out to be 94 and 64 characters once
+  the suite ran. Check a candidate prompt's length before presenting it, not
+  just after.
 - **A new emulator-backed test file must be registered in two separate config
   files, not one.** `vite.config.ts`'s `exclude` keeps it out of plain
   `npm test` (which has no emulator); `vitest.rules.config.ts`'s `include`

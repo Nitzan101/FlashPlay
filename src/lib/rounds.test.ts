@@ -285,10 +285,11 @@ describe('revealRound', () => {
     expect(author.data()?.authorPlayerId).toBe(PLAYER)
   })
 
-  it('scores two points for a correct guess and one to the author per fooled voter', async () => {
+  it('scores two points for a correct guess, and nothing for the author', async () => {
     // PLAYER wrote the item. HOST guesses right; THIRD guesses wrong; the
     // author's own vote is cast (so as not to give themselves away) and
-    // scored in neither direction.
+    // scored in neither direction. Nor is a wrong guess - the author no
+    // longer earns a point per fooled voter (removed 2026-09-27).
     await castVote(asHost(), SESSION, 'round1', HOST, PLAYER)
     await castVote(asThird(), SESSION, 'round1', THIRD, HOST)
     await castVote(asPlayer(), SESSION, 'round1', PLAYER, THIRD)
@@ -296,9 +297,9 @@ describe('revealRound', () => {
     const summary = await revealRound(asHost(), SESSION, 'round1')
 
     expect(summary.authorPlayerId).toBe(PLAYER)
-    expect(summary.awarded).toEqual({ [HOST]: 2, [PLAYER]: 1 })
+    expect(summary.awarded).toEqual({ [HOST]: 2 })
     const session = (await getDoc(doc(asHost(), `sessions/${SESSION}`))).data() as SessionDoc
-    expect(session.scores).toEqual({ [HOST]: 2, [PLAYER]: 1 })
+    expect(session.scores).toEqual({ [HOST]: 2 })
   })
 
   // Cumulative across the gathering (DESIGN), and derived rather than

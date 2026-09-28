@@ -30,7 +30,6 @@ import { errorCode, step } from './room'
 import {
   MAX_ROUNDS,
   POINTS_FOR_CORRECT_GUESS,
-  POINTS_PER_FOOLED_VOTER,
   paths,
   type ItemAuthorDoc,
   type ItemDoc,
@@ -165,9 +164,9 @@ export async function castVote(
  * numbers from the same public data - the host to write them, everyone else
  * to display them - and so the arithmetic is testable without an emulator.
  *
- * Two points for each correct guess, one point to the author for every voter
- * they fooled. The author's own vote is skipped in both directions: they vote
- * for someone else purely so that not voting would not give them away.
+ * Two points for each correct guess. The author's own vote is skipped in both
+ * directions: they vote for someone else purely so that not voting would not
+ * give them away.
  */
 export function scoreRound(
   votes: Record<string, string>,
@@ -178,8 +177,6 @@ export function scoreRound(
     if (voterId === authorPlayerId) continue
     if (votedForPlayerId === authorPlayerId) {
       awarded[voterId] = (awarded[voterId] ?? 0) + POINTS_FOR_CORRECT_GUESS
-    } else {
-      awarded[authorPlayerId] = (awarded[authorPlayerId] ?? 0) + POINTS_PER_FOOLED_VOTER
     }
   }
   return awarded

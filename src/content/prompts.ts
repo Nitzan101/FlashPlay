@@ -11,6 +11,15 @@
  * Hebrew is correct rather than a policy violation: these strings are read by
  * the people playing.
  *
+ * **Reviewed line by line with Nitzan, 2026-09-24 to 2026-09-27** (see
+ * DECISIONS.md): `wrong-name` and `small-lie` dropped, `tripped` split into
+ * `embarrassing-memory` and `household-obstacle`, `false-scare` merged with
+ * the guided question `fear` (now deleted from that bank), and several
+ * prompts reworded for a less flat voice. `waved-at-stranger`,
+ * `laughed-wrong-moment` and `hid-something` were flagged as weak ("not much
+ * of a question") but kept, since the pool would otherwise sit at its
+ * `MIN_POOL_SIZE` floor - worth revisiting if a stronger replacement turns up.
+ *
  * --- The three rules every prompt here must satisfy (DESIGN.md) ------------
  *
  * 1. **It asks for a behaviour**, not a fact and not an opinion. Only a
@@ -122,16 +131,13 @@ export const HARVEST_PROMPTS: readonly HarvestPrompt[] = [
     secondGameQuestion: 'מי מכם הכי עלול לאכול את זה בעמידה מול המקרר?',
   },
   {
-    id: 'wrong-name',
-    text: 'פעם שקראתם למישהו בשם הלא נכון',
-    drawer: 'personal',
-    secondGameQuestion: 'מי מכם הכי עלול לקרוא למישהו בשם הלא נכון?',
-  },
-  {
     id: 'false-scare',
-    text: 'פעם שנבהלתם ממשהו שבכלל לא היה מפחיד',
+    // Merged 2026-09-24 with the guided question `fear`, which asked the
+    // same thing as a standing fact rather than a one-off scare - see
+    // BACKLOG.md.
+    text: 'משהו שרוב האנשים לא מפחדים ממנו, ואתם דווקא כן',
     drawer: 'personal',
-    secondGameQuestion: 'מי מכם הכי עלול להיבהל ככה?',
+    secondGameQuestion: 'מי מכם הכי עלול לפחד מזה?',
   },
   {
     id: 'said-and-regretted',
@@ -141,25 +147,25 @@ export const HARVEST_PROMPTS: readonly HarvestPrompt[] = [
   },
   {
     id: 'mismatched-clothes',
-    text: 'פעם שיצאתם מהבית עם בגד הפוך או שתי נעליים שונות',
+    text: 'הפעם שיצאתם מהבית עם חולצה הפוכה, נעליים שונות, או לא במקום',
     drawer: 'personal',
     secondGameQuestion: 'מי מכם הכי עלול לצאת ככה מהבית?',
   },
   {
     id: 'fell-asleep',
-    text: 'מקום מוזר שנרדמתם בו',
+    text: 'הפעם שנרדמתם במקום שממש לא מתאים לישון בו',
     drawer: 'personal',
     secondGameQuestion: 'מי מכם הכי עלול להירדם שם?',
   },
   {
     id: 'waved-at-stranger',
-    text: 'פעם שנופפתם לשלום למישהו שלא הכרתם',
+    text: 'הפעם שנופפתם בהתלהבות למישהו ואז הבנתם שאתם לא מכירים אותו',
     drawer: 'personal',
-    secondGameQuestion: 'מי מכם הכי עלול לנופף למישהו זר?',
+    secondGameQuestion: 'מי מכם הכי עלול לנופף ככה למישהו זר?',
   },
   {
     id: 'postponing',
-    text: 'משהו שאתם דוחים כבר חודש',
+    text: 'הדבר שאתם אומרים עליו ״מחר״ כבר שבועות',
     drawer: 'personal',
     secondGameQuestion: 'מי מכם הכי עלול לדחות את זה חודש?',
   },
@@ -194,16 +200,18 @@ export const HARVEST_PROMPTS: readonly HarvestPrompt[] = [
     secondGameQuestion: 'מי מכם הכי עלול להחביא את זה?',
   },
   {
-    id: 'small-lie',
-    text: 'שקר קטן ומצחיק ששיקרתם לעצמכם',
+    id: 'embarrassing-memory',
+    // Split from `tripped` 2026-09-24, at Nitzan's request, into two sharper
+    // prompts rather than one broad one.
+    text: 'הרגע המביך שהייתם מוחקים מהיסטוריה אם רק אפשר',
     drawer: 'personal',
-    secondGameQuestion: 'מי מכם הכי עלול לשקר ככה?',
+    secondGameQuestion: 'מי מכם הכי עלול לרצות למחוק רגע כזה?',
   },
   {
-    id: 'tripped',
-    text: 'פעם שנפלתם או נתקלתם במשהו מול כולם',
+    id: 'household-obstacle',
+    text: 'משהו בבית שמפיל אתכם או מכה בכם כל פעם מחדש (פינה, סף, שרוך)',
     drawer: 'personal',
-    secondGameQuestion: 'מי מכם הכי עלול ליפול ככה מול כולם?',
+    secondGameQuestion: 'מי מכם הכי עלול להיתקל בזה שוב?',
   },
 ] as const
 

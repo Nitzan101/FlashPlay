@@ -28,7 +28,7 @@ interface GuidedQuestionsProps {
  * tell which answers actually landed if the write failed partway through a
  * batch.
  */
-/** The free-paragraph built-in ("משהו כללי שתרצה/י לספר על עצמך") is always
+/** The free-paragraph built-in ("משהו כללי שכדאי לדעת עליך") is always
  *  shown, never subject to the random reveal below - it is the direct answer
  *  to DESIGN's own "a free paragraph" requirement, not one option among many,
  *  and a random shuffle hiding it defeats the point of it being there at all.

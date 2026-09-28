@@ -1904,3 +1904,82 @@ Contrast of peach against the base `#16091a` is 11.52. Known trade-off:
 peach sits close to both the coral primary and the gold, so a confirmation is
 told apart from a gold name mostly by being paler. The token names
 `accent-2` and `accent-3` are unchanged, so no component was touched.
+
+## Full content review, 2026-09-24 to 2026-09-28
+
+Nitzan reviewed every piece of Hebrew text in the app line by line - harvest
+prompts, the guided-question bank, the how-to-play cards, every screen tour
+stop, and the remaining UI strings - and this section records the shape of
+what changed, not each individual wording (those are the commit diff itself).
+
+**Harvest prompts (`src/content/prompts.ts`).** `wrong-name` and `small-lie`
+dropped outright ("not a good question" / overlaps `postponing`); `tripped`
+split into `embarrassing-memory` and `household-obstacle` at his request,
+since one broad prompt covered two different kinds of answer; `false-scare`
+merged with the guided question `fear`, which asked the same thing as a
+standing trait rather than a one-off event - now the harvest asks it, and
+`fear` is gone from the guided bank. Three prompts (`waved-at-stranger`,
+`laughed-wrong-moment`, `hid-something`) were flagged as weak ("not much of a
+question") but kept, since dropping all three would put the pool at 14,
+below `MIN_POOL_SIZE`. Pool: 17.
+
+**A real constraint the wording had to fit, found only by running the
+tests: `MAX_PROMPT_CHARS = 60`.** Two of the approved rewordings
+(`mismatched-clothes`, `waved-at-stranger`) were written to read well and
+only turned out to be 94 and 64 characters once the suite ran - both had to
+be shortened afterward without losing the content he'd approved. Worth
+remembering for any future content pass: draft against the length limit,
+not just against the ear.
+
+**Guided-question bank (`src/content/profileQuestions.ts`), style decided
+mid-review: no gender slashes anywhere in this bank**, single genderless
+phrasing throughout (noun phrases, past tense, or "אחר" as a chip - never
+"X/ה"). Reason: an answer here is saved as `"{question}: {answer}"` on a
+person's own page, permanently, and a slash in the question reads broken
+glued to an arbitrary answer forever - a cost a live screen string never
+pays. About fifteen questions were reworded for this alone; several others
+got sharper phrasing besides. `fear` and `movieQuote` deleted;
+`weatherPreference` replaced by `dislikedWeather` (a stronger angle);
+`comfortFood` deleted as a near-duplicate of `rechargeStyle`/`socialBattery`.
+Four questions added: `smileMemory`, `favoriteSinger`, `favoriteReality`, and
+the reworded `dislikedWeather`. Net bank size: 42 (unchanged, since deletions
+and additions matched).
+
+**Live game-UI text kept a different rule.** Once the guided-bank policy was
+proposed for the rest of the app too, Nitzan drew a narrower line: short,
+reusable atomic labels stay slashed (`(מארח/ת)`, `(עזב/ה)`, `(את/ה)`, "שם
+המשתתף/ת", the two vote-line templates, "ניצח/ה") because `PlayerDoc` truly
+carries no gender field and the slash is the honest representation of that,
+not a stale convention; full narrated sentences (rules, questions, error
+messages) got the plain form for readability. Both are principled, not an
+inconsistency - see the exchange that settled it for the reasoning in full.
+
+**Design flaw he found by himself, not by review process:** "most likely to"
+names the answer's author before the vote ("התשובה של יוסי: «כאב ראש»"), so
+the room already knows who to vote for and the majority is almost never in
+doubt - exactly the un-run milestone-6 gate question ("does the second game
+read as new"), now answered without needing a live evening. **Decision:
+replace the second game rather than patch it**, built on the stored group
+facts once that work exists; the current game and its flaw stay until then.
+
+**Scoring change: the author no longer earns a point per fooled voter in
+"who said that"** (`POINTS_PER_FOOLED_VOTER`, removed from `model.ts` and
+`rounds.ts`'s `scoreRound`). His reasoning: it rewarded writing an answer
+that does not fit you, which works against harvest answers being real facts
+about the person - the opposite of what the product is for. Proven removed
+by mutation check: reintroducing the old `else` branch turns exactly the two
+guard assertions in `scoring.test.ts` and `rounds.test.ts` red, and the
+emulator suite (`rounds.test.ts`'s live-write assertion) stayed green
+throughout. His own idea for later, not built: a "funniest answer" vote that
+awards points, place still undecided.
+
+**Two things worth carrying as habits from this review:**
+- A palette or copy choice presented in isolated mockup cards does not
+  reliably predict the reaction to it live in the app (see "Confirmation
+  colour" above) - true again here: several wordings that read fine as a
+  standalone proposal needed a second pass once seen next to the actual
+  constraint (character limit) or the actual mechanic (the scoring flaw).
+- When the reviewer says "leave these as they were" after a long list of
+  proposed changes, do not assume which half of the list "these" refers to -
+  ask, or restate the mapping back before applying it. This session inverted
+  the meaning once and had to be corrected.

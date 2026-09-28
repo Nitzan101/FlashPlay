@@ -53,8 +53,8 @@ export const resources = {
       haveCodeIntro: 'יש לך קוד לחדר?',
       roomCodePlaceholder: '1234',
       joinByCode: 'הצטרפות עם קוד',
-      codeNotFound: 'הקוד שהקלדת לא נמצא. אפשר לבדוק שוב עם מי שמארח/ת.',
-      codeExpired: 'הקוד הזה כבר לא בתוקף. אפשר לבקש קוד חדש מהמארח/ת.',
+      codeNotFound: 'הקוד שהקלדת לא נמצא. אפשר לבדוק שוב עם מי שמארח.',
+      codeExpired: 'הקוד הזה כבר לא בתוקף. אפשר לבקש קוד חדש מהמארח.',
       nameTaken: 'השם הזה כבר תפוס בחדר הזה - אפשר לנסות שם אחר.',
       needMorePlayers: 'צריך לפחות {{count}} משתתפים כדי להתחיל',
 
@@ -87,21 +87,21 @@ export const resources = {
       startFirstRound: 'התחלת הסבב הראשון',
       openingRound: 'פותחים סבב...',
       roundPromptLabel: 'השאלה הייתה: {{text}}',
-      hostPreviewOnly: 'רק את/ה רואה את זה כרגע',
+      hostPreviewOnly: 'מוצג רק למארח כרגע',
       skipItem: 'דילוג על התשובה',
       openVoting: 'הקראה ופתיחת הצבעה',
       waitingForHostToRead: 'המנחה מקריא/ה עוד רגע',
-      whoWroteThis: 'מי כתב/ה את זה?',
+      whoWroteThis: 'מי כתב את זה?',
       votesCastOf: 'הצביעו {{count}} מתוך {{total}}',
-      everyoneVotesHint: 'גם מי שכתב/ה מצביע/ה, כדי לא להסגיר את עצמו/ה',
+      everyoneVotesHint: 'גם מי שכתב את התשובה מצביע, כדי לא להסגיר את עצמו',
       changeVoteHint: 'אפשר לשנות עד לחשיפה',
       // Game 2 already had a during-voting hint and a during-reveal reminder
       // (majorityScoringHint/majorityScoringReminder below) - game 1 had
       // neither, even though it is the one with an actual scoring rule to
       // explain. Asked for directly: "הניקוד הוא לפי מי שהצביע... שזה יותר
       // ברור ונעים לראות."
-      firstGameScoringHint: 'ניחוש נכון שווה 2 נקודות - ומי שכתב/ה מרוויח/ה נקודה על כל מי שהוטעה',
-      firstGameScoringReminder: '2 נקודות לכל ניחוש נכון, נקודה לכותב/ת על כל מי שהוטעה',
+      firstGameScoringHint: 'ניחוש נכון שווה 2 נקודות',
+      firstGameScoringReminder: '2 נקודות לכל ניחוש נכון',
       revealRound: 'חשיפה',
       revealingRound: 'חושפים...',
       authorWas: 'זה נכתב על ידי {{name}}',
@@ -124,14 +124,14 @@ export const resources = {
       // --- milestone 6: "most likely to", the ending ---
       secondGameTitle: 'המשחק השני',
       secondGameQuote: 'התשובה של {{name}}: «{{text}}»',
-      majorityScoringHint: 'אין תשובה נכונה - נקודה למי שהצביע/ה עם הרוב',
+      majorityScoringHint: 'אין תשובה נכונה - נקודה למי שהצביע עם הרוב',
       // The second game's own reveal wording. Reusing the first game's
       // ("חשב/ה שזה") would say there was a right answer, which is exactly
       // what this game does not have.
       votedForSecondGameLine: '{{voter}} בחר/ה ב{{target}}',
       mostVotedIs: 'הכי הרבה קולות: {{names}}',
       defenceInvitation: '{{names}} - משפט אחד להגנה',
-      majorityScoringReminder: 'נקודה לכל מי שהצביע/ה עם הרוב',
+      majorityScoringReminder: 'נקודה לכל מי שהצביע עם הרוב',
       loadingRound: 'רגע...',
       endGatheringConfirm: 'לסיים את הערב?',
       endGatheringYes: 'כן, לסיים',
@@ -143,7 +143,7 @@ export const resources = {
       startingSecondGame: 'מתחילים...',
       endGathering: 'סיום הערב',
       endingGathering: 'מסיימים...',
-      waitingForHostNextGame: 'ממתינים שהמנחה ימשיך/תמשיך',
+      waitingForHostNextGame: 'ממתינים להמשך מהמארח',
       gatheringOver: 'זהו, נגמר!',
       winnerIs: '{{names}} ניצח/ה עם {{points}} נקודות',
       winnerIsOnePoint: '{{names}} ניצח/ה עם נקודה אחת',
@@ -274,7 +274,7 @@ export const resources = {
       addFactError: 'אי אפשר לשמור כרגע.',
 
       // --- host leave flow: close the room or hand it to someone else ---
-      leaveRoomHostQuestion: 'את/ה המארח/ת - מה לעשות עם החדר?',
+      leaveRoomHostQuestion: 'מה לעשות עם החדר?',
       closeRoomForEveryone: 'סגירת החדר לכולם',
       transferHostOption: 'העברת הניהול למישהו אחר',
       closeRoomConfirm: 'לסגור את החדר לכולם? הערב יסתיים, אבל כל המידע שנאסף יישמר.',
@@ -342,31 +342,31 @@ export const resources = {
       howToPlay: {
         welcome: {
           title: 'מה זה FlashPlay?',
-          body: 'משחק לחבורה שנמצאת יחד באותו חדר, כל אחד מהטלפון שלו. החומר של המשחק הוא התשובות שלכם, על האנשים שבאמת יושבים סביבכם.',
+          body: 'משחק לחבורה שיושבת באותו חדר, כל אחד עם הטלפון שלו. אתם כותבים, אתם מנחשים, ובסוף מגלים כמה אתם באמת מכירים אחד את השני.',
         },
         join: {
           title: 'איך נכנסים',
-          body: 'מי שמארח/ת מתחבר/ת, פותח/ת חדר ושולח/ת קישור לקבוצת הוואטסאפ. כל השאר רק לוחצים על הקישור, כותבים שם ובוחרים אימוג׳י. בלי הרשמה ובלי התקנה.',
+          body: 'מי שמארח מתחבר, פותח חדר ושולח את הקישור לקבוצת הוואטסאפ. כל השאר רק לוחצים על הקישור, כותבים שם ובוחרים אימוג׳י. בלי הרשמה ובלי התקנה.',
         },
         answer: {
           title: 'שלב ראשון: כולם עונים',
-          body: 'כל אחד עונה בסתר על 2 שאלות קצרות. יש 90 שניות, ומי שמארח/ת יכול/ה להוסיף עוד דקה.',
+          body: 'כל אחד עונה בסתר על שתי שאלות קצרות.',
         },
         whoSaid: {
           title: 'משחק ראשון: מי אמר את זה?',
-          body: 'תשובה אחת מוצגת, וכולם מנחשים מי כתב/ה אותה. גם מי שכתב/ה מצביע/ה, על מישהו אחר, כדי לא להסגיר את עצמו/ה. ניחוש נכון שווה 2 נקודות, ומי שכתב/ה מקבל/ת נקודה על כל מי שהוטעה.',
+          body: 'תשובה אחת עולה על המסך, וכולם מנחשים מי כתב אותה. גם הכותב מצביע, על מישהו אחר, כדי לא לחשוף את עצמו. ניחוש נכון שווה 2 נקודות.',
         },
         mostLikely: {
           title: 'משחק שני: מי הכי סביר?',
-          body: 'התשובות שנחשפו חוזרות כשאלה על כולם. אין תשובה נכונה, מותר להצביע גם לעצמך, ונקודה הולכת לכל מי שהצביע/ה עם הרוב. מי שקיבל/ה הכי הרבה קולות מקבל/ת משפט אחד להגנה.',
+          body: 'התשובות שנחשפו חוזרות כשאלה על כולם. אין תשובה נכונה, מותר להצביע גם לעצמך, ונקודה הולכת לכל מי שהצביע עם הרוב. מי שקיבל הכי הרבה קולות מקבל משפט אחד להגנה.',
         },
         host: {
-          title: 'מי שמארח/ת מנהל/ת את הקצב',
-          body: 'המשחק לא מתקדם לבד. מי שמארח/ת רואה כל תשובה רגע לפני כולם, מקריא/ה אותה בקול, פותח/ת הצבעה ואחר כך חושף/ת. אפשר לדלג על תשובה, ואפשר להעביר את הניהול למישהו אחר.',
+          title: 'המארח מנהל את הקצב',
+          body: 'מי שמארח רואה כל תשובה רגע לפני כולם, ומקריא אותה בקול.',
         },
         end: {
           title: 'בסוף הערב',
-          body: 'הניקוד מצטבר לאורך כל הערב, ובסוף מוכרז מנצח. מי שמארח/ת יכול/ה לשמור את הקבוצה בשם, ובפעם הבאה הערב ימשיך מאותה קבוצה. המידע נשמר רק אצלו/ה.',
+          body: 'הניקוד מצטבר לאורך כל הערב, ובסוף מוכרז מנצח. מי שמארח יכול לתת לקבוצה שם ולשמור אותה, ובפעם הבאה הערב ימשיך מאותה קבוצה. המידע נשמר רק אצל המארח.',
         },
         demo: {
           name1: 'אלה',
@@ -381,7 +381,7 @@ export const resources = {
         welcome: {
           signIn: {
             title: 'התחברות',
-            body: 'רק מי שמארח/ת צריך/ה חשבון. אחרי ההתחברות אפשר לפתוח חדרים ולשמור קבוצות.',
+            body: 'התחברו כדי לפתוח חדר בעצמכם ולשמור קבוצות.',
           },
           joinCode: {
             title: 'הצטרפות עם קוד',
@@ -391,7 +391,7 @@ export const resources = {
         home: {
           roomPicker: {
             title: 'לאיזו קבוצה החדר?',
-            body: 'חדר חדש, או קבוצה ששמרת. ערב עם קבוצה שמורה ממשיך את מה שכבר נאסף עליה.',
+            body: 'חדר חדש, או קבוצה ששמרת. קבוצה שמורה שומרת את כל מה שנאסף עליה מערב לערב.',
           },
           groupDetails: {
             title: 'פרטי הקבוצה',
@@ -407,7 +407,7 @@ export const resources = {
           },
           editProfile: {
             title: 'הפרופיל שלי',
-            body: 'השם והאימוג׳י שלך, כדי שלא תצטרך/י להקליד אותם בכל ערב.',
+            body: 'השם והאימוג׳י שלך, כדי לא להקליד אותם בכל ערב.',
           },
           editQuestions: {
             title: 'שאלות מנחות',
@@ -415,7 +415,7 @@ export const resources = {
           },
           joinCode: {
             title: 'חדר של מישהו אחר',
-            body: 'מישהו אחר מארח/ת? מקלידים כאן את הקוד ומצטרפים כמשתתף/ת.',
+            body: 'מישהו אחר מארח? מקלידים כאן את הקוד ומצטרפים כמשתתפים.',
           },
         },
         group: {
@@ -441,7 +441,7 @@ export const resources = {
           },
           share: {
             title: 'שיתוף',
-            body: 'שולח עותק של הקבוצה למארח/ת אחר/ת. מאותו רגע כל אחד ממשיך אצלו בנפרד.',
+            body: 'שליחת עותק של הקבוצה לחבר.',
           },
           wipe: {
             title: 'מחיקות',
@@ -451,7 +451,7 @@ export const resources = {
         person: {
           facts: {
             title: 'מה שנשמר',
-            body: 'תשובות מהמשחקים, מהשאלות המנחות ופרטים שהוספת. כל שורה אפשר למחוק, ו״הוספת פרט״ מוסיף פרט חופשי.',
+            body: 'כל המידע שנאסף על איש הקשר. מתעדכן מהמשחקים וניתן להוסיף ולערוך בעצמך.',
           },
           questions: {
             title: 'השאלות המנחות',
@@ -477,7 +477,7 @@ export const resources = {
           },
           linkPlayers: {
             title: 'מישהו מוכר?',
-            body: 'מי שנכנס/ה בשם אחר מבפעם הקודמת: כאן מחברים אותו/ה למי שהוא/היא באמת, כדי שהמידע יישמר במקום הנכון.',
+            body: 'מישהו נכנס בשם אחר מבפעם הקודמת? כאן מחברים אותו למי שהוא באמת, כדי שהמידע יישמר במקום הנכון.',
           },
           guided: {
             title: 'ספרו לנו על עצמכם',
@@ -485,7 +485,7 @@ export const resources = {
           },
           startGame: {
             title: 'התחלת המשחק',
-            body: 'כשכולם בפנים, מתחילים. צריך לפחות 2 משתתפים. מכאן המשחק מתקדם רק כשתלחץ/י.',
+            body: 'כשכולם בפנים, מתחילים. צריך לפחות שני משתתפים. מכאן המשחק מתקדם רק לפי הלחיצות שלך.',
           },
           leave: {
             title: 'יציאה מהחדר',

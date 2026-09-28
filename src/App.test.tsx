@@ -492,7 +492,7 @@ describe('joining by typed code', () => {
     // a link, nonsensical for a typed code) - found in Nitzan's own play
     // session, 2026-09-16.
     expect(
-      await screen.findByText('הקוד שהקלדת לא נמצא. אפשר לבדוק שוב עם מי שמארח/ת.'),
+      await screen.findByText('הקוד שהקלדת לא נמצא. אפשר לבדוק שוב עם מי שמארח.'),
     ).toBeInTheDocument()
     // The landing page itself survives the error - unlike the link path, a
     // mistyped code should not blank the whole screen.
