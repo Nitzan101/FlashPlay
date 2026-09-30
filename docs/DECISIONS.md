@@ -2063,3 +2063,50 @@ duplicate-skip deterministically, without the emulator. `secondGame.test.ts`
 phase-gated, that a memory-sourced item never gets a matching
 `ItemAuthorDoc`, that a fact is never drawn twice in one gathering, and that
 `useCount` increments in the host's own store.
+
+---
+
+## A manual override for a same-named stranger, 2026-09-29
+
+While waiting for the first real multi-person test, Nitzan asked what else
+could move forward for free. Picked from a short list of concrete, already-
+scoped BACKLOG items: the gap where two unrelated people sharing a name
+(two different "David"s who never happen to be in the same room together)
+silently merge into one contact across gatherings.
+
+**Not actually fixable automatically.** A returning guest's uid is anonymous
+and different every gathering, so a typed name is the only signal
+`ensureContacts`/`matchName` has at all. Within one gathering two same-named
+players are already kept apart (the `taken` set in `ensureContacts`); the
+failure is specifically across gatherings, where nothing forces the two
+"David"s to ever appear in the same matching pass. No algorithm can
+distinguish them from name alone - the fix is a way for the host to correct
+it once they notice, not a smarter matcher.
+
+**Built as the mirror of the existing manual override, not a new mechanism.**
+`LinkPlayers.tsx` already let a host connect a player whose name matched
+*nothing* to who they actually are (`linkPlayerToContact`). The new
+`startNewContactForPlayer` is the same primitive pointed at a freshly minted
+id instead of an existing one, so `ensureContacts`'s manual-links pass -
+which already gives an explicit override absolute priority over its own
+name-matching - honours it for free, no change needed there at all.
+
+**Confirmed with Nitzan before building:** same screen, a second collapsed
+section for players who *did* match automatically, each with a "לא אותו אדם"
+button - rather than a new screen or a settings-page toggle.
+
+**Scope, stated plainly:** this fixes the problem forward from the moment the
+host notices and taps the button. A fact already written under the wrong
+contact before that moment does not move - it has to be deleted by hand from
+GroupDetails. A full fix (migrating a contact's facts to a different one) is
+a separate, larger feature, not attempted here.
+
+Evidence: `memory.test.ts` proves a same-named newcomer gets a genuinely
+separate contact once overridden, that the new contact is added to the group
+under the name actually typed, and that a non-host is refused (no rules
+change needed - `sessions` update already has no per-field shape check, per
+`linkPlayerToContact`'s own comment). `LinkPlayers.test.tsx` is a new file -
+none existed for this component before - covering both the original
+unmatched-player flow and the new matched-player one, including that an
+already-split player shows as done rather than offering the button again.
+268 emulator assertions, 197 fast-suite tests, build clean.

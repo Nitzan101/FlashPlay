@@ -278,6 +278,34 @@ export async function linkPlayerToContact(
   )
 }
 
+/**
+ * The opposite correction from `linkPlayerToContact`, for the opposite
+ * failure: `matchName()` found someone who is NOT actually the same person -
+ * "two different Davids in the same group become one contact on the second
+ * visit" (BACKLOG.md). Raised by Nitzan 2026-09-29.
+ *
+ * Same mechanism as a manual link, just pointed at a freshly-minted id
+ * instead of an existing one: `ensureContacts`'s manual-links pass gives
+ * whatever is already in `SessionDoc.contactIds` absolute priority over its
+ * own name-matching, so writing a brand-new id here *before* `ensureContacts`
+ * next runs (normally from the lobby, before any game has produced anything
+ * to attribute) is enough to keep this player's facts out of the contact
+ * `matchName` would otherwise have picked. Nothing already written under the
+ * wrong contact moves on its own - see GroupDetails for deleting a
+ * wrongly-attributed fact by hand.
+ */
+export async function startNewContactForPlayer(
+  firestore: Firestore,
+  sessionId: string,
+  playerId: string,
+): Promise<string> {
+  const contactId = crypto.randomUUID()
+  await step('start-new-contact-for-player', () =>
+    updateDoc(doc(firestore, paths.session(sessionId)), { [`contactIds.${playerId}`]: contactId }),
+  )
+  return contactId
+}
+
 /** The host's end-of-evening offer: keep this group, under this name, so the
  *  next gathering with these people continues their memory instead of
  *  starting a parallel one. Everything it names already exists - see

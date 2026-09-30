@@ -299,6 +299,9 @@ export const resources = {
       linkPlayersHint:
         'אם מישהו נרשם הפעם בשם אחר, אפשר לקשר אותו למי שהקבוצה כבר מכירה כדי שהמידע יישמר עליו ולא על מישהו חדש',
       linkPlayerError: 'אי אפשר לקשר כרגע.',
+      notSamePersonHint: 'מישהו כאן זוהה בטעות כמי שהקבוצה כבר מכירה? אפשר להפריד',
+      notSamePerson: 'לא אותו אדם',
+      startedAsNewContact: 'נפרד ✓',
 
       // --- handing a saved group to another host ---
       shareGroupButton: 'שיתוף הקבוצה עם מישהו',

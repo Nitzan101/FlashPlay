@@ -44,6 +44,7 @@ import {
   shareGroup,
   recordFeedback,
   setContactQuestionAnswer,
+  startNewContactForPlayer,
   wipeGroupFacts,
   writeFactsForGame,
   writeProfileFacts,
@@ -212,6 +213,56 @@ describe('linkPlayerToContact', () => {
   it('refuses a guest linking players to contacts', async () => {
     await expect(
       linkPlayerToContact(asPlayer(), SESSION, PLAYER, 'whatever-contact'),
+    ).rejects.toThrow()
+  })
+})
+
+// The mirror correction from linkPlayerToContact: matchName() found someone
+// who is NOT actually the same person - "a genuine duplicate name across
+// gatherings still merges two people" (BACKLOG.md). Raised 2026-09-29.
+describe('startNewContactForPlayer', () => {
+  it('keeps a same-named newcomer out of the returning person’s contact', async () => {
+    const first = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    const davidsContact = first[PLAYER]
+
+    // A second, unrelated "דוד" joining a later gathering with this same
+    // group - without the override, matchName() alone would fold him into
+    // davidsContact exactly like `after['other-david-uid']` almost does below.
+    await startNewContactForPlayer(asHost(), SESSION, 'other-david-uid')
+    const after = await ensureContacts(
+      asHost(),
+      HOST,
+      SESSION,
+      [{ id: 'other-david-uid', name: 'דוד' }],
+      SESSION,
+    )
+
+    expect(after['other-david-uid']).not.toBe(davidsContact)
+  })
+
+  it('adds the new contact to the group, under the name actually typed', async () => {
+    await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+
+    await startNewContactForPlayer(asHost(), SESSION, 'other-david-uid')
+    const after = await ensureContacts(
+      asHost(),
+      HOST,
+      SESSION,
+      [...roster, { id: 'other-david-uid', name: 'דוד' }],
+      SESSION,
+    )
+
+    const group = (await getDoc(doc(asHost(), paths.group(HOST, SESSION)))).data() as GroupDoc
+    expect(group.memberContactIds).toContain(after['other-david-uid'])
+    const contact = (
+      await getDoc(doc(asHost(), paths.contact(HOST, after['other-david-uid'])))
+    ).data() as ContactDoc
+    expect(contact.name).toBe('דוד')
+  })
+
+  it('refuses a guest starting a new contact for anyone', async () => {
+    await expect(
+      startNewContactForPlayer(asPlayer(), SESSION, 'other-david-uid'),
     ).rejects.toThrow()
   })
 })

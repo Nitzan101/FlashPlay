@@ -420,7 +420,17 @@ remain. A real fix needs a way for a joiner to prove they belong before
 reading anything - a per-gathering token in the link, say - which is a
 security design, not a screen.
 
-**A genuine duplicate name across gatherings still merges two people.** Two
+**PARTIALLY RESOLVED 2026-09-29.** `LinkPlayers.tsx` now offers a manual
+correction for exactly this case: any player whose typed name matched an
+existing contact gets a "לא אותו אדם" button that starts a brand-new,
+separate contact for them (`startNewContactForPlayer` in memory.ts). The
+underlying limitation is unchanged - name is still the only signal, so the
+host has to *notice* the wrong match themselves - but there is now a way to
+fix it once they do. Fixes forward only: a fact already written under the
+wrong contact before the host catches it stays there until deleted by hand
+from GroupDetails.
+
+~~A genuine duplicate name across gatherings still merges two people.~~ Two
 different Davids in the same group become one contact on the second visit.
 Within one gathering they stay separate, and the failure is visible (one
 person's answers appear under another's name on the memory screen), but there
