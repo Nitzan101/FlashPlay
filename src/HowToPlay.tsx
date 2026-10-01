@@ -15,7 +15,7 @@ type CardId = (typeof CARDS)[number]
  * 2026-09-23). Every label inside a demo is the real one from i18n, so a
  * renamed button can never leave the demo showing its old name.
  */
-export default function HowToPlay({ onClose }: { onClose: () => void }) {
+export default function HowToPlay({ onClose, greet = false }: { onClose: () => void; greet?: boolean }) {
   const { t } = useTranslation()
   const [index, setIndex] = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -78,6 +78,12 @@ export default function HowToPlay({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        {greet && index === 0 && (
+          <div className="text-center">
+            <p className="m-0 font-display text-2xl font-semibold">{t('howToPlayGreeting')}</p>
+            <p className="m-0 text-sm text-muted">{t('howToPlayGreetingSub')}</p>
+          </div>
+        )}
         <p className="text-xs text-muted">
           {t('tourCounter', { current: index + 1, total: CARDS.length })}
         </p>

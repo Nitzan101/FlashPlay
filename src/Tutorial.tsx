@@ -35,6 +35,9 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   // new one's announcement can arrive before the old one's withdrawal.
   const [stack, setStack] = useState<{ owner: symbol; id: TourId }[]>([])
   const [howToPlayOpen, setHowToPlayOpen] = useState(() => !hasSeen(HOW_TO_PLAY_KEY))
+  // True only while the rules were opened by themselves on a first visit (a
+  // guest arriving from a shared link); the "?" button opens them without it.
+  const [greetFirstVisit, setGreetFirstVisit] = useState(howToPlayOpen)
   const [activeTour, setActiveTour] = useState<TourId | null>(null)
   const screenTour = stack.length > 0 ? stack[stack.length - 1].id : null
 
@@ -77,7 +80,10 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   const state = useMemo<TutorialState>(
     () => ({
       screenTour,
-      openHowToPlay: () => setHowToPlayOpen(true),
+      openHowToPlay: () => {
+        setGreetFirstVisit(false)
+        setHowToPlayOpen(true)
+      },
       startScreenTour: () => setActiveTour(screenTour),
     }),
     [screenTour],
@@ -87,7 +93,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     <RegistryContext.Provider value={registry}>
       <StateContext.Provider value={state}>
         {children}
-        {howToPlayOpen && <HowToPlay onClose={closeHowToPlay} />}
+        {howToPlayOpen && <HowToPlay onClose={closeHowToPlay} greet={greetFirstVisit} />}
         {activeTour && !howToPlayOpen && (
           <Tour key={activeTour} tourId={activeTour} steps={TOURS[activeTour]} onClose={closeTour} />
         )}

@@ -69,6 +69,21 @@ describe('how to play', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('greets a first-time visitor on the first card only, and not when reopened from "?"', () => {
+    localStorage.removeItem(HOW_TO_PLAY_KEY)
+    renderApp()
+
+    expect(screen.getByText('ברוכים הבאים ל-FlashPlay')).toBeInTheDocument()
+    expect(screen.getByText('הסבר על המשחק')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'הבא' }))
+    expect(screen.queryByText('ברוכים הבאים ל-FlashPlay')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'דילוג' }))
+    fireEvent.click(screen.getByRole('button', { name: 'עזרה' }))
+    expect(dialogTitle()).toBe('מה זה FlashPlay?')
+    expect(screen.queryByText('ברוכים הבאים ל-FlashPlay')).not.toBeInTheDocument()
+  })
+
   it('reopens from the "?" button whenever asked', () => {
     renderApp()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

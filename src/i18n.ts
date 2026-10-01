@@ -338,6 +338,8 @@ export const resources = {
       tourDone: 'סיום',
       tourSkip: 'דילוג',
       howToPlaySkip: 'דילוג',
+      howToPlayGreeting: 'ברוכים הבאים ל-FlashPlay',
+      howToPlayGreetingSub: 'הסבר על המשחק',
       howToPlayClose: 'סגירה',
       howToPlayFinish: 'יאללה, משחקים',
       howToPlayDemoLabel: 'הדגמה',
