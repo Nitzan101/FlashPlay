@@ -335,6 +335,38 @@ describe('the evening leaves something behind', () => {
   })
 })
 
+describe('Finale play again', () => {
+  it('lets the host open a new room for the same group', async () => {
+    const onPlayAgain = vi.fn().mockResolvedValue(undefined)
+    render(
+      <Finale sessionId="s1" hostUid="host" uid="host" isHost players={players} scores={{}} groupId="g1" onPlayAgain={onPlayAgain} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'לשחק שוב' }))
+
+    await waitFor(() => expect(onPlayAgain).toHaveBeenCalledWith('g1'))
+  })
+
+  it('uses this evening as the group when none was ever named', async () => {
+    const onPlayAgain = vi.fn().mockResolvedValue(undefined)
+    render(
+      <Finale sessionId="s1" hostUid="host" uid="host" isHost players={players} scores={{}} groupId={null} onPlayAgain={onPlayAgain} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'לשחק שוב' }))
+
+    await waitFor(() => expect(onPlayAgain).toHaveBeenCalledWith('s1'))
+  })
+
+  it('does not offer it to a guest', () => {
+    render(
+      <Finale sessionId="s1" hostUid="host" uid="guest" isHost={false} players={players} scores={{}} groupId="g1" />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'לשחק שוב' })).not.toBeInTheDocument()
+  })
+})
+
 describe('Finale feedback', () => {
   it('asks a guest too, and records only their own answer', async () => {
     render(

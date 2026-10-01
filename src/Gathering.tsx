@@ -10,6 +10,8 @@ import { usePresenceHeartbeat, useRoster, useSession } from './lib/room'
 import Lobby from './Lobby'
 
 interface GatheringProps {
+  /** Opens a new room for the same group - see Finale. */
+  onPlayAgain?: (groupId: string) => Promise<void>
   sessionId: string
   roomCode: string
   uid: string
@@ -46,7 +48,7 @@ interface GatheringProps {
  * keeps running across the whole gathering rather than stopping the moment
  * the host leaves the lobby screen.
  */
-export default function Gathering({ sessionId, roomCode, uid }: GatheringProps) {
+export default function Gathering({ sessionId, roomCode, uid, onPlayAgain }: GatheringProps) {
   const { t } = useTranslation()
   usePresenceHeartbeat(sessionId, uid)
   const { players, error: rosterError } = useRoster(sessionId)
@@ -82,6 +84,7 @@ export default function Gathering({ sessionId, roomCode, uid }: GatheringProps) 
         hostUid={originalHostUid}
         uid={uid}
         isHost={isOriginalHost}
+        onPlayAgain={isOriginalHost ? onPlayAgain : undefined}
         players={players}
         scores={session.scores ?? {}}
         groupId={session.groupId}

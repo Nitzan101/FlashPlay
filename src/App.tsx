@@ -279,7 +279,7 @@ export default function App() {
     }
   }, [authLoading, user, joinCode, t])
 
-  async function handleCreateRoom(groupId: string | null = null) {
+  async function handleCreateRoom(groupId: string | null = null): Promise<void> {
     if (!user) return
     setBusy(true)
     try {
@@ -650,7 +650,12 @@ export default function App() {
 
       {screen.kind === 'in-room' && (
         <>
-          <Gathering sessionId={screen.sessionId} roomCode={screen.roomCode} uid={screen.uid} />
+          <Gathering
+            sessionId={screen.sessionId}
+            roomCode={screen.roomCode}
+            uid={screen.uid}
+            onPlayAgain={handleCreateRoom}
+          />
           {/* Deliberately quiet, and deliberately not a bare underlined link:
               leaving is a real action that deserves a real control, but it
               must never compete with the host's game buttons for attention.

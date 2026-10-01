@@ -140,6 +140,8 @@ export const resources = {
       startSecondGame: 'למשחק השני',
       startingSecondGame: 'מתחילים...',
       endGathering: 'סיום הערב',
+      playAgain: 'לשחק שוב',
+      playingAgain: 'פותח חדר חדש…',
       endingGathering: 'מסיימים...',
       waitingForHostNextGame: 'ממתינים להמשך מהמארח',
       gatheringOver: 'זהו, נגמר!',

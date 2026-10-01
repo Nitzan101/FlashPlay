@@ -25,6 +25,10 @@ interface FinaleProps {
   players: { id: string; name: string }[]
   scores: Record<string, number>
   groupId: string | null
+  /** Opens a fresh room for the same group and moves this host into it. Only
+   *  given to the evening's owner; a room cannot be reopened (the session's
+   *  phase only moves forward), so "again" always means a new one. */
+  onPlayAgain?: (groupId: string) => Promise<void>
 }
 
 /**
@@ -53,10 +57,12 @@ export default function Finale({
   players,
   scores,
   groupId,
+  onPlayAgain,
 }: FinaleProps) {
   const { t } = useTranslation()
   const save = useAction()
   const feedback = useAction()
+  const again = useAction()
   const { name: savedName, loading: nameLoading } = useGroupName(
     isHost ? hostUid : null,
     groupId,
@@ -183,6 +189,27 @@ export default function Finale({
           <HostButton busy={false} onClick={() => setShowMemory(true)}>
             {t('viewMemory')}
           </HostButton>
+
+          {onPlayAgain && (
+            <>
+              <HostButton
+                busy={again.busy}
+                busyLabel={t('playingAgain')}
+                onClick={() => void again.run(() => onPlayAgain(groupId ?? sessionId))}
+                primary
+              >
+                {t('playAgain')}
+              </HostButton>
+              {again.error && (
+                <p role="alert" className="text-xs text-danger">
+                  {t('createRoomError')}{' '}
+                  <span dir="ltr" className="font-mono">
+                    ({again.error})
+                  </span>
+                </p>
+              )}
+            </>
+          )}
 
           {save.slow && <p className="text-xs text-muted">{t('stillWorking')}</p>}
           {save.error && (
