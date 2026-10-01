@@ -2110,3 +2110,10 @@ none existed for this component before - covering both the original
 unmatched-player flow and the new matched-player one, including that an
 already-split player shows as done rather than offering the button again.
 268 emulator assertions, 197 fast-suite tests, build clean.
+
+## Walkthrough fixes, 2026-10-01
+
+- **Second-game reveal showed permission-denied on the host's phone after every round.** `useVotes` subscribed as soon as the host's own pending write put the round in `revealed`, and the server could see the listener before that write (the same two-documents race as the author read). The hook now retries a refused subscription a few times before surfacing the error. Not reproducible on the emulator; verified by a unit test with a mocked listener only.
+- **Feedback is asked of every player**, not only the host. A guest has no private store, so each player's outcome goes to `sessions/{id}/playerFeedback/{uid}` (own write, finished sessions only, readable by the owner and the host, never other guests). The host's richer note with the headcount stays in their private store.
+- **The « » marks around the fact in the second game are no longer shown**; the fact is bold and coloured instead. Stored text is unchanged.
+- **No confirmation before ending the evening after the second game**, and the first game's leader is named on the pause screen.

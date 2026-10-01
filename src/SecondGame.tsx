@@ -10,6 +10,22 @@ import { mostVotedPlayers, openNextSecondRound, scoreMajority } from './lib/seco
 import { errorCode, useRoster } from './lib/room'
 import { useAction } from './lib/useAction'
 
+/** The composed question marks the quoted fact with « » (secondGame.ts). On
+ *  screen those read as stray bars, so the marks are dropped and the fact is
+ *  set apart by colour and weight instead. Text without marks - an older
+ *  item, say - renders unchanged. */
+function emphasiseFact(text: string) {
+  const match = /^(.*?)«(.+?)»(.*)$/s.exec(text)
+  if (!match) return text
+  return (
+    <>
+      {match[1]}
+      <strong className="font-display font-semibold text-accent-3">{match[2]}</strong>
+      {match[3]}
+    </>
+  )
+}
+
 interface SecondGameProps {
   sessionId: string
   gameId: string
@@ -129,7 +145,7 @@ export default function SecondGame({ sessionId, gameId, hostUid, uid, isHost, sc
               in at creation time by composeSecondGameItemText, which is also
               why nobody is named here: the fact's real author is never
               tracked on this screen at all, see secondGame.ts. */}
-          <p className="text-center text-lg font-medium">{item.text}</p>
+          <p className="text-center text-lg font-medium">{emphasiseFact(item.text)}</p>
           {round.phase === 'preview' && (
             <p className="text-xs text-muted">
               {isHost ? t('hostPreviewOnly') : t('waitingForHostToRead')}

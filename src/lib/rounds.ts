@@ -357,6 +357,9 @@ export function useItems(sessionId: string | null, gameId: string | null): Items
   return state
 }
 
+const VOTES_RETRIES = 4
+const VOTES_RETRY_MS = 500
+
 export interface VotesState {
   /** Voter id -> who they voted for. Empty until the round is revealed: the
    *  rules refuse this collection before then, which is the whole point of it
@@ -380,19 +383,38 @@ export function useVotes(
       setState({ votes: {}, error: null })
       return
     }
-    const unsubscribe = onSnapshot(
-      collection(db, paths.votes(sessionId, roundId)),
-      (snap) => {
-        const votes: Record<string, string> = {}
-        for (const d of snap.docs) votes[d.id] = (d.data() as VoteDoc).votedForPlayerId
-        setState({ votes, error: null })
-      },
-      (error) => {
-        console.error('[FlashPlay] votes listener failed:', errorCode(error), error)
-        setState((prev) => ({ ...prev, error: errorCode(error) }))
-      },
-    )
-    return unsubscribe
+    // The host sees the round's `revealed` phase from its own pending write
+    // before the server has committed it, so the first subscription can reach
+    // the server ahead of that write and be refused (the same two-documents
+    // race as the author read - see Known pitfalls). The rule is right and the
+    // moment is wrong, so a refusal is retried a few times before it is shown.
+    let attempt = 0
+    let unsubscribe = () => {}
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const subscribe = () => {
+      unsubscribe = onSnapshot(
+        collection(db, paths.votes(sessionId, roundId)),
+        (snap) => {
+          const votes: Record<string, string> = {}
+          for (const d of snap.docs) votes[d.id] = (d.data() as VoteDoc).votedForPlayerId
+          setState({ votes, error: null })
+        },
+        (error) => {
+          if (errorCode(error) === 'permission-denied' && attempt < VOTES_RETRIES) {
+            attempt += 1
+            retry = setTimeout(subscribe, VOTES_RETRY_MS * attempt)
+            return
+          }
+          console.error('[FlashPlay] votes listener failed:', errorCode(error), error)
+          setState((prev) => ({ ...prev, error: errorCode(error) }))
+        },
+      )
+    }
+    subscribe()
+    return () => {
+      clearTimeout(retry)
+      unsubscribe()
+    }
   }, [sessionId, roundId, enabled])
 
   return state

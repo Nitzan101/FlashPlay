@@ -618,6 +618,20 @@ service cloud.firestore {
       }
 
       // --- rounds ---
+      // Each player's own answer to "how was the evening", given on the last
+      // screen. Written by its owner only, once the gathering is finished,
+      // and readable by that owner and the host - never by other guests, so
+      // nobody's answer is shaped by what the room already said.
+      match /playerFeedback/{playerId} {
+        allow read: if isUser(playerId) || isHost(sessionId);
+        allow create, update: if isUser(playerId)
+          && isPlayer(sessionId)
+          && session(sessionId).phase == 'finished'
+          && request.resource.data.keys().hasOnly(['outcome', 'createdAt'])
+          && request.resource.data.outcome in ['good', 'mixed', 'died']
+          && request.resource.data.createdAt is number;
+      }
+
       match /rounds/{roundId} {
         allow read: if isPlayer(sessionId);
 

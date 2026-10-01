@@ -125,6 +125,18 @@ export interface SessionFeedbackDoc {
 }
 
 /**
+ * One player's own answer to "how was the evening", at
+ * `sessions/{sessionId}/playerFeedback/{uid}`. Every player gets the question,
+ * not only the host; the host's own richer note (with a headcount) stays in
+ * their private store as `SessionFeedbackDoc`. Writing again corrects the
+ * answer.
+ */
+export interface PlayerFeedbackDoc {
+  outcome: SessionFeedbackDoc['outcome']
+  createdAt: number
+}
+
+/**
  * What the app remembers about a person or a group, written from the items a
  * gathering produced - milestone 7.
  *
@@ -729,6 +741,7 @@ export const paths = {
   customQuestion: (uid: string, id: string) => `users/${uid}/customQuestions/${id}`,
 
   sessionFeedback: (uid: string, sessionId: string) => `users/${uid}/feedback/${sessionId}`,
+  playerFeedback: (sessionId: string, uid: string) => `sessions/${sessionId}/playerFeedback/${uid}`,
 
   groups: (uid: string) => `users/${uid}/groups`,
   group: (uid: string, groupId: string) => `users/${uid}/groups/${groupId}`,

@@ -52,6 +52,7 @@ import {
   type ProfileAnswerDoc,
   type ProfileQuestion,
   type SessionDoc,
+  type PlayerFeedbackDoc,
   type SessionFeedbackDoc,
 } from './model'
 
@@ -817,6 +818,23 @@ export async function recordFeedback(
       sessionId,
       createdAt: Date.now(),
     } satisfies SessionFeedbackDoc),
+  )
+}
+
+/** One player's own answer to "how was the evening" - lives on the session,
+ *  not in anyone's private store, because a guest has no store to write to.
+ *  Keyed by the player's uid, so answering again corrects it. */
+export async function recordPlayerFeedback(
+  firestore: Firestore,
+  sessionId: string,
+  uid: string,
+  outcome: PlayerFeedbackDoc['outcome'],
+): Promise<void> {
+  await step('write-player-feedback', () =>
+    setDoc(doc(firestore, paths.playerFeedback(sessionId, uid)), {
+      outcome,
+      createdAt: Date.now(),
+    } satisfies PlayerFeedbackDoc),
   )
 }
 

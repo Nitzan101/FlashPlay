@@ -102,6 +102,9 @@ describe('SecondGame', () => {
     renderSecondGame(false)
 
     expect(screen.getByText(/the keys/)).toBeInTheDocument()
+    // The « » marks never reach the screen; the fact is set apart instead.
+    expect(document.body.textContent).not.toMatch(/[«»]/)
+    expect(screen.getByText("the keys").tagName).toBe("STRONG")
     expect(screen.queryByText(/התשובה של/)).not.toBeInTheDocument()
   })
 

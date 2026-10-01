@@ -80,6 +80,7 @@ export default function Gathering({ sessionId, roomCode, uid }: GatheringProps) 
       <Finale
         sessionId={sessionId}
         hostUid={originalHostUid}
+        uid={uid}
         isHost={isOriginalHost}
         players={players}
         scores={session.scores ?? {}}

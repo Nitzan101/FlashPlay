@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import HostButton from './HostButton'
 import Scoreboard from './Scoreboard'
@@ -60,12 +60,11 @@ export default function BetweenGames({
 }: BetweenGamesProps) {
   const { t } = useTranslation()
   const { busy, slow, error, run } = useAction()
-  // Ending the evening cannot be undone - the session's phase is monotonic -
-  // and it is the only button on the screen, so it asks first.
-  const [confirmingEnd, setConfirmingEnd] = useState(false)
   const collectedAsFallback = useRef(false)
 
   const nextIsSecondGame = finishedType === 'who-said-that'
+  const best = Math.max(0, ...players.map((player) => scores[player.id] ?? 0))
+  const leaders = players.filter((player) => best > 0 && (scores[player.id] ?? 0) === best)
 
   /**
    * What this game leaves behind, written now rather than at the end of the
@@ -136,6 +135,13 @@ export default function BetweenGames({
       <p className="text-center">
         {nextIsSecondGame ? t('firstGameOver') : t('secondGameOver')}
       </p>
+      {nextIsSecondGame && leaders.length > 0 && (
+        <p className="text-center font-display text-lg font-semibold text-accent-3">
+          {t(leaders.length === 1 ? 'leaderIs' : 'leadersAre', {
+            names: leaders.map((player) => player.name).join(', '),
+          })}
+        </p>
+      )}
       <Scoreboard players={players} scores={scores} title={t('scoreboardTitle')} />
 
       {isHost ? (
@@ -158,28 +164,20 @@ export default function BetweenGames({
             >
               {t('startSecondGame')}
             </HostButton>
-          ) : confirmingEnd ? (
-            <>
-              <p>{t('endGatheringConfirm')}</p>
-              <HostButton
-                busy={busy}
-                busyLabel={t('endingGathering')}
-                onClick={() =>
-                  void run(async () => {
-                    await keepThisGame()
-                    await endGathering(db, sessionId)
-                  })
-                }
-                primary
-              >
-                {t('endGatheringYes')}
-              </HostButton>
-              <HostButton busy={busy} onClick={() => setConfirmingEnd(false)}>
-                {t('endGatheringNo')}
-              </HostButton>
-            </>
           ) : (
-            <HostButton busy={busy} onClick={() => setConfirmingEnd(true)} primary>
+            // No "are you sure": the second game is the last one, and this
+            // screen's only way forward is the finale.
+            <HostButton
+              busy={busy}
+              busyLabel={t('endingGathering')}
+              onClick={() =>
+                void run(async () => {
+                  await keepThisGame()
+                  await endGathering(db, sessionId)
+                })
+              }
+              primary
+            >
               {t('endGathering')}
             </HostButton>
           )}

@@ -9,6 +9,7 @@ import {
   ensureContacts,
   nameGroup,
   recordFeedback,
+  recordPlayerFeedback,
   useGroupName,
   writeRemainingFacts,
 } from './lib/memory'
@@ -18,6 +19,8 @@ import { useAction } from './lib/useAction'
 interface FinaleProps {
   sessionId: string
   hostUid: string
+  /** This viewer's own uid - every player answers the feedback question. */
+  uid: string
   isHost: boolean
   players: { id: string; name: string }[]
   scores: Record<string, number>
@@ -45,6 +48,7 @@ interface FinaleProps {
 export default function Finale({
   sessionId,
   hostUid,
+  uid,
   isHost,
   players,
   scores,
@@ -190,9 +194,14 @@ export default function Finale({
             </p>
           )}
 
-          {/* DESIGN: "outcome feedback after a gathering - did it work, did it
-              die, how many were you - is in the first version, because it is
-              the asset no language model can generate." */}
+        </div>
+      )}
+
+      {/* DESIGN: "outcome feedback after a gathering - did it work, did it
+          die, how many were you - is in the first version, because it is
+          the asset no language model can generate." Every player answers;
+          only the host also gives a headcount and keeps a private note. */}
+      <div className="flex w-full flex-col items-center gap-3 rounded-xl border border-line bg-surface/60 p-3">
           {feedbackDone ? (
             <p className="text-center text-sm text-accent-3">{t('feedbackThanks')}</p>
           ) : (
@@ -214,15 +223,17 @@ export default function Finale({
                   </button>
                 ))}
               </div>
-              <label className="flex w-full items-center justify-between gap-2 text-sm">
-                {t('feedbackHeadcount')}
-                <input
-                  value={headcount}
-                  onChange={(event) => setHeadcount(event.target.value.replace(/\D/g, ''))}
-                  inputMode="numeric"
-                  className="w-20 rounded-xl border border-line bg-surface px-2 py-2 text-center text-ink"
-                />
-              </label>
+              {isHost && (
+                <label className="flex w-full items-center justify-between gap-2 text-sm">
+                  {t('feedbackHeadcount')}
+                  <input
+                    value={headcount}
+                    onChange={(event) => setHeadcount(event.target.value.replace(/\D/g, ''))}
+                    inputMode="numeric"
+                    className="w-20 rounded-xl border border-line bg-surface px-2 py-2 text-center text-ink"
+                  />
+                </label>
+              )}
               {/* Disabled until an answer is picked: a send button that does
                   nothing reads as a broken app, not as a missing choice. */}
               <HostButton
@@ -231,7 +242,10 @@ export default function Finale({
                 onClick={() =>
                   void feedback.run(async () => {
                     if (!outcome) return
-                    await recordFeedback(db, hostUid, sessionId, outcome, Number(headcount) || 0)
+                    await recordPlayerFeedback(db, sessionId, uid, outcome)
+                    if (isHost) {
+                      await recordFeedback(db, hostUid, sessionId, outcome, Number(headcount) || 0)
+                    }
                     setFeedbackDone(true)
                   })
                 }
@@ -250,8 +264,7 @@ export default function Finale({
               )}
             </>
           )}
-        </div>
-      )}
+      </div>
 
       <p className="text-center text-sm text-muted">{t('thanksForPlaying')}</p>
     </div>

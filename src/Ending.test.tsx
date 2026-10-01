@@ -22,6 +22,7 @@ const mockWriteRemainingFacts = vi.fn()
 const mockEnsureContacts = vi.fn()
 const mockNameGroup = vi.fn()
 const mockRecordFeedback = vi.fn()
+const mockRecordPlayerFeedback = vi.fn()
 
 const mockGroupName = vi.fn()
 
@@ -33,6 +34,7 @@ vi.mock('./lib/memory', () => ({
   nameGroup: (...args: unknown[]) => mockNameGroup(...args),
   useGroupName: () => mockGroupName(),
   recordFeedback: (...args: unknown[]) => mockRecordFeedback(...args),
+  recordPlayerFeedback: (...args: unknown[]) => mockRecordPlayerFeedback(...args),
   useGroupMemory: () => ({ groupName: '', facts: [], loading: false, error: null }),
   deleteFact: vi.fn(),
   deleteGroup: vi.fn(),
@@ -54,6 +56,7 @@ beforeEach(() => {
   mockNameGroup.mockResolvedValue(undefined)
   mockGroupName.mockReturnValue({ name: '', loading: false })
   mockRecordFeedback.mockResolvedValue(undefined)
+  mockRecordPlayerFeedback.mockResolvedValue(undefined)
 })
 
 describe('BetweenGames', () => {
@@ -148,13 +151,42 @@ describe('BetweenGames', () => {
 
     expect(screen.queryByText('למשחק השני')).not.toBeInTheDocument()
 
-    // Ending the evening cannot be undone, and it is the only button on the
-    // screen - so one stray tap must not do it.
+    // The second game is the last one: no "are you sure" in the way.
+    expect(screen.queryByText('לסיים את הערב?')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('סיום הערב'))
-    expect(mockEndGathering).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByText('כן, לסיים'))
     await waitFor(() => expect(mockEndGathering).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('BetweenGames leader', () => {
+  const base = {
+    sessionId: 's1',
+    hostUid: 'host',
+    uid: 'host',
+    gameId: 'game1',
+    groupId: null,
+    finishedOrder: 0,
+    isHost: true,
+  }
+
+  it('names the leader after the first game', () => {
+    render(
+      <BetweenGames {...base} finishedType="who-said-that" players={players} scores={{ a: 3, b: 1 }} />,
+    )
+    expect(screen.getByText(`${players[0].name} מוביל/ה!`)).toBeInTheDocument()
+  })
+
+  it('names nobody when nobody has scored, and not after the second game', () => {
+    const first = render(
+      <BetweenGames {...base} finishedType="who-said-that" players={players} scores={{}} />,
+    )
+    expect(screen.queryByText(/מוביל/)).not.toBeInTheDocument()
+    first.unmount()
+
+    render(
+      <BetweenGames {...base} finishedType="most-likely-to" players={players} scores={{ a: 3 }} />,
+    )
+    expect(screen.queryByText(/מוביל/)).not.toBeInTheDocument()
   })
 })
 
@@ -221,7 +253,7 @@ describe('the evening leaves something behind', () => {
   // screen saw a groupId, assumed "already saved", and never wrote a thing.
   it('keeps the evening by itself, before anyone taps anything', async () => {
     render(
-      <Finale sessionId="s1" hostUid="host" isHost players={players} scores={{}} groupId={null} />,
+      <Finale sessionId="s1" hostUid="host" uid="host" isHost players={players} scores={{}} groupId={null} />,
     )
 
     await waitFor(() => expect(mockWriteRemainingFacts).toHaveBeenCalledTimes(1))
@@ -233,7 +265,7 @@ describe('the evening leaves something behind', () => {
     mockGroupName.mockReturnValue({ name: 'המשפחה', loading: false })
 
     render(
-      <Finale sessionId="s1" hostUid="host" isHost players={players} scores={{}} groupId="g1" />,
+      <Finale sessionId="s1" hostUid="host" uid="host" isHost players={players} scores={{}} groupId="g1" />,
     )
 
     await waitFor(() => expect(mockWriteRemainingFacts).toHaveBeenCalledTimes(1))
@@ -247,6 +279,7 @@ describe('the evening leaves something behind', () => {
       <Finale
         sessionId="s1"
         hostUid="host"
+        uid="host"
         isHost={false}
         players={players}
         scores={{}}
@@ -263,6 +296,7 @@ describe('the evening leaves something behind', () => {
       <Finale
         sessionId="s1"
         hostUid="host"
+        uid="host"
         isHost={false}
         players={players}
         scores={{}}
@@ -273,7 +307,7 @@ describe('the evening leaves something behind', () => {
     guest.unmount()
 
     render(
-      <Finale sessionId="s1" hostUid="host" isHost players={players} scores={{}} groupId={null} />,
+      <Finale sessionId="s1" hostUid="host" uid="host" isHost players={players} scores={{}} groupId={null} />,
     )
     fireEvent.change(screen.getByPlaceholderText('שם הקבוצה (למשל: המשפחה)'), {
       target: { value: 'המשפחה' },
@@ -286,7 +320,7 @@ describe('the evening leaves something behind', () => {
 
   it('records the host’s answer on how the evening went', async () => {
     render(
-      <Finale sessionId="s1" hostUid="host" isHost players={players} scores={{}} groupId="g1" />,
+      <Finale sessionId="s1" hostUid="host" uid="host" isHost players={players} scores={{}} groupId="g1" />,
     )
 
     fireEvent.click(screen.getByText('לא עבד'))
@@ -301,12 +335,43 @@ describe('the evening leaves something behind', () => {
   })
 })
 
+describe('Finale feedback', () => {
+  it('asks a guest too, and records only their own answer', async () => {
+    render(
+      <Finale sessionId="s1" hostUid="host" uid="guest-uid" isHost={false} players={players} scores={{}} groupId={null} />,
+    )
+
+    expect(screen.getByText('איך היה הערב?')).toBeInTheDocument()
+    expect(screen.queryByText('כמה הייתם?')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('עבד מצוין'))
+    fireEvent.click(screen.getByRole('button', { name: 'שליחה' }))
+
+    await waitFor(() =>
+      expect(mockRecordPlayerFeedback).toHaveBeenCalledWith(expect.anything(), 's1', 'guest-uid', 'good'),
+    )
+    expect(mockRecordFeedback).not.toHaveBeenCalled()
+  })
+
+  it('keeps the host’s private note with the headcount as well', async () => {
+    render(
+      <Finale sessionId="s1" hostUid="host" uid="host" isHost players={players} scores={{}} groupId={null} />,
+    )
+
+    fireEvent.click(screen.getByText('עבד מצוין'))
+    fireEvent.click(screen.getByRole('button', { name: 'שליחה' }))
+
+    await waitFor(() => expect(mockRecordFeedback).toHaveBeenCalledTimes(1))
+    expect(mockRecordPlayerFeedback).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('Finale', () => {
   it('names the winner and shows the final standings', () => {
     render(
       <Finale
         sessionId="s1"
         hostUid="host"
+        uid="host"
         isHost={false}
         players={players}
         scores={{ a: 7, b: 3 }}
@@ -325,6 +390,7 @@ describe('Finale', () => {
       <Finale
         sessionId="s1"
         hostUid="host"
+        uid="host"
         isHost={false}
         players={players}
         scores={{ a: 5, b: 5 }}
@@ -340,6 +406,7 @@ describe('Finale', () => {
       <Finale
         sessionId="s1"
         hostUid="host"
+        uid="host"
         isHost={false}
         players={players}
         scores={{}}

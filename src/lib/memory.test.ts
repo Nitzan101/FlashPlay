@@ -17,6 +17,7 @@
  */
 import {
   assertFails,
+  assertSucceeds,
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
@@ -43,6 +44,7 @@ import {
   nameGroup,
   shareGroup,
   recordFeedback,
+  recordPlayerFeedback,
   setContactQuestionAnswer,
   startNewContactForPlayer,
   wipeGroupFacts,
@@ -55,6 +57,7 @@ import {
   type ContactDoc,
   type FactDoc,
   type GroupDoc,
+  type PlayerFeedbackDoc,
   type ProfileQuestion,
   type SessionDoc,
   type SessionFeedbackDoc,
@@ -976,6 +979,57 @@ describe('recordFeedback', () => {
     expect(all.size).toBe(1)
     expect((all.docs[0].data() as SessionFeedbackDoc).outcome).toBe('good')
     expect((all.docs[0].data() as SessionFeedbackDoc).headcount).toBe(7)
+  })
+})
+
+describe('recordPlayerFeedback', () => {
+  it('lets a player record and correct their own answer, readable by them and the host', async () => {
+    await recordPlayerFeedback(asPlayer(), SESSION, PLAYER, 'died')
+    await recordPlayerFeedback(asPlayer(), SESSION, PLAYER, 'good')
+
+    const own = await getDoc(doc(asPlayer(), paths.playerFeedback(SESSION, PLAYER)))
+    expect((own.data() as PlayerFeedbackDoc).outcome).toBe('good')
+    await assertSucceeds(getDoc(doc(asHost(), paths.playerFeedback(SESSION, PLAYER))))
+  })
+
+  it('refuses another player writing or reading it - the room never sees anyone else’s answer', async () => {
+    await recordPlayerFeedback(asPlayer(), SESSION, PLAYER, 'good')
+    // A second real player, so a refusal is the rule's and not just "not in the room".
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/players/second-uid`), {
+        name: 'שני', uid: 'second-uid', hasDevice: true, lastSeenAt: 0, joinedAt: 0, votedRoundId: null,
+      })
+    })
+    const asSecond = testEnv
+      .authenticatedContext('second-uid', { firebase: { sign_in_provider: 'anonymous' } })
+      .firestore() as unknown as Firestore
+
+    await assertFails(
+      setDoc(doc(asSecond, paths.playerFeedback(SESSION, PLAYER)), { outcome: 'died', createdAt: Date.now() }),
+    )
+    await assertFails(getDoc(doc(asSecond, paths.playerFeedback(SESSION, PLAYER))))
+  })
+
+  it('refuses an answer before the gathering has finished', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), paths.session(SESSION)), { phase: 'playing' })
+    })
+
+    await assertFails(
+      setDoc(doc(asPlayer(), paths.playerFeedback(SESSION, PLAYER)), {
+        outcome: 'good',
+        createdAt: Date.now(),
+      }),
+    )
+  })
+
+  it('refuses a value that is not one of the three answers', async () => {
+    await assertFails(
+      setDoc(doc(asPlayer(), paths.playerFeedback(SESSION, PLAYER)), {
+        outcome: 'great',
+        createdAt: Date.now(),
+      }),
+    )
   })
 })
 
