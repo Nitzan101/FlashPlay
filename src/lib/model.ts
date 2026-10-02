@@ -454,6 +454,10 @@ export interface GameDoc {
   /** Position in the gathering's sequence. */
   order: number
   startedAt: number
+  /** "Most likely to" only: how many rounds the stored memory can supply
+   *  (at most MAX_ROUNDS), set by the host when the first round opens so every
+   *  phone shows a real total instead of the cap. */
+  plannedRounds?: number
   /**
    * Advisory only - purely a client-side countdown target, never compared
    * against anything in firestore.rules. DESIGN: "every phase needs a timeout

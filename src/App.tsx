@@ -1084,9 +1084,12 @@ function LeaveRoomControl({
   // (a returning saved group, or named at a previous close/transfer/Finale) -
   // if so there is nothing new to ask here, the same way Finale.tsx only
   // offers the name once.
+  // Re-read whenever the stage changes: the finale may have named the group
+  // after this control mounted, and a stale empty name asked for it again.
   const { name: savedGroupName, loading: nameLoading } = useGroupName(
     originalHostUid,
     effectiveGroupId,
+    stage,
   )
   const alreadyNamed = !nameLoading && savedGroupName !== ''
 

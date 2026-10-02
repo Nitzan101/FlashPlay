@@ -134,6 +134,7 @@ export default function Gathering({ sessionId, roomCode, uid, onPlayAgain }: Gat
         sessionId={sessionId}
         gameId={game.id}
         hostUid={originalHostUid}
+        plannedRounds={game.plannedRounds}
         uid={uid}
         isHost={isActiveHost}
         scores={session.scores ?? {}}

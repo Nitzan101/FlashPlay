@@ -39,6 +39,7 @@ vi.mock('./lib/rounds', () => ({
 }))
 
 const mockOpenNext = vi.fn()
+const mockDescribePool = vi.fn()
 
 vi.mock('./lib/secondGame', async () => {
   const actual = await vi.importActual<typeof import('./lib/secondGame')>('./lib/secondGame')
@@ -46,6 +47,8 @@ vi.mock('./lib/secondGame', async () => {
     // Real arithmetic: the screen must agree with what the host writes.
     scoreMajority: actual.scoreMajority,
     mostVotedPlayers: actual.mostVotedPlayers,
+    MIN_SECOND_GAME_FACTS: actual.MIN_SECOND_GAME_FACTS,
+    describeSecondGamePool: (...args: unknown[]) => mockDescribePool(...args),
     openNextSecondRound: (...args: unknown[]) => mockOpenNext(...args),
   }
 })
@@ -92,6 +95,7 @@ beforeEach(() => {
   mockGetMyVote.mockResolvedValue(null)
   mockCastVote.mockResolvedValue(undefined)
   mockOpenNext.mockResolvedValue('g2r1')
+  mockDescribePool.mockResolvedValue({ available: 6, playersWithoutFacts: [] })
 })
 
 describe('SecondGame', () => {
@@ -202,9 +206,54 @@ describe('SecondGame', () => {
     mockOpenNext.mockResolvedValue(null)
 
     renderSecondGame(true)
+    await waitFor(() => expect(screen.getByText('התחלת הסבב הראשון')).toBeEnabled())
     fireEvent.click(screen.getByText('התחלת הסבב הראשון'))
 
     await waitFor(() => expect(screen.getByText('אין עוד עובדות זמינות מהקבוצה')).toBeInTheDocument())
     expect(mockOpenNext.mock.calls[0]).toEqual([{}, HOST, 's1', 'game2'])
+  })
+})
+
+describe('SecondGame before the first round', () => {
+  beforeEach(() => {
+    mockRounds.mockReturnValue({ rounds: [], loading: false, error: null })
+    mockItems.mockReturnValue({ items: {}, loading: false, error: null })
+  })
+
+  it('refuses to start with fewer than two stored facts, and says who has given none', async () => {
+    mockDescribePool.mockResolvedValue({ available: 1, playersWithoutFacts: [PLAYER, THIRD] })
+    renderSecondGame(true)
+
+    await waitFor(() => expect(screen.getByText(/צריך לפחות 2 עובדות/)).toBeInTheDocument())
+    expect(screen.getByText('עדיין לא ענו על אף שאלה: Player, Third')).toBeInTheDocument()
+    expect(screen.getByText('התחלת הסבב הראשון')).toBeDisabled()
+  })
+
+  it('starts once there are enough, and still lists whoever has not answered', async () => {
+    mockDescribePool.mockResolvedValue({ available: 2, playersWithoutFacts: [THIRD] })
+    renderSecondGame(true)
+
+    await waitFor(() => expect(screen.getByText('התחלת הסבב הראשון')).toBeEnabled())
+    expect(screen.getByText('עדיין לא ענו על אף שאלה: Third')).toBeInTheDocument()
+  })
+
+  it('shows the real total once the round count is planned, not the cap of ten', () => {
+    mockRounds.mockReturnValue({ rounds: [round('voting')], loading: false, error: null })
+    render(
+      <SecondGame sessionId="s1" gameId="game2" hostUid={HOST} plannedRounds={4} uid={THIRD} isHost={false} scores={{}} />,
+    )
+
+    expect(screen.getByText('סבב 1 מתוך 4')).toBeInTheDocument()
+  })
+
+  it('ends the game once the planned rounds are played, rather than offering another', () => {
+    mockRounds.mockReturnValue({ rounds: [round('revealed', { awarded: {} })], loading: false, error: null })
+    mockVotes.mockReturnValue({ votes: {}, error: null })
+    render(
+      <SecondGame sessionId="s1" gameId="game2" hostUid={HOST} plannedRounds={1} uid={HOST} isHost scores={{}} />,
+    )
+
+    expect(screen.queryByText('לסבב הבא')).not.toBeInTheDocument()
+    expect(screen.getByText('סיום המשחק')).toBeInTheDocument()
   })
 })

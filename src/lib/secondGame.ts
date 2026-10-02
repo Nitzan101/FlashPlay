@@ -245,6 +245,100 @@ export function selectSecondGameFact(
   return preferred[Math.floor(random() * preferred.length)]
 }
 
+/** Facts that can still become a question: not already used this gathering,
+ *  short enough to quote, from a contact this gathering knows. */
+async function loadSecondGamePool(
+  firestore: Firestore,
+  hostUid: string,
+  sessionId: string,
+  gameId: string,
+  contactIds: string[],
+): Promise<{ facts: EligibleFact[]; contactsWithAnyFact: Set<string> }> {
+  const itemsSnap = await step('read-second-game-items', () =>
+    getDocs(query(collection(firestore, paths.items(sessionId)), where('gameId', '==', gameId))),
+  )
+  const usedFactIds = new Set(
+    itemsSnap.docs
+      .map((d) => (d.data() as ItemDoc).sourceFactId)
+      .filter((id): id is string => Boolean(id)),
+  )
+
+  const factSnaps = await Promise.all(
+    contactIds.map((contactId) =>
+      step('read-contact-facts', () =>
+        getDocs(collection(firestore, paths.contactFacts(hostUid, contactId))),
+      ),
+    ),
+  )
+
+  const facts: EligibleFact[] = []
+  const contactsWithAnyFact = new Set<string>()
+  contactIds.forEach((contactId, i) => {
+    if (factSnaps[i].size > 0) contactsWithAnyFact.add(contactId)
+    for (const factDoc of factSnaps[i].docs) {
+      if (usedFactIds.has(factDoc.id)) continue
+      const fact = factDoc.data() as FactDoc
+      const composedText = composeSecondGameItemText(fact)
+      if (composedText.length > SECOND_GAME_ITEM_TEXT_MAX_LENGTH) continue
+      facts.push({
+        id: factDoc.id,
+        contactId,
+        rawText: fact.text,
+        composedText,
+        promptId: fact.promptId,
+        useCount: fact.useCount,
+      })
+    }
+  })
+  return { facts, contactsWithAnyFact }
+}
+
+/** How many questions the pool can really produce: duplicates two people
+ *  recorded identically are skipped by the draw, so they do not count. */
+function usableFactCount(facts: readonly EligibleFact[]): number {
+  const ambiguous = ambiguousFactIds(facts)
+  return facts.filter((fact) => !ambiguous.has(fact.id)).length
+}
+
+/** The fewest stored facts the host needs before the second game can start. */
+export const MIN_SECOND_GAME_FACTS = 2
+
+export interface SecondGamePool {
+  /** Questions available right now. */
+  available: number
+  /** Players whose person has not answered a single question yet. */
+  playersWithoutFacts: string[]
+}
+
+/**
+ * What the second game has to work with, read before its first round: how many
+ * questions the memory can make, and which players have contributed nothing -
+ * so the host can see why the pool is thin, and ask them to answer.
+ */
+export async function describeSecondGamePool(
+  firestore: Firestore,
+  hostUid: string,
+  sessionId: string,
+  gameId: string,
+): Promise<SecondGamePool> {
+  const sessionSnap = await step('read-session', () => getDoc(doc(firestore, paths.session(sessionId))))
+  const playerToContact = (sessionSnap.data() as SessionDoc).contactIds ?? {}
+  const contactIds = [...new Set(Object.values(playerToContact))]
+  const { facts, contactsWithAnyFact } = await loadSecondGamePool(
+    firestore,
+    hostUid,
+    sessionId,
+    gameId,
+    contactIds,
+  )
+  return {
+    available: usableFactCount(facts),
+    playersWithoutFacts: Object.entries(playerToContact)
+      .filter(([, contactId]) => !contactsWithAnyFact.has(contactId))
+      .map(([playerId]) => playerId),
+  }
+}
+
 /**
  * Opens the next "most likely to" round by drawing a fact from the group's
  * stored memory - any personal fact belonging to a contact this gathering
@@ -287,43 +381,21 @@ export async function openNextSecondRound(
   const contactIds = [...new Set(Object.values(session.contactIds ?? {}))]
   if (contactIds.length === 0) return null
 
-  const itemsSnap = await step('read-second-game-items', () =>
-    getDocs(query(collection(firestore, paths.items(sessionId)), where('gameId', '==', gameId))),
-  )
-  const usedFactIds = new Set(
-    itemsSnap.docs
-      .map((d) => (d.data() as ItemDoc).sourceFactId)
-      .filter((id): id is string => Boolean(id)),
-  )
-
-  const factSnaps = await Promise.all(
-    contactIds.map((contactId) =>
-      step('read-contact-facts', () =>
-        getDocs(collection(firestore, paths.contactFacts(hostUid, contactId))),
-      ),
-    ),
-  )
-
-  const facts: EligibleFact[] = []
-  contactIds.forEach((contactId, i) => {
-    for (const factDoc of factSnaps[i].docs) {
-      if (usedFactIds.has(factDoc.id)) continue
-      const fact = factDoc.data() as FactDoc
-      const composedText = composeSecondGameItemText(fact)
-      if (composedText.length > SECOND_GAME_ITEM_TEXT_MAX_LENGTH) continue
-      facts.push({
-        id: factDoc.id,
-        contactId,
-        rawText: fact.text,
-        composedText,
-        promptId: fact.promptId,
-        useCount: fact.useCount,
-      })
-    }
-  })
+  const { facts } = await loadSecondGamePool(firestore, hostUid, sessionId, gameId, contactIds)
 
   const chosen = selectSecondGameFact(facts, random)
   if (!chosen) return null
+
+  // The first round fixes how many there will be, so every phone can show
+  // "2 of 6" rather than "2 of 10" when the memory only holds six questions.
+  // Counted before this round spends its fact; later rounds never rewrite it.
+  if (roundsSnap.size === 0) {
+    await step('plan-second-game', () =>
+      updateDoc(doc(firestore, paths.game(sessionId, gameId)), {
+        plannedRounds: Math.min(MAX_ROUNDS, usableFactCount(facts)),
+      }),
+    )
+  }
 
   const itemId = nextItemId()
   await step('create-second-game-item', () =>

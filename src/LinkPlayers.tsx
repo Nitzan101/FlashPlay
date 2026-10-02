@@ -47,13 +47,17 @@ export default function LinkPlayers({
 }: LinkPlayersProps) {
   const { t } = useTranslation()
   const { members, loading } = useGroupMemory(hostUid, groupId)
-  const [open, setOpen] = useState(false)
+  // Open by itself whenever somebody was recognised by name: the host is the
+  // only check on that guess, and a collapsed panel hides that it was made.
+  const [toggled, setToggled] = useState<boolean | null>(null)
   const action = useAction()
 
   const memberByName = new Map(members.map((member) => [matchName(member.name), member]))
   const present = players.filter((player) => !player.leftAt)
   const unmatched = present.filter((player) => !memberByName.has(matchName(player.name)))
   const matched = present.filter((player) => memberByName.has(matchName(player.name)))
+
+  const open = toggled ?? matched.length > 0
 
   // Nothing previously known, or nothing to ask about either way.
   if (loading || members.length === 0 || (unmatched.length === 0 && matched.length === 0)) {
@@ -64,11 +68,13 @@ export default function LinkPlayers({
     <div data-tour="link-players" className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface/40 p-3">
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => setToggled(!open)}
         className="flex w-full cursor-pointer items-center justify-between text-start"
       >
         <span className="font-display text-sm font-semibold text-accent-2">{t('linkPlayersTitle')}</span>
-        {unmatched.length > 0 && <span className="text-xs text-muted">{unmatched.length}</span>}
+        {unmatched.length + matched.length > 0 && (
+          <span className="text-xs text-muted">{unmatched.length + matched.length}</span>
+        )}
       </button>
 
       {open && (
@@ -122,10 +128,15 @@ export default function LinkPlayers({
                 )
                 return (
                   <div key={player.id} className="flex items-center justify-between gap-2">
-                    <p className="text-start text-sm">
-                      {player.emoji && <span className="me-1">{player.emoji}</span>}
-                      {player.name}
-                    </p>
+                    <div className="flex flex-col text-start">
+                      <p className="text-sm">
+                        {player.emoji && <span className="me-1">{player.emoji}</span>}
+                        {player.name}
+                      </p>
+                      {!alreadySplit && (
+                        <span className="text-xs text-muted">{t('recognisedByName')}</span>
+                      )}
+                    </div>
                     {alreadySplit ? (
                       <span className="text-xs text-muted">{t('startedAsNewContact')}</span>
                     ) : (

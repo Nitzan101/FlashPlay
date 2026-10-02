@@ -24,7 +24,13 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { openVoting, castVote, getMyVote, revealRound } from './rounds'
-import { endGathering, openNextSecondRound, scoreMajority, startSecondGame } from './secondGame'
+import {
+  describeSecondGamePool,
+  endGathering,
+  openNextSecondRound,
+  scoreMajority,
+  startSecondGame,
+} from './secondGame'
 import { type FactDoc, type GameDoc, type ItemAuthorDoc, type RoundDoc, type SessionDoc } from './model'
 
 const PROJECT_ID = 'demo-flashplay-second'
@@ -308,6 +314,47 @@ describe('a "most likely to" round, end to end', () => {
 
     const session = (await getDoc(doc(asHost(), `sessions/${SESSION}`))).data() as SessionDoc
     expect(session.scores[HOST]).toBe(3)
+  })
+})
+
+describe('planning the rounds from what the memory holds', () => {
+  beforeEach(async () => {
+    await startSecondGame(asHost(), SESSION, 1, () => 'game2')
+  })
+
+  it('records the real total on the first round, never above what the memory can supply', async () => {
+    await seedFact('contact-a', 'fact-a1', 'fact about A')
+    await seedFact('contact-b', 'fact-b1', 'fact about B')
+    await seedFact('contact-b', 'fact-b2', 'another fact about B')
+    await setContactIds({ [PLAYER]: 'contact-a', [THIRD]: 'contact-b' })
+
+    await openNextSecondRound(asHost(), HOST, SESSION, 'game2', () => 'g2r0', () => 0)
+    await openNextSecondRound(asHost(), HOST, SESSION, 'game2', () => 'g2r1', () => 0)
+
+    const game = (await getDoc(doc(asHost(), `sessions/${SESSION}/games/game2`))).data() as GameDoc
+    // Counted before the first round spent a fact, and not rewritten by the second.
+    expect(game.plannedRounds).toBe(3)
+  })
+
+  it('describes how many questions there are and who has contributed nothing at all', async () => {
+    await seedFact('contact-a', 'fact-a1', 'fact about A')
+    await setContactIds({ [PLAYER]: 'contact-a', [THIRD]: 'contact-b' })
+
+    const pool = await describeSecondGamePool(asHost(), HOST, SESSION, 'game2')
+
+    expect(pool.available).toBe(1)
+    expect(pool.playersWithoutFacts).toEqual([THIRD])
+  })
+
+  it('does not count a fact two people recorded identically', async () => {
+    await seedFact('contact-a', 'fact-a1', 'same thing')
+    await seedFact('contact-b', 'fact-b1', 'Same  thing')
+    await seedFact('contact-b', 'fact-b2', 'a different thing')
+    await setContactIds({ [PLAYER]: 'contact-a', [THIRD]: 'contact-b' })
+
+    const pool = await describeSecondGamePool(asHost(), HOST, SESSION, 'game2')
+
+    expect(pool.available).toBe(1)
   })
 })
 

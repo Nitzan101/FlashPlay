@@ -86,7 +86,6 @@ describe('LinkPlayers', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('מישהו כאן שכבר מוכר לקבוצה?'))
     fireEvent.click(screen.getByText('לא אותו אדם'))
 
     await waitFor(() =>
@@ -114,7 +113,6 @@ describe('LinkPlayers', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('מישהו כאן שכבר מוכר לקבוצה?'))
 
     expect(screen.queryByText('לא אותו אדם')).not.toBeInTheDocument()
     expect(screen.getByText('נפרד ✓')).toBeInTheDocument()
@@ -136,7 +134,6 @@ describe('LinkPlayers', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('מישהו כאן שכבר מוכר לקבוצה?'))
 
     expect(screen.getByText('Ella')).toBeInTheDocument()
     // "דוד" appears twice - once as the suggestion chip under Ella, once as
@@ -157,5 +154,36 @@ describe('LinkPlayers', () => {
     )
 
     expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('LinkPlayers, recognised by name', () => {
+  // Added 2026-10-02: the panel used to start collapsed, so a host never saw
+  // that somebody had been matched to a returning contact by name alone.
+  it('is open by itself when somebody was recognised, and says it was a guess from the name', () => {
+    mockUseGroupMemory.mockReturnValue({
+      members: [{ contactId: 'c-david', name: 'דוד', facts: [] }],
+      loading: false,
+    })
+
+    render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('p2', 'דוד')]} contactIds={{}} />,
+    )
+
+    expect(screen.getByText('זוהה/ה לפי השם כמי שכבר מוכר לקבוצה')).toBeInTheDocument()
+    expect(screen.getByText('לא אותו אדם')).toBeInTheDocument()
+  })
+
+  it('stays collapsed when nobody was recognised', () => {
+    mockUseGroupMemory.mockReturnValue({
+      members: [{ contactId: 'c-david', name: 'דוד', facts: [] }],
+      loading: false,
+    })
+
+    render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('p1', 'Ella')]} contactIds={{}} />,
+    )
+
+    expect(screen.queryByText('לא אותו אדם')).not.toBeInTheDocument()
   })
 })

@@ -6,7 +6,14 @@ import Scoreboard from './Scoreboard'
 import { db } from './lib/firebase'
 import { MAX_ROUNDS } from './lib/model'
 import { castVote, finishGame, getMyVote, openVoting, revealRound, skipRound, useItems, useRounds, useVotes } from './lib/rounds'
-import { mostVotedPlayers, openNextSecondRound, scoreMajority } from './lib/secondGame'
+import {
+  MIN_SECOND_GAME_FACTS,
+  describeSecondGamePool,
+  mostVotedPlayers,
+  openNextSecondRound,
+  scoreMajority,
+  type SecondGamePool,
+} from './lib/secondGame'
 import { errorCode, useRoster } from './lib/room'
 import { useAction } from './lib/useAction'
 
@@ -34,6 +41,9 @@ interface SecondGameProps {
    *  fresh from that store (see `openNextSecondRound`), unlike the first
    *  game, which never touches it mid-play. */
   hostUid: string
+  /** How many rounds the memory can supply, once the first has opened
+   *  (`GameDoc.plannedRounds`) - the real total to show, rather than the cap. */
+  plannedRounds?: number
   uid: string
   isHost: boolean
   scores: Record<string, number>
@@ -51,7 +61,15 @@ interface SecondGameProps {
  * screen never asks who wrote anything. Votes stay private only until the
  * reveal so the room does not simply follow the first person to answer.
  */
-export default function SecondGame({ sessionId, gameId, hostUid, uid, isHost, scores }: SecondGameProps) {
+export default function SecondGame({
+  sessionId,
+  gameId,
+  hostUid,
+  plannedRounds,
+  uid,
+  isHost,
+  scores,
+}: SecondGameProps) {
   const { t } = useTranslation()
   const { players, error: rosterError } = useRoster(sessionId)
   const { rounds, loading: roundsLoading, error: roundsError } = useRounds(sessionId, gameId)
@@ -102,7 +120,28 @@ export default function SecondGame({ sessionId, gameId, hostUid, uid, isHost, sc
   // comes back empty.
   const [storeExhausted, setStoreExhausted] = useState(false)
   const loading = roundsLoading || itemsLoading
-  const exhausted = !loading && (playedRounds.length >= MAX_ROUNDS || storeExhausted)
+  const totalRounds = plannedRounds ?? MAX_ROUNDS
+  const exhausted = !loading && (playedRounds.length >= totalRounds || storeExhausted)
+
+  // Host only, before the first round: what the memory can supply, and who has
+  // given it nothing. Nothing else can read the host's private store.
+  const [pool, setPool] = useState<SecondGamePool | null>(null)
+  const waitingForFirstRound = isHost && !loading && !round && !exhausted
+  useEffect(() => {
+    if (!waitingForFirstRound) return
+    let cancelled = false
+    void describeSecondGamePool(db, hostUid, sessionId, gameId)
+      .then((described) => {
+        if (!cancelled) setPool(described)
+      })
+      .catch((error: unknown) => {
+        console.error('[FlashPlay] reading the second game pool failed:', errorCode(error), error)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [waitingForFirstRound, hostUid, sessionId, gameId])
+  const tooFewFacts = pool !== null && pool.available < MIN_SECOND_GAME_FACTS
   const item = round ? items[round.itemId] : undefined
   const votesCast = round ? players.filter((p) => p.votedRoundId === round.id).length : 0
   const awarded = round?.awarded ?? scoreMajority(votes)
@@ -129,7 +168,7 @@ export default function SecondGame({ sessionId, gameId, hostUid, uid, isHost, sc
         <p className="text-sm text-muted">
           {/* No forward-looking total to show here (see storeExhausted above)
               - the cap is the only number known in advance. */}
-          {t('roundCounter', { current: playedRounds.length, total: MAX_ROUNDS })}
+          {t('roundCounter', { current: playedRounds.length, total: totalRounds })}
         </p>
       )}
 
@@ -239,14 +278,30 @@ export default function SecondGame({ sessionId, gameId, hostUid, uid, isHost, sc
       {isHost && (
         <div className="flex flex-col items-center gap-2">
           {!round && !exhausted && !loading && (
-            <HostButton
-              busy={host.busy}
-              busyLabel={t('openingRound')}
-              onClick={() => void host.run(openNext)}
-              primary
-            >
-              {t('startFirstRound')}
-            </HostButton>
+            <>
+              {pool && (
+                <div className="flex flex-col items-center gap-1 text-center text-sm">
+                  <p className={tooFewFacts ? 'text-danger' : 'text-muted'}>
+                    {tooFewFacts
+                      ? t('poolTooFew', { min: MIN_SECOND_GAME_FACTS, count: pool.available })
+                      : t('poolAvailable', { count: pool.available })}
+                  </p>
+                  {pool.playersWithoutFacts.length > 0 && (
+                    <p className="text-muted">
+                      {t('poolMissing', { names: pool.playersWithoutFacts.map(nameOf).join(', ') })}
+                    </p>
+                  )}
+                </div>
+              )}
+              <HostButton
+                busy={host.busy || pool === null || tooFewFacts}
+                busyLabel={host.busy ? t('openingRound') : t('startFirstRound')}
+                onClick={() => void host.run(openNext)}
+                primary
+              >
+                {t('startFirstRound')}
+              </HostButton>
+            </>
           )}
 
           {round?.phase === 'preview' && (
@@ -312,6 +367,7 @@ export default function SecondGame({ sessionId, gameId, hostUid, uid, isHost, sc
             busy={host.busy}
             busyLabel={t('finishingGame')}
             onClick={() => void host.run(() => finishGame(db, sessionId, gameId))}
+            primary={exhausted}
           >
             {t('finishGame')}
           </HostButton>

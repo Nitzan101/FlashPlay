@@ -2118,3 +2118,10 @@ already-split player shows as done rather than offering the button again.
 - **The « » marks around the fact in the second game are no longer shown**; the fact is bold and coloured instead. Stored text is unchanged.
 - **No confirmation before ending the evening after the second game**, and the first game's leader is named on the pause screen.
 - **"Play again" at the finale (host only)** opens a *new* room for the same group, because a finished session cannot be reopened (phase only moves forward). An unnamed evening continues as a group under its own session id, the same fallback `ensureContacts` uses. Chosen by Nitzan 2026-10-01 over reusing the same room with a fresh round.
+
+## Second-game pool, naming prompt and recognition panel, 2026-10-02
+
+- **"Name this group?" asked again after the finale already saved it.** `useGroupName` has no live listener, and `LeaveRoomControl` read the name once at mount, before the finale named the group. It now takes a refresh key (the control's stage) and re-reads when the stage changes.
+- **Second game total and ending.** The host writes `GameDoc.plannedRounds` (at most MAX_ROUNDS, counted from usable stored facts) when the first round opens, so phones show "2 of 6" rather than "2 of 10", and the game offers "end the game" as the primary action once those are played or the pool runs dry. Skipped rounds spend facts without counting as played, so the pool can still run dry early; the existing exhausted path covers that.
+- **At least 2 stored facts to start the second game**, enforced on the host's screen only (nothing in the rules - the host owns the store and the game). The host also sees which players have given no fact at all. No way to add facts from that screen yet.
+- **Recognition by name is now visible.** `LinkPlayers` opens by itself when someone was matched to a returning contact by name and says it was a guess, next to "not the same person". There is still no explicit "yes, same person" confirmation step: a match stands unless the host splits it.

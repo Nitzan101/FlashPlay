@@ -1131,7 +1131,13 @@ export function useGroupMemory(
 /** Just the group's name, for the one question the end-of-evening screen
  *  needs answered: has this group been kept, or is it still only this
  *  gathering's own record? Empty string means the latter. */
-export function useGroupName(hostUid: string | null, groupId: string | null): {
+export function useGroupName(
+  hostUid: string | null,
+  groupId: string | null,
+  /** Change it to read the name again - the hook has no live listener, and
+   *  another screen may have named the group since this one mounted. */
+  refreshKey: unknown = null,
+): {
   name: string
   loading: boolean
 } {
@@ -1157,7 +1163,7 @@ export function useGroupName(hostUid: string | null, groupId: string | null): {
     return () => {
       cancelled = true
     }
-  }, [hostUid, groupId])
+  }, [hostUid, groupId, refreshKey])
 
   return state
 }

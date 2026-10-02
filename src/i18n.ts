@@ -135,6 +135,9 @@ export const resources = {
       leaderIs: '{{names}} מוביל/ה!',
       leadersAre: '{{names}} מובילים!',
       noMemoryLeft: 'אין עוד עובדות זמינות מהקבוצה',
+      poolAvailable: 'עובדות זמינות מהזיכרון: {{count}}',
+      poolTooFew: 'צריך לפחות {{min}} עובדות שמורות כדי להתחיל, ויש רק {{count}}',
+      poolMissing: 'עדיין לא ענו על אף שאלה: {{names}}',
       firstGameOver: 'המשחק הראשון נגמר',
       secondGameOver: 'המשחק השני נגמר',
       startSecondGame: 'למשחק השני',
@@ -300,6 +303,7 @@ export const resources = {
       linkPlayersHint:
         'אם מישהו נרשם הפעם בשם אחר, אפשר לקשר אותו למי שהקבוצה כבר מכירה כדי שהמידע יישמר עליו ולא על מישהו חדש',
       linkPlayerError: 'אי אפשר לקשר כרגע.',
+      recognisedByName: 'זוהה/ה לפי השם כמי שכבר מוכר לקבוצה',
       notSamePersonHint: 'מישהו כאן זוהה בטעות כמי שהקבוצה כבר מכירה? אפשר להפריד',
       notSamePerson: 'לא אותו אדם',
       startedAsNewContact: 'נפרד ✓',
