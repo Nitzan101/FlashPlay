@@ -143,13 +143,13 @@ export default function Lobby({
         {players.map((player) => (
           <li
             key={player.id}
-            className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-0.5 px-1 py-0.5"
+            className="flex min-w-0 items-center justify-between gap-2 px-1 py-0.5"
           >
             {/* No truncation here on purpose - a long real name (three words
                 is common in Hebrew) was cut off with no way to read the rest,
                 including a player's own name in their own row. Wrapping to a
                 second line costs nothing; losing part of someone's name does. */}
-            <span className="min-w-0 break-words">
+            <span className="min-w-0 flex-1 break-words">
               {player.emoji && <span className="me-1">{player.emoji}</span>}
               <span className={player.leftAt ? 'font-display text-muted' : 'font-display'}>{player.name}</span>
               {player.id === uid && <span className="text-accent-2"> {t('youSuffix')}</span>}
