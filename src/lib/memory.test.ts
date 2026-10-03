@@ -1137,3 +1137,58 @@ describe('the gathering document records the mapping, not the memory', () => {
     )
   })
 })
+
+describe('the host is always themselves in their group', () => {
+  // A later gathering starts with no links of its own; without this the second
+  // call would simply reuse the first one's session.contactIds and prove nothing.
+  async function nextGathering() {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), paths.session(SESSION)), { contactIds: {} })
+    })
+  }
+
+  it('keeps the host on their own contact, and its original name, when they type another name later', async () => {
+    const first = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    const hostContact = first[HOST]
+    await nextGathering()
+
+    const later = await ensureContacts(
+      asHost(),
+      HOST,
+      SESSION,
+      [{ id: HOST, name: 'Somebody Else' }],
+      SESSION,
+    )
+
+    expect(later[HOST]).toBe(hostContact)
+    const contact = (await getDoc(doc(asHost(), paths.contact(HOST, hostContact)))).data() as ContactDoc
+    expect(contact.name).toBe('Host')
+    expect(contact.claimedByUid).toBe(HOST)
+  })
+
+  it('never hands the host’s contact to a guest who types the host’s name', async () => {
+    const first = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+    await nextGathering()
+
+    const later = await ensureContacts(
+      asHost(),
+      HOST,
+      SESSION,
+      [
+        { id: HOST, name: 'Renamed' },
+        { id: 'guest-uid', name: 'Host' },
+      ],
+      SESSION,
+    )
+
+    expect(later[HOST]).toBe(first[HOST])
+    expect(later['guest-uid']).not.toBe(first[HOST])
+  })
+
+  it('does not claim a guest’s contact for anyone', async () => {
+    const first = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')
+
+    const guest = (await getDoc(doc(asHost(), paths.contact(HOST, first[PLAYER])))).data() as ContactDoc
+    expect(guest.claimedByUid).toBeNull()
+  })
+})

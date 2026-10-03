@@ -63,8 +63,12 @@ export default function LinkPlayers({
   const [toggled, setToggled] = useState<boolean | null>(null)
   const action = useAction()
 
-  const memberByName = new Map(members.map((member) => [matchName(member.name), member]))
-  const present = players.filter((player) => !player.leftAt)
+  // The host is always their own person (see ensureContacts): never asked
+  // about, and their contact is nobody else's to be matched or linked to.
+  const hostMember = members.find((member) => member.claimedByUid === hostUid)
+  const others = members.filter((member) => member !== hostMember)
+  const memberByName = new Map(others.map((member) => [matchName(member.name), member]))
+  const present = players.filter((player) => !player.leftAt && player.id !== hostUid)
   const unmatched = present.filter((player) => !memberByName.has(matchName(player.name)))
   const matched = present.filter((player) => memberByName.has(matchName(player.name)))
 
@@ -79,7 +83,7 @@ export default function LinkPlayers({
     present.some((other) => other.id !== playerId && contactOf(other) === contactId)
 
   // Nothing previously known, or nothing to ask about either way.
-  if (loading || members.length === 0 || (unmatched.length === 0 && matched.length === 0)) {
+  if (loading || others.length === 0 || (unmatched.length === 0 && matched.length === 0)) {
     return null
   }
 
@@ -110,7 +114,7 @@ export default function LinkPlayers({
                       {player.name}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {members.map((member) => {
+                      {others.map((member) => {
                         const isLinked = linkedTo === member.contactId
                         const taken = !isLinked && takenByAnother(member.contactId, player.id)
                         return (

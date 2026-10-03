@@ -313,3 +313,46 @@ describe('LinkPlayers, changing a choice and never sharing a contact', () => {
     await waitFor(() => expect(mockResetPlayerIdentity).toHaveBeenCalledWith({}, 's1', 'p1'))
   })
 })
+
+describe('LinkPlayers, the host is always themselves', () => {
+  const hostMember = { contactId: 'c-host', name: 'מארח', claimedByUid: 'host', facts: [] }
+  const david = { contactId: 'c-david', name: 'דוד', facts: [] }
+
+  it('never asks about the host, even under a name the group does not know', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [hostMember, david], loading: false })
+
+    const { container } = render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('host', 'שם חדש')]} contactIds={{}} />,
+    )
+
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('does not offer the host’s contact to anybody else', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [hostMember, david], loading: false })
+    render(
+      <LinkPlayers
+        sessionId="s1"
+        hostUid="host"
+        groupId="g1"
+        players={[player('host', 'שם חדש'), player('p1', 'Ella')]}
+        contactIds={{}}
+      />,
+    )
+    fireEvent.click(screen.getByText('מישהו כאן שכבר מוכר לקבוצה?'))
+
+    expect(screen.queryByText('מארח')).not.toBeInTheDocument()
+    expect(screen.getByText('דוד')).toBeInTheDocument()
+  })
+
+  it('treats a guest who types the host’s old name as unknown, not as the host', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [hostMember, david], loading: false })
+    render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('p1', 'מארח')]} contactIds={{}} />,
+    )
+    fireEvent.click(screen.getByText('מישהו כאן שכבר מוכר לקבוצה?'))
+
+    expect(screen.queryByText('זוהה/ה לפי השם כמי שכבר מוכר לקבוצה')).not.toBeInTheDocument()
+    expect(screen.getByText('דוד')).toBeInTheDocument()
+  })
+})
