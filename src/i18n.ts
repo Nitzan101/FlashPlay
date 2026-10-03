@@ -303,6 +303,8 @@ export const resources = {
       linkPlayersHint:
         'אם מישהו נרשם הפעם בשם אחר, אפשר לקשר אותו למי שהקבוצה כבר מכירה כדי שהמידע יישמר עליו ולא על מישהו חדש',
       linkPlayerError: 'אי אפשר לקשר כרגע.',
+      samePerson: 'כן, אותו אדם',
+      confirmedSamePerson: 'אושר ✓',
       recognisedByName: 'זוהה/ה לפי השם כמי שכבר מוכר לקבוצה',
       notSamePersonHint: 'מישהו כאן זוהה בטעות כמי שהקבוצה כבר מכירה? אפשר להפריד',
       notSamePerson: 'לא אותו אדם',

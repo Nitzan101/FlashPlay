@@ -126,6 +126,9 @@ export default function LinkPlayers({
                 const alreadySplit = Boolean(
                   contactIds[player.id] && contactIds[player.id] !== matchedContactId,
                 )
+                // An explicit link to the very contact the name pointed at: the
+                // host has said "yes, this is them".
+                const confirmed = contactIds[player.id] === matchedContactId
                 return (
                   <div key={player.id} className="flex items-center justify-between gap-2">
                     <div className="flex flex-col text-start">
@@ -133,13 +136,28 @@ export default function LinkPlayers({
                         {player.emoji && <span className="me-1">{player.emoji}</span>}
                         {player.name}
                       </p>
-                      {!alreadySplit && (
+                      {!alreadySplit && !confirmed && (
                         <span className="text-xs text-muted">{t('recognisedByName')}</span>
                       )}
                     </div>
                     {alreadySplit ? (
                       <span className="text-xs text-muted">{t('startedAsNewContact')}</span>
+                    ) : confirmed ? (
+                      <span className="text-xs text-accent-3">{t('confirmedSamePerson')}</span>
                     ) : (
+                      <div className="flex shrink-0 gap-1.5">
+                        <button
+                          type="button"
+                          disabled={action.busy}
+                          onClick={() =>
+                            void action.run(() =>
+                              linkPlayerToContact(db, sessionId, player.id, matchedContactId),
+                            )
+                          }
+                          className="cursor-pointer rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 text-xs font-medium text-accent-2 disabled:opacity-50"
+                        >
+                          {t('samePerson')}
+                        </button>
                       <button
                         type="button"
                         disabled={action.busy}
@@ -150,6 +168,7 @@ export default function LinkPlayers({
                       >
                         {t('notSamePerson')}
                       </button>
+                      </div>
                     )}
                   </div>
                 )

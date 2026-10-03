@@ -187,3 +187,31 @@ describe('LinkPlayers, recognised by name', () => {
     expect(screen.queryByText('לא אותו אדם')).not.toBeInTheDocument()
   })
 })
+
+describe('LinkPlayers, confirming a recognised player', () => {
+  const known = { members: [{ contactId: 'c-david', name: 'דוד', facts: [] }], loading: false }
+
+  it('lets the host confirm the match explicitly, linking the player to that very contact', async () => {
+    mockUseGroupMemory.mockReturnValue(known)
+    render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('p2', 'דוד')]} contactIds={{}} />,
+    )
+
+    fireEvent.click(screen.getByText('כן, אותו אדם'))
+
+    await waitFor(() =>
+      expect(mockLinkPlayerToContact).toHaveBeenCalledWith({}, 's1', 'p2', 'c-david'),
+    )
+  })
+
+  it('shows a confirmed match as confirmed and stops offering to change it', () => {
+    mockUseGroupMemory.mockReturnValue(known)
+    render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('p2', 'דוד')]} contactIds={{ p2: 'c-david' }} />,
+    )
+
+    expect(screen.getByText('אושר ✓')).toBeInTheDocument()
+    expect(screen.queryByText('כן, אותו אדם')).not.toBeInTheDocument()
+    expect(screen.queryByText('זוהה/ה לפי השם כמי שכבר מוכר לקבוצה')).not.toBeInTheDocument()
+  })
+})
