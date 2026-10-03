@@ -30,6 +30,8 @@ interface LobbyProps {
   originalHostUid?: string
   groupId?: string | null
   contactIds?: Record<string, string>
+  /** Host-written: player id -> the name the host asked them to change. */
+  renameRequests?: Record<string, string>
 }
 
 export default function Lobby({
@@ -42,6 +44,7 @@ export default function Lobby({
   originalHostUid,
   groupId,
   contactIds = {},
+  renameRequests = {},
 }: LobbyProps) {
   const { t } = useTranslation()
   const { players, error } = useRoster(sessionId)
@@ -171,6 +174,19 @@ export default function Lobby({
         ))}
       </ul>
 
+      {!editingSelf && renameRequests[uid] && renameRequests[uid] === players.find((p) => p.id === uid)?.name && (
+        <div role="alert" className="flex w-full flex-col items-center gap-2 rounded-xl border border-accent-3/40 bg-accent-3/10 p-3 text-center text-sm">
+          <p>{t('renameRequestedBanner')}</p>
+          <button
+            type="button"
+            onClick={() => setEditingSelf(true)}
+            className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-1.5 text-sm font-semibold text-white shadow-glow"
+          >
+            {t('editMyNameEmoji')}
+          </button>
+        </div>
+      )}
+
       {editingSelf && (
         <SelfIdentityEditor
           sessionId={sessionId}
@@ -192,6 +208,7 @@ export default function Lobby({
           groupId={groupId}
           players={players}
           contactIds={contactIds}
+          renameRequests={renameRequests}
         />
       )}
 

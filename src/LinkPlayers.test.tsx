@@ -9,6 +9,8 @@ vi.mock('./lib/firebase', () => ({ db: {}, auth: {}, firebaseApp: {} }))
 const mockUseGroupMemory = vi.fn()
 const mockLinkPlayerToContact = vi.fn()
 const mockStartNewContactForPlayer = vi.fn()
+const mockConfirmSamePerson = vi.fn()
+const mockResetPlayerIdentity = vi.fn()
 
 vi.mock('./lib/memory', async () => {
   const actual = await vi.importActual<typeof import('./lib/memory')>('./lib/memory')
@@ -17,6 +19,8 @@ vi.mock('./lib/memory', async () => {
     useGroupMemory: (...args: unknown[]) => mockUseGroupMemory(...args) as unknown,
     linkPlayerToContact: (...args: unknown[]) => mockLinkPlayerToContact(...args) as unknown,
     startNewContactForPlayer: (...args: unknown[]) => mockStartNewContactForPlayer(...args) as unknown,
+    confirmSamePerson: (...args: unknown[]) => mockConfirmSamePerson(...args) as unknown,
+    resetPlayerIdentity: (...args: unknown[]) => mockResetPlayerIdentity(...args) as unknown,
   }
 })
 
@@ -28,6 +32,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockLinkPlayerToContact.mockResolvedValue(undefined)
   mockStartNewContactForPlayer.mockResolvedValue('new-contact-id')
+  mockConfirmSamePerson.mockResolvedValue(undefined)
+  mockResetPlayerIdentity.mockResolvedValue(undefined)
 })
 
 describe('LinkPlayers', () => {
@@ -89,7 +95,7 @@ describe('LinkPlayers', () => {
     fireEvent.click(screen.getByText('לא אותו אדם'))
 
     await waitFor(() =>
-      expect(mockStartNewContactForPlayer).toHaveBeenCalledWith({}, 's1', 'p2'),
+      expect(mockStartNewContactForPlayer).toHaveBeenCalledWith({}, 's1', 'p2', 'דוד'),
     )
   })
 
@@ -200,11 +206,11 @@ describe('LinkPlayers, confirming a recognised player', () => {
     fireEvent.click(screen.getByText('כן, אותו אדם'))
 
     await waitFor(() =>
-      expect(mockLinkPlayerToContact).toHaveBeenCalledWith({}, 's1', 'p2', 'c-david'),
+      expect(mockConfirmSamePerson).toHaveBeenCalledWith({}, 's1', 'p2', 'c-david'),
     )
   })
 
-  it('shows a confirmed match as confirmed and stops offering to change it', () => {
+  it('shows a confirmed match as confirmed, and still lets the host change their mind', () => {
     mockUseGroupMemory.mockReturnValue(known)
     render(
       <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('p2', 'דוד')]} contactIds={{ p2: 'c-david' }} />,
@@ -212,6 +218,98 @@ describe('LinkPlayers, confirming a recognised player', () => {
 
     expect(screen.getByText('אושר ✓')).toBeInTheDocument()
     expect(screen.queryByText('כן, אותו אדם')).not.toBeInTheDocument()
+    expect(screen.getByText('לא אותו אדם')).toBeInTheDocument()
     expect(screen.queryByText('זוהה/ה לפי השם כמי שכבר מוכר לקבוצה')).not.toBeInTheDocument()
+  })
+})
+
+describe('LinkPlayers, changing a choice and never sharing a contact', () => {
+  const david = { contactId: 'c-david', name: 'דוד', facts: [] }
+  const dana = { contactId: 'c-dana', name: 'דנה', facts: [] }
+
+  it('lets the host switch a split back to the same person', async () => {
+    mockUseGroupMemory.mockReturnValue({ members: [david], loading: false })
+    render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('p2', 'דוד')]} contactIds={{ p2: 'other' }} />,
+    )
+
+    fireEvent.click(screen.getByText('כן, אותו אדם'))
+
+    await waitFor(() =>
+      expect(mockConfirmSamePerson).toHaveBeenCalledWith({}, 's1', 'p2', 'c-david'),
+    )
+  })
+
+  it('says a split player has been asked for another name, until they change it', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [david], loading: false })
+    const { rerender } = render(
+      <LinkPlayers
+        sessionId="s1"
+        hostUid="host"
+        groupId="g1"
+        players={[player('p2', 'דוד')]}
+        contactIds={{ p2: 'other' }}
+        renameRequests={{ p2: 'דוד' }}
+      />,
+    )
+    expect(screen.getByText('נפרד ✓ · ממתין לשם חדש')).toBeInTheDocument()
+
+    rerender(
+      <LinkPlayers
+        sessionId="s1"
+        hostUid="host"
+        groupId="g1"
+        players={[player('p2', 'דוד ב')]}
+        contactIds={{ p2: 'other' }}
+        renameRequests={{ p2: 'דוד' }}
+      />,
+    )
+    expect(screen.queryByText('נפרד ✓ · ממתין לשם חדש')).not.toBeInTheDocument()
+  })
+
+  it('does not offer a contact somebody else already counts as', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [david, dana], loading: false })
+    render(
+      <LinkPlayers
+        sessionId="s1"
+        hostUid="host"
+        groupId="g1"
+        // p1 typed something unknown; p2 was recognised as David by name.
+        players={[player('p1', 'Ella'), player('p2', 'דוד')]}
+        contactIds={{}}
+      />,
+    )
+
+    const davidChip = screen.getAllByText('דוד').find((el) => el.tagName === 'BUTTON')!
+    expect(davidChip).toBeDisabled()
+    expect(screen.getByText('דנה')).toBeEnabled()
+  })
+
+  it('frees a contact again once the player holding it is switched away', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [david, dana], loading: false })
+    render(
+      <LinkPlayers
+        sessionId="s1"
+        hostUid="host"
+        groupId="g1"
+        players={[player('p1', 'Ella'), player('p2', 'דוד')]}
+        contactIds={{ p2: 'split-off' }}
+      />,
+    )
+
+    const davidChip = screen.getAllByText('דוד').find((el) => el.tagName === 'BUTTON')!
+    expect(davidChip).toBeEnabled()
+  })
+
+  it('takes a link back when the chosen contact is tapped again', async () => {
+    mockUseGroupMemory.mockReturnValue({ members: [david], loading: false })
+    render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('p1', 'Ella')]} contactIds={{ p1: 'c-david' }} />,
+    )
+    fireEvent.click(screen.getByText('מישהו כאן שכבר מוכר לקבוצה?'))
+
+    fireEvent.click(screen.getByText('דוד ✓'))
+
+    await waitFor(() => expect(mockResetPlayerIdentity).toHaveBeenCalledWith({}, 's1', 'p1'))
   })
 })

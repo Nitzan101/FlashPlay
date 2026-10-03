@@ -309,6 +309,9 @@ export const resources = {
       notSamePersonHint: 'מישהו כאן זוהה בטעות כמי שהקבוצה כבר מכירה? אפשר להפריד',
       notSamePerson: 'לא אותו אדם',
       startedAsNewContact: 'נפרד ✓',
+      startedAsNewContactWaiting: 'נפרד ✓ · ממתין לשם חדש',
+      renameRequestedBanner: 'הקבוצה כבר מכירה מישהו אחר בשם הזה. כדי שלא יתערבבו, אפשר לבחור שם אחר.',
+      linkTakenHint: 'כבר משויך למישהו אחר',
 
       // --- handing a saved group to another host ---
       shareGroupButton: 'שיתוף הקבוצה עם מישהו',

@@ -293,6 +293,11 @@ export interface SessionDoc {
    * mapping to the room gives nothing away.
    */
   contactIds: Record<string, string>
+  /** Host-written: player id -> the name that player had when the host said
+   *  "not the same person as the one the group knows by that name". The player's
+   *  own phone asks them to pick another name for as long as their name still
+   *  equals this one, so no field has to be cleared when they do. */
+  renameRequests?: Record<string, string>
   /** Cumulative across the whole gathering, not per game - this is what turns
    *  three games into one evening with an arc. */
   scores: Record<string, number>

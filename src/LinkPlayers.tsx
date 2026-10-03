@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { db } from './lib/firebase'
-import { linkPlayerToContact, matchName, startNewContactForPlayer, useGroupMemory } from './lib/memory'
+import {
+  confirmSamePerson,
+  linkPlayerToContact,
+  matchName,
+  resetPlayerIdentity,
+  startNewContactForPlayer,
+  useGroupMemory,
+} from './lib/memory'
 import type { PlayerDoc } from './lib/model'
 import { useAction } from './lib/useAction'
 
@@ -19,6 +26,9 @@ interface LinkPlayersProps {
   /** Live from `SessionDoc.contactIds`, so a link drawn on one device shows
    *  as drawn on the host's other one too. */
   contactIds: Record<string, string>
+  /** Live from `SessionDoc.renameRequests` - who has been asked to pick
+   *  another name, and under which name. */
+  renameRequests?: Record<string, string>
 }
 
 /**
@@ -44,6 +54,7 @@ export default function LinkPlayers({
   groupId,
   players,
   contactIds,
+  renameRequests = {},
 }: LinkPlayersProps) {
   const { t } = useTranslation()
   const { members, loading } = useGroupMemory(hostUid, groupId)
@@ -58,6 +69,14 @@ export default function LinkPlayers({
   const matched = present.filter((player) => memberByName.has(matchName(player.name)))
 
   const open = toggled ?? matched.length > 0
+
+  // Who a present player counts as right now: an explicit link or split wins,
+  // otherwise the name match. A contact can be only one person, so one that
+  // somebody else already counts as is not offered to anyone else.
+  const contactOf = (player: PlayerDoc & { id: string }) =>
+    contactIds[player.id] ?? memberByName.get(matchName(player.name))?.contactId
+  const takenByAnother = (contactId: string, playerId: string) =>
+    present.some((other) => other.id !== playerId && contactOf(other) === contactId)
 
   // Nothing previously known, or nothing to ask about either way.
   if (loading || members.length === 0 || (unmatched.length === 0 && matched.length === 0)) {
@@ -91,26 +110,34 @@ export default function LinkPlayers({
                       {player.name}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {members.map((member) => (
-                        <button
-                          key={member.contactId}
-                          type="button"
-                          disabled={action.busy}
-                          onClick={() =>
-                            void action.run(() =>
-                              linkPlayerToContact(db, sessionId, player.id, member.contactId),
-                            )
-                          }
-                          className={
-                            linkedTo === member.contactId
-                              ? 'cursor-pointer rounded-full border-2 border-accent bg-accent/15 px-3 py-1 text-xs disabled:opacity-50'
-                              : 'cursor-pointer rounded-full border border-line bg-surface/60 px-3 py-1 text-xs disabled:opacity-50'
-                          }
-                        >
-                          {member.name}
-                          {linkedTo === member.contactId ? ' ✓' : ''}
-                        </button>
-                      ))}
+                      {members.map((member) => {
+                        const isLinked = linkedTo === member.contactId
+                        const taken = !isLinked && takenByAnother(member.contactId, player.id)
+                        return (
+                          <button
+                            key={member.contactId}
+                            type="button"
+                            disabled={action.busy || taken}
+                            title={taken ? t('linkTakenHint') : undefined}
+                            // Tapping the chosen one again takes the link back.
+                            onClick={() =>
+                              void action.run(() =>
+                                isLinked
+                                  ? resetPlayerIdentity(db, sessionId, player.id)
+                                  : linkPlayerToContact(db, sessionId, player.id, member.contactId),
+                              )
+                            }
+                            className={
+                              isLinked
+                                ? 'cursor-pointer rounded-full border-2 border-accent bg-accent/15 px-3 py-1 text-xs disabled:opacity-50'
+                                : 'cursor-pointer rounded-full border border-line bg-surface/60 px-3 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40'
+                            }
+                          >
+                            {member.name}
+                            {isLinked ? ' ✓' : ''}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )
@@ -141,33 +168,55 @@ export default function LinkPlayers({
                       )}
                     </div>
                     {alreadySplit ? (
-                      <span className="text-xs text-muted">{t('startedAsNewContact')}</span>
-                    ) : confirmed ? (
-                      <span className="text-xs text-accent-3">{t('confirmedSamePerson')}</span>
-                    ) : (
-                      <div className="flex shrink-0 gap-1.5">
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="text-xs text-muted">
+                          {renameRequests[player.id] === player.name
+                            ? t('startedAsNewContactWaiting')
+                            : t('startedAsNewContact')}
+                        </span>
                         <button
                           type="button"
                           disabled={action.busy}
                           onClick={() =>
                             void action.run(() =>
-                              linkPlayerToContact(db, sessionId, player.id, matchedContactId),
+                              confirmSamePerson(db, sessionId, player.id, matchedContactId),
                             )
                           }
                           className="cursor-pointer rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 text-xs font-medium text-accent-2 disabled:opacity-50"
                         >
                           {t('samePerson')}
                         </button>
-                      <button
-                        type="button"
-                        disabled={action.busy}
-                        onClick={() =>
-                          void action.run(() => startNewContactForPlayer(db, sessionId, player.id))
-                        }
-                        className="cursor-pointer rounded-full border border-line bg-surface/60 px-3 py-1 text-xs disabled:opacity-50"
-                      >
-                        {t('notSamePerson')}
-                      </button>
+                      </div>
+                    ) : (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {confirmed ? (
+                          <span className="text-xs text-accent-3">{t('confirmedSamePerson')}</span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={action.busy}
+                            onClick={() =>
+                              void action.run(() =>
+                                confirmSamePerson(db, sessionId, player.id, matchedContactId),
+                              )
+                            }
+                            className="cursor-pointer rounded-full border border-accent-2/30 bg-accent-2/12 px-3 py-1 text-xs font-medium text-accent-2 disabled:opacity-50"
+                          >
+                            {t('samePerson')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={action.busy}
+                          onClick={() =>
+                            void action.run(() =>
+                              startNewContactForPlayer(db, sessionId, player.id, player.name),
+                            )
+                          }
+                          className="cursor-pointer rounded-full border border-line bg-surface/60 px-3 py-1 text-xs disabled:opacity-50"
+                        >
+                          {t('notSamePerson')}
+                        </button>
                       </div>
                     )}
                   </div>

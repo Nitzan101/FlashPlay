@@ -43,7 +43,9 @@ import {
   matchName,
   nameGroup,
   shareGroup,
+  confirmSamePerson,
   recordFeedback,
+  resetPlayerIdentity,
   recordPlayerFeedback,
   setContactQuestionAnswer,
   startNewContactForPlayer,
@@ -223,6 +225,30 @@ describe('linkPlayerToContact', () => {
 // The mirror correction from linkPlayerToContact: matchName() found someone
 // who is NOT actually the same person - "a genuine duplicate name across
 // gatherings still merges two people" (BACKLOG.md). Raised 2026-09-29.
+describe('the host identity overrides', () => {
+  it('asks for another name when splitting, and withdraws the request on a later confirmation', async () => {
+    await startNewContactForPlayer(asHost(), SESSION, 'other-david-uid', 'דוד')
+    let session = (await getDoc(doc(asHost(), paths.session(SESSION)))).data() as SessionDoc
+    expect(session.renameRequests).toEqual({ 'other-david-uid': 'דוד' })
+    expect(session.contactIds['other-david-uid']).toBeTruthy()
+
+    await confirmSamePerson(asHost(), SESSION, 'other-david-uid', 'contact-x')
+    session = (await getDoc(doc(asHost(), paths.session(SESSION)))).data() as SessionDoc
+    expect(session.contactIds['other-david-uid']).toBe('contact-x')
+    expect(session.renameRequests?.['other-david-uid']).toBeUndefined()
+  })
+
+  it('takes back a link and a rename request together', async () => {
+    await startNewContactForPlayer(asHost(), SESSION, 'other-david-uid', 'דוד')
+
+    await resetPlayerIdentity(asHost(), SESSION, 'other-david-uid')
+
+    const session = (await getDoc(doc(asHost(), paths.session(SESSION)))).data() as SessionDoc
+    expect(session.contactIds['other-david-uid']).toBeUndefined()
+    expect(session.renameRequests?.['other-david-uid']).toBeUndefined()
+  })
+})
+
 describe('startNewContactForPlayer', () => {
   it('keeps a same-named newcomer out of the returning person’s contact', async () => {
     const first = await ensureContacts(asHost(), HOST, SESSION, roster, null, 'המשפחה')

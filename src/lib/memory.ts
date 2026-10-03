@@ -24,6 +24,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -299,12 +300,49 @@ export async function startNewContactForPlayer(
   firestore: Firestore,
   sessionId: string,
   playerId: string,
+  /** The name the player has now: when given, their phone asks them to choose
+   *  another one, so two different people stop sharing a name in the group. */
+  requestRenameFrom?: string,
 ): Promise<string> {
   const contactId = crypto.randomUUID()
   await step('start-new-contact-for-player', () =>
-    updateDoc(doc(firestore, paths.session(sessionId)), { [`contactIds.${playerId}`]: contactId }),
+    updateDoc(doc(firestore, paths.session(sessionId)), {
+      [`contactIds.${playerId}`]: contactId,
+      ...(requestRenameFrom ? { [`renameRequests.${playerId}`]: requestRenameFrom } : {}),
+    }),
   )
   return contactId
+}
+
+/** The host says "yes, this is the person the group knows" - also withdraws a
+ *  rename request made by an earlier "not the same person". */
+export async function confirmSamePerson(
+  firestore: Firestore,
+  sessionId: string,
+  playerId: string,
+  contactId: string,
+): Promise<void> {
+  await step('confirm-same-person', () =>
+    updateDoc(doc(firestore, paths.session(sessionId)), {
+      [`contactIds.${playerId}`]: contactId,
+      [`renameRequests.${playerId}`]: deleteField(),
+    }),
+  )
+}
+
+/** Takes back any link or split for this player, so name-matching decides
+ *  again - the host's way to undo a tap. */
+export async function resetPlayerIdentity(
+  firestore: Firestore,
+  sessionId: string,
+  playerId: string,
+): Promise<void> {
+  await step('reset-player-identity', () =>
+    updateDoc(doc(firestore, paths.session(sessionId)), {
+      [`contactIds.${playerId}`]: deleteField(),
+      [`renameRequests.${playerId}`]: deleteField(),
+    }),
+  )
 }
 
 /** The host's end-of-evening offer: keep this group, under this name, so the

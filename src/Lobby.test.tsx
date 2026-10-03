@@ -238,3 +238,28 @@ describe('in-app help anchors', () => {
     expect(missingStops('lobbyGuest')).toEqual(['leave-room'])
   })
 })
+
+describe('Lobby, asked to choose another name', () => {
+  it('asks the player whose name the host rejected, and only while it is unchanged', () => {
+    players = [player('host-uid', { name: 'מארח' }), player('guest-uid', { name: 'דוד' })]
+    const { rerender } = render(
+      <Lobby sessionId="s1" roomCode="1234" uid="guest-uid" isHost={false} hostUid="host-uid" renameRequests={{ 'guest-uid': 'דוד' }} />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('הקבוצה כבר מכירה מישהו אחר בשם הזה')
+
+    players = [player('host-uid', { name: 'מארח' }), player('guest-uid', { name: 'דוד ב' })]
+    rerender(
+      <Lobby sessionId="s1" roomCode="1234" uid="guest-uid" isHost={false} hostUid="host-uid" renameRequests={{ 'guest-uid': 'דוד' }} />,
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not ask anyone else', () => {
+    players = [player('host-uid', { name: 'מארח' }), player('guest-uid', { name: 'דוד' })]
+    render(
+      <Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" renameRequests={{ 'guest-uid': 'דוד' }} />,
+    )
+
+    expect(screen.queryByText(/הקבוצה כבר מכירה מישהו אחר/)).not.toBeInTheDocument()
+  })
+})

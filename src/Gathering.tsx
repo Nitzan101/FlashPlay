@@ -104,6 +104,7 @@ export default function Gathering({ sessionId, roomCode, uid, onPlayAgain }: Gat
         originalHostUid={originalHostUid}
         groupId={session.groupId}
         contactIds={session.contactIds ?? {}}
+        renameRequests={session.renameRequests ?? {}}
       />
     )
   }
