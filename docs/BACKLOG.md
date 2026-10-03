@@ -585,3 +585,9 @@ before it is a technical one: the entire private store exists on the premise
 that what a host remembers about their guests is *the host's*, and a guest
 reading it - even only their own row - is a different product promise than
 the one currently made. Left alone on purpose until it is decided out loud.
+
+## Registered guests as stable identities (raised 2026-10-03)
+
+Idea from Nitzan: the same-name / link logic should apply only to unregistered guests. A registered person already saved in a group needs no questions; a registered person not in the group may be a returning unregistered one (link them, and the contact carries their account from then on); an unregistered guest may be linked to a contact that already has an account.
+
+**Feasible, with one large blocker:** today only the host signs in; guests are anonymous with a fresh uid every gathering, and the app has no guest sign-in at all. Done so far: the host's own contact is claimed by their uid (`ContactDoc.claimedByUid`, `ensureContacts`). To generalise: (1) an optional "sign in to be remembered" for guests; (2) `ensureContacts` matches a registered player by `claimedByUid` before name-matching and skips the prompts for them; (3) a registered player with no claim is offered the link-to-a-past-guest choice in `LinkPlayers`, and linking sets the claim. No rules change expected (everything lives in the host's private store). **Risk:** Google refuses OAuth in embedded WebViews, which is the known Android/WhatsApp problem, so make it optional and test on a real Android phone first.
