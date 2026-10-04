@@ -60,6 +60,10 @@ export const resources = {
 
       // --- milestone 4: the harvest phase ---
       startGame: 'התחלת המשחק',
+      pendingRenameTitle: 'ביקשת מהמשתתפים האלה לבחור שם אחר, והם עוד לא עשו את זה:',
+      pendingRenameWait: 'לתת להם עוד זמן',
+      pendingRenameWithout: 'להתחיל בלעדיהם',
+      pendingRenameAnyway: 'להתחיל איתם בכל זאת',
       startingGame: 'מתחילים...',
       startGameError: 'אי אפשר להתחיל את המשחק כרגע.',
       sessionLoadError: 'אי אפשר לטעון את החדר כרגע.',

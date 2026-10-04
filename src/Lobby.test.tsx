@@ -31,9 +31,11 @@ vi.mock('./lib/profileQuestions', () => ({
 
 let players: (PlayerDoc & { id: string })[] = []
 const mockRenamePlayer = vi.fn().mockResolvedValue(undefined)
+const mockLeaveRoom = vi.fn().mockResolvedValue(undefined)
 vi.mock('./lib/room', () => ({
   useRoster: () => ({ players, error: null }),
   renamePlayer: (...args: unknown[]) => mockRenamePlayer(...args) as unknown,
+  leaveRoom: (...args: unknown[]) => mockLeaveRoom(...args) as unknown,
   // useAction() (used by the self-edit form) reaches for this - see
   // CLAUDE.md, Known pitfalls: a mock factory must list every export its
   // consumers import, even transitively.
@@ -261,5 +263,91 @@ describe('Lobby, asked to choose another name', () => {
     )
 
     expect(screen.queryByText(/הקבוצה כבר מכירה מישהו אחר/)).not.toBeInTheDocument()
+  })
+})
+
+describe('Lobby, starting while somebody has not changed a rejected name', () => {
+  const start = () => screen.getByRole('button', { name: 'התחלת המשחק' })
+
+  function renderHost(extra: Record<string, string> = { 'guest-uid': 'דוד' }) {
+    players = [
+      player('host-uid', { name: 'מארח' }),
+      player('guest-uid', { name: 'דוד' }),
+      player('third-uid', { name: 'שרה' }),
+    ]
+    return render(
+      <Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" renameRequests={extra} />,
+    )
+  }
+
+  it('warns, listing who has not changed their name, instead of starting at once', async () => {
+    const harvest = await import('./lib/harvest')
+    vi.mocked(harvest.startHarvestGame).mockClear()
+    renderHost()
+
+    fireEvent.click(start())
+
+    expect(screen.getByRole('alert')).toHaveTextContent('דוד')
+    expect(harvest.startHarvestGame).not.toHaveBeenCalled()
+  })
+
+  it('starts straight away when nobody is waiting on a rename', async () => {
+    const harvest = await import('./lib/harvest')
+    vi.mocked(harvest.startHarvestGame).mockClear()
+    renderHost({})
+
+    fireEvent.click(start())
+
+    await waitFor(() => expect(harvest.startHarvestGame).toHaveBeenCalledTimes(1))
+  })
+
+  it('gives them more time, starting nothing', async () => {
+    const harvest = await import('./lib/harvest')
+    vi.mocked(harvest.startHarvestGame).mockClear()
+    renderHost()
+
+    fireEvent.click(start())
+    fireEvent.click(screen.getByText('לתת להם עוד זמן'))
+
+    expect(screen.queryByText('להתחיל בלעדיהם')).not.toBeInTheDocument()
+    expect(harvest.startHarvestGame).not.toHaveBeenCalled()
+  })
+
+  it('starts without them by marking them as having left first', async () => {
+    const harvest = await import('./lib/harvest')
+    vi.mocked(harvest.startHarvestGame).mockClear()
+    mockLeaveRoom.mockClear()
+    renderHost()
+
+    fireEvent.click(start())
+    fireEvent.click(screen.getByText('להתחיל בלעדיהם'))
+
+    await waitFor(() => expect(harvest.startHarvestGame).toHaveBeenCalledTimes(1))
+    expect(mockLeaveRoom).toHaveBeenCalledWith({}, 's1', 'guest-uid')
+    expect(mockLeaveRoom).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts with them anyway, leaving everyone in', async () => {
+    const harvest = await import('./lib/harvest')
+    vi.mocked(harvest.startHarvestGame).mockClear()
+    mockLeaveRoom.mockClear()
+    renderHost()
+
+    fireEvent.click(start())
+    fireEvent.click(screen.getByText('להתחיל איתם בכל זאת'))
+
+    await waitFor(() => expect(harvest.startHarvestGame).toHaveBeenCalledTimes(1))
+    expect(mockLeaveRoom).not.toHaveBeenCalled()
+  })
+
+  it('does not offer to start without them when too few players would remain', () => {
+    players = [player('host-uid', { name: 'מארח' }), player('guest-uid', { name: 'דוד' })]
+    render(
+      <Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" renameRequests={{ 'guest-uid': 'דוד' }} />,
+    )
+
+    fireEvent.click(start())
+
+    expect(screen.getByText('להתחיל בלעדיהם')).toBeDisabled()
   })
 })

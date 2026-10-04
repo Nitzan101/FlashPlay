@@ -4,6 +4,7 @@ import EmojiPicker from './EmojiPicker'
 import GuidedQuestions from './GuidedQuestions'
 import LinkPlayers from './LinkPlayers'
 import { pickHarvestPromptIds, startHarvestGame } from './lib/harvest'
+import { leaveRoom } from './lib/room'
 import { db } from './lib/firebase'
 import { MIN_PLAYERS_TO_START, type PlayerDoc, type ProfileQuestion } from './lib/model'
 import { renamePlayer, useRoster } from './lib/room'
@@ -52,6 +53,12 @@ export default function Lobby({
   // otherwise a player who explicitly left still counts, and the number on
   // screen looks exactly as stale as the roster row itself used to.
   const activeCount = players.filter((player) => !player.leftAt).length
+  // Asked by the host to choose another name ("not the same person as the one
+  // the group knows") and still under the name they were asked to change.
+  const pendingRename = players.filter(
+    (player) => !player.leftAt && renameRequests[player.id] === player.name,
+  )
+  const [confirmingStart, setConfirmingStart] = useState(false)
 
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [startState, setStartState] = useState<'idle' | 'busy' | 'error'>('idle')
@@ -66,9 +73,12 @@ export default function Lobby({
   useScreenTour(isHost ? 'lobbyHost' : 'lobbyGuest')
   const joinUrl = `${window.location.origin}/join/${roomCode}`
 
-  async function startGame() {
+  async function startGame(without: { id: string }[] = []) {
     setStartState('busy')
     try {
+      // "Without them" means they are marked as having left, exactly as if they
+      // had walked out: the rounds and votes only count present players.
+      for (const player of without) await leaveRoom(db, sessionId, player.id)
       await startHarvestGame(db, sessionId, pickHarvestPromptIds())
       // No local success state to set - useSession() upstream (Gathering.tsx)
       // sees the phase flip to 'playing' and unmounts this screen for
@@ -220,12 +230,41 @@ export default function Lobby({
         <div data-tour="start-game" className="flex flex-col items-center gap-2">
           <button
             type="button"
-            onClick={() => void startGame()}
+            onClick={() => (pendingRename.length > 0 ? setConfirmingStart(true) : void startGame())}
             disabled={startState === 'busy' || activeCount < MIN_PLAYERS_TO_START}
             className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-2 font-semibold text-white shadow-glow disabled:opacity-50"
           >
             {startState === 'busy' ? t('startingGame') : t('startGame')}
           </button>
+          {confirmingStart && pendingRename.length > 0 && (
+            <div role="alert" className="flex w-full flex-col items-center gap-2 rounded-xl border border-accent-3/40 bg-accent-3/10 p-3 text-center text-sm">
+              <p>{t('pendingRenameTitle')}</p>
+              <p className="font-display font-semibold">{pendingRename.map((player) => player.name).join(', ')}</p>
+              <button
+                type="button"
+                onClick={() => setConfirmingStart(false)}
+                className="cursor-pointer rounded-full bg-linear-135 from-accent to-accent-deep px-4 py-1.5 font-semibold text-white shadow-glow"
+              >
+                {t('pendingRenameWait')}
+              </button>
+              <button
+                type="button"
+                disabled={startState === 'busy' || activeCount - pendingRename.length < MIN_PLAYERS_TO_START}
+                onClick={() => void startGame(pendingRename)}
+                className="cursor-pointer rounded-full bg-accent-2/15 px-4 py-1.5 text-accent-2 disabled:opacity-50"
+              >
+                {t('pendingRenameWithout')}
+              </button>
+              <button
+                type="button"
+                disabled={startState === 'busy'}
+                onClick={() => void startGame()}
+                className="cursor-pointer rounded-full bg-ink/8 px-4 py-1.5 text-muted disabled:opacity-50"
+              >
+                {t('pendingRenameAnyway')}
+              </button>
+            </div>
+          )}
           {/* "Who said that"'s vote screen excludes the voter, so starting
               alone would show zero candidates - found live, starting a game
               with only the host in the room. */}
