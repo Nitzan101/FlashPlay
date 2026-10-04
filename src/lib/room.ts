@@ -265,12 +265,15 @@ export async function joinRoom(
   sessionId: string,
   uid: string,
   name: string,
+  /** The caller is signed in with a real account, not as an anonymous guest. */
+  registered = false,
 ): Promise<void> {
   await reserveName(firestore, sessionId, uid, name)
   const now = Date.now()
   const player: PlayerDoc = {
     name,
     uid,
+    ...(registered ? { registered: true } : {}),
     hasDevice: true,
     lastSeenAt: now,
     joinedAt: now,

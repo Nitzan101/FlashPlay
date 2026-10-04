@@ -266,7 +266,7 @@ describe('creating a room', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'פתיחת חדר' }))
 
     await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
-    expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'host-uid', 'דוד')
+    expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'host-uid', 'דוד', true)
   })
 
   /** The signed-in host with one saved group - the state every room-picker
@@ -475,7 +475,7 @@ describe('joining by typed code', () => {
     fireEvent.click(screen.getByRole('button', { name: 'הצטרפות' }))
 
     await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
-    expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'guest-uid', 'שרה')
+    expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'guest-uid', 'שרה', false)
   })
 
   it('shows an error for a typed code nobody has claimed', async () => {
@@ -537,12 +537,31 @@ describe('joining by a link', () => {
     expect(mockResolveRoomCode).not.toHaveBeenCalled()
   })
 
+  it('joins as a registered account when the visitor is already signed in with a real one', async () => {
+    window.history.pushState({}, '', '/join/1234')
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'account-uid', isAnonymous: false, displayName: 'נועה', email: null } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockResolveRoomCode.mockResolvedValue('session-1')
+    mockJoinRoom.mockResolvedValue(undefined)
+
+    render(<App />)
+    const nameField = await screen.findByLabelText('איך קוראים לך?')
+    fireEvent.change(nameField, { target: { value: 'נועה' } })
+    fireEvent.click(screen.getByRole('button', { name: 'הצטרפות' }))
+
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
+    expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'account-uid', 'נועה', true)
+  })
+
   it('asks a guest for a name, then joins and shows the lobby', async () => {
     window.history.pushState({}, '', '/join/1234')
     // Anonymous sign-in has already landed by this point - that is what the
     // test above covers - so the guest arrives here with a uid.
     mockedUseAuthUser.mockReturnValue({
-      user: { uid: 'guest-uid', displayName: null, email: null } as never,
+      user: { uid: 'guest-uid', isAnonymous: true, displayName: null, email: null } as never,
       loading: false,
       redirectError: null,
     })
@@ -555,7 +574,7 @@ describe('joining by a link', () => {
     fireEvent.click(screen.getByRole('button', { name: 'הצטרפות' }))
 
     await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
-    expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'guest-uid', 'שרה')
+    expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'guest-uid', 'שרה', false)
   })
 
   // Found in Nitzan's own play session, 2026-09-16: two players both typed

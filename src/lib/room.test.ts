@@ -14,7 +14,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
-import { doc, getDoc, getDocs, collection, setDoc, type Firestore } from 'firebase/firestore'
+import { doc, getDoc, getDocs, collection, setDoc, updateDoc, type Firestore } from 'firebase/firestore'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -400,5 +400,26 @@ describe('rejoinRoom', () => {
 
     const own = (await getDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`))).data()
     expect(own?.leftAt).not.toBeNull()
+  })
+})
+
+describe('PlayerDoc.registered', () => {
+  it('lets a signed-in account mark itself registered, and refuses an anonymous guest doing so', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('4444'))
+
+    await joinRoom(asOtherHost(), sessionId, OTHER_HOST, 'חשבון', true)
+    await expect(joinRoom(asGuest(), sessionId, GUEST, 'אורח', true)).rejects.toThrow()
+
+    const real = (await getDoc(doc(asOtherHost(), `sessions/${sessionId}/players/${OTHER_HOST}`))).data()
+    expect(real?.registered).toBe(true)
+  })
+
+  it('cannot be switched on after joining anonymously', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('5555'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'אורח')
+
+    await assertFails(
+      updateDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`), { registered: true }),
+    )
   })
 })

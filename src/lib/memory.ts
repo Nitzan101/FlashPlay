@@ -86,7 +86,7 @@ export async function ensureContacts(
   firestore: Firestore,
   hostUid: string,
   sessionId: string,
-  players: { id: string; name: string }[],
+  players: { id: string; name: string; registered?: boolean }[],
   /** The group this gathering belongs to, when the host opened the room for
    *  one they had already saved. A first gathering has none and becomes its
    *  own group. */
@@ -109,19 +109,23 @@ export async function ensureContacts(
   // thing connecting the person at the table to the record of them - see
   // matchName for why it is normalised rather than compared raw.
   const byName: Record<string, string> = {}
-  // The host is always themselves: their uid is a real, stable account, so
-  // their contact is found by that claim and never by what they typed this
-  // time (a renamed host stays the same person). `hostContactName` keeps the
-  // original name rather than overwriting it with the new one.
-  let hostContactId: string | null = null
-  let hostContactName = ''
+  // A registered account is the one identity that survives between gatherings
+  // (an anonymous guest's uid is new every time), so a contact claimed by a
+  // uid is found by that uid and never by what its owner typed this time - the
+  // host is simply the first such account, and a registered guest is another.
+  // `claimedBy` / `storedName` remember each contact's existing claim and
+  // original name, so neither is overwritten below.
+  const byClaim: Record<string, string> = {}
+  const claimedBy: Record<string, string | null> = {}
+  const storedName: Record<string, string> = {}
   for (const contactId of existingGroup?.memberContactIds ?? []) {
     const contactSnap = await getDoc(doc(firestore, paths.contact(hostUid, contactId)))
     const contact = contactSnap.data() as ContactDoc | undefined
     if (!contact) continue
-    if (contact.claimedByUid === hostUid) {
-      hostContactId = contactId
-      hostContactName = contact.name
+    claimedBy[contactId] = contact.claimedByUid
+    storedName[contactId] = contact.name
+    if (contact.claimedByUid) {
+      byClaim[contact.claimedByUid] = contactId
     } else {
       byName[matchName(contact.name)] = contactId
     }
@@ -148,15 +152,18 @@ export async function ensureContacts(
     }
   }
 
-  // The host's own claimed contact comes before any name-matching, and keeps
-  // every other player off it.
-  if (hostContactId && !contactIds[hostUid] && players.some((player) => player.id === hostUid)) {
-    contactIds[hostUid] = hostContactId
-    taken.add(hostContactId)
+  // A registered player's own claimed contact comes before any name-matching,
+  // and keeps every other player off it.
+  for (const player of players) {
+    const claimed = byClaim[player.id]
+    if (claimed && !contactIds[player.id] && !taken.has(claimed)) {
+      contactIds[player.id] = claimed
+      taken.add(claimed)
+    }
   }
 
   for (const player of players) {
-    if (contactIds[player.id]) continue // already resolved via a manual link
+    if (contactIds[player.id]) continue // already resolved via a manual link or a claim
     const matched = byName[matchName(player.name)]
     const contactId = matched && !taken.has(matched) ? matched : crypto.randomUUID()
     taken.add(contactId)
@@ -164,21 +171,20 @@ export async function ensureContacts(
   }
 
   for (const player of players) {
+    const contactId = contactIds[player.id]
+    // A registered player (the host always is) claims their contact, and from
+    // then on it follows their account. Everyone else leaves an existing claim
+    // alone - an anonymous player the host linked to a claimed contact must not
+    // wipe it.
+    const registered = player.registered === true || player.id === hostUid
     await step('write-contact', () =>
       setDoc(
-        doc(firestore, paths.contact(hostUid, contactIds[player.id])),
+        doc(firestore, paths.contact(hostUid, contactId)),
         {
-          // The host's contact keeps the name it already had.
-          name:
-            player.id === hostUid && contactIds[player.id] === hostContactId
-              ? hostContactName
-              : player.name,
-          // A guest's anonymous uid is not a claim on anything - DESIGN's
-          // "upgrade" path is a registered account claiming this record
-          // later, which does not exist yet. The host's uid is a real account,
-          // so their own contact is claimed by it: that is what keeps them
-          // themselves in this group even under another name.
-          claimedByUid: player.id === hostUid ? hostUid : null,
+          // A contact claimed by this player's own account keeps its original
+          // name; anyone else's is refreshed to what they typed.
+          name: claimedBy[contactId] === player.id ? storedName[contactId] : player.name,
+          claimedByUid: registered ? player.id : (claimedBy[contactId] ?? null),
           createdAt: Date.now(),
         } satisfies ContactDoc,
         { merge: true },

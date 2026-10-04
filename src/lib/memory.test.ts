@@ -1192,3 +1192,71 @@ describe('the host is always themselves in their group', () => {
     expect(guest.claimedByUid).toBeNull()
   })
 })
+
+describe('a registered account is the same person whatever name it types', () => {
+  async function nextGathering() {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), paths.session(SESSION)), { contactIds: {} })
+    })
+  }
+  const readContact = async (id: string) =>
+    (await getDoc(doc(asHost(), paths.contact(HOST, id)))).data() as ContactDoc
+
+  it('claims the contact of a registered guest, and finds it again under another name', async () => {
+    const first = await ensureContacts(
+      asHost(), HOST, SESSION, [{ id: 'reg-uid', name: 'נועה', registered: true }], null, 'המשפחה',
+    )
+    expect((await readContact(first['reg-uid'])).claimedByUid).toBe('reg-uid')
+    await nextGathering()
+
+    const later = await ensureContacts(
+      asHost(), HOST, SESSION, [{ id: 'reg-uid', name: 'שם אחר', registered: true }], SESSION,
+    )
+
+    expect(later['reg-uid']).toBe(first['reg-uid'])
+    expect((await readContact(later['reg-uid'])).name).toBe('נועה')
+  })
+
+  it('adopts the record of a past anonymous guest of the same name when they come back registered', async () => {
+    const first = await ensureContacts(
+      asHost(), HOST, SESSION, [{ id: 'anon-1', name: 'נועה' }], null, 'המשפחה',
+    )
+    expect((await readContact(first['anon-1'])).claimedByUid).toBeNull()
+    await nextGathering()
+
+    const later = await ensureContacts(
+      asHost(), HOST, SESSION, [{ id: 'reg-uid', name: 'נועה', registered: true }], SESSION,
+    )
+
+    expect(later['reg-uid']).toBe(first['anon-1'])
+    expect((await readContact(later['reg-uid'])).claimedByUid).toBe('reg-uid')
+  })
+
+  it('does not let an anonymous guest who types a registered person’s name take their contact', async () => {
+    const first = await ensureContacts(
+      asHost(), HOST, SESSION, [{ id: 'reg-uid', name: 'נועה', registered: true }], null, 'המשפחה',
+    )
+    await nextGathering()
+
+    const later = await ensureContacts(
+      asHost(), HOST, SESSION, [{ id: 'anon-9', name: 'נועה' }], SESSION,
+    )
+
+    expect(later['anon-9']).not.toBe(first['reg-uid'])
+  })
+
+  it('keeps a claim when the host links an anonymous player to that contact by hand', async () => {
+    const first = await ensureContacts(
+      asHost(), HOST, SESSION, [{ id: 'reg-uid', name: 'נועה', registered: true }], null, 'המשפחה',
+    )
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), paths.session(SESSION)), {
+        contactIds: { 'anon-9': first['reg-uid'] },
+      })
+    })
+
+    await ensureContacts(asHost(), HOST, SESSION, [{ id: 'anon-9', name: 'נועה בטלפון אחר' }], SESSION)
+
+    expect((await readContact(first['reg-uid'])).claimedByUid).toBe('reg-uid')
+  })
+})

@@ -377,6 +377,10 @@ export interface PlayerDoc {
    *  that the rules have a subject to authorise against. "Never blocked" means
    *  no sign-in friction, not no identity. */
   uid: string
+  /** True when this uid is a real account rather than an anonymous guest.
+   *  firestore.rules lets only a non-anonymous caller set it, and never change
+   *  it afterwards, so the host can trust it. Absent for guests. */
+  registered?: boolean
   /** A participant added by name who holds no phone. The host acts for them. */
   hasDevice: boolean
   /** Presence heartbeat. Disconnections across twenty phones are a certainty. */

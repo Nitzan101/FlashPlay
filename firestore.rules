@@ -343,9 +343,14 @@ service cloud.firestore {
         // the same sentence and only implemented its first half.
         // Mutation-checked on 2026-09-14: dropping the round-loop clause
         // turned exactly "refuses a join once the round loop has started" red.
+        // `registered` says this uid is a real account. Only a non-anonymous
+        // caller may set it, and nobody may change it afterwards: the host's
+        // identity matching trusts it.
         allow create: if isSignedIn() && playerId == request.auth.uid
-          && !inRoundLoop(sessionId);
-        allow update: if isUser(playerId) || isHost(sessionId);
+          && !inRoundLoop(sessionId)
+          && (request.resource.data.get('registered', false) == false || isRegistered());
+        allow update: if (isUser(playerId) || isHost(sessionId))
+          && request.resource.data.get('registered', false) == resource.data.get('registered', false);
         allow delete: if isUser(playerId) || isHost(sessionId);
 
         // --- one player's guided-question answers - milestone 8 ---

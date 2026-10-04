@@ -297,6 +297,7 @@ export default function App() {
         sessionId,
         user.uid,
         profile.displayName.trim() || user.displayName || t('hostFallbackName'),
+        true,
       )
       if (profile.emoji) {
         // Best-effort, same as touchPresence: a cosmetic write failing here
@@ -364,7 +365,7 @@ export default function App() {
     setNameError(null)
     try {
       const uid = user?.uid ?? (await signInAsGuest())
-      await joinRoom(db, sessionId, uid, name)
+      await joinRoom(db, sessionId, uid, name, Boolean(user && !user.isAnonymous))
       if (joinEmoji) {
         await setPlayerEmoji(db, sessionId, uid, joinEmoji).catch((error: unknown) => {
           console.error('[FlashPlay] applying the chosen emoji failed:', error)
