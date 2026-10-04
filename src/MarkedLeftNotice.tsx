@@ -36,6 +36,7 @@ export default function MarkedLeftNotice({
         onChange={(event) => setName(event.target.value)}
         maxLength={40}
         aria-label={t('markedLeftNameLabel')}
+        placeholder={t('markedLeftNameLabel')}
         className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
       />
       {name.trim() !== '' && sameName && (
