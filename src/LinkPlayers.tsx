@@ -63,12 +63,26 @@ export default function LinkPlayers({
   const [toggled, setToggled] = useState<boolean | null>(null)
   const action = useAction()
 
-  // The host is always their own person (see ensureContacts): never asked
-  // about, and their contact is nobody else's to be matched or linked to.
-  const hostMember = members.find((member) => member.claimedByUid === hostUid)
-  const others = members.filter((member) => member !== hostMember)
-  const memberByName = new Map(others.map((member) => [matchName(member.name), member]))
-  const present = players.filter((player) => !player.leftAt && player.id !== hostUid)
+  // A registered account is its own identity (see ensureContacts): a present
+  // player whose uid already owns a contact - the host always, and any
+  // registered guest who came back - is never asked about, and that contact
+  // is nobody else's to be matched or linked to while they are in the room.
+  // A contact claimed by somebody who is NOT here stays offered, since that
+  // person may simply be using a phone without their account tonight.
+  const presentAll = players.filter((player) => !player.leftAt)
+  const presentIds = new Set(presentAll.map((player) => player.id))
+  const ownContactOf = (playerId: string) =>
+    members.find((member) => member.claimedByUid === playerId)
+  const present = presentAll.filter((player) => !ownContactOf(player.id))
+  const offered = members.filter(
+    (member) => !(member.claimedByUid && presentIds.has(member.claimedByUid)),
+  )
+  // Name matching never reaches a claimed contact - ensureContacts skips them
+  // too, so a recognised-by-name badge here would promise something it does not
+  // do. A claimed contact can still be picked by hand.
+  const memberByName = new Map(
+    members.filter((member) => !member.claimedByUid).map((member) => [matchName(member.name), member]),
+  )
   const unmatched = present.filter((player) => !memberByName.has(matchName(player.name)))
   const matched = present.filter((player) => memberByName.has(matchName(player.name)))
 
@@ -78,12 +92,14 @@ export default function LinkPlayers({
   // otherwise the name match. A contact can be only one person, so one that
   // somebody else already counts as is not offered to anyone else.
   const contactOf = (player: PlayerDoc & { id: string }) =>
-    contactIds[player.id] ?? memberByName.get(matchName(player.name))?.contactId
+    contactIds[player.id] ??
+    ownContactOf(player.id)?.contactId ??
+    memberByName.get(matchName(player.name))?.contactId
   const takenByAnother = (contactId: string, playerId: string) =>
-    present.some((other) => other.id !== playerId && contactOf(other) === contactId)
+    presentAll.some((other) => other.id !== playerId && contactOf(other) === contactId)
 
   // Nothing previously known, or nothing to ask about either way.
-  if (loading || others.length === 0 || (unmatched.length === 0 && matched.length === 0)) {
+  if (loading || offered.length === 0 || (unmatched.length === 0 && matched.length === 0)) {
     return null
   }
 
@@ -114,7 +130,7 @@ export default function LinkPlayers({
                       {player.name}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {others.map((member) => {
+                      {offered.map((member) => {
                         const isLinked = linkedTo === member.contactId
                         const taken = !isLinked && takenByAnother(member.contactId, player.id)
                         return (

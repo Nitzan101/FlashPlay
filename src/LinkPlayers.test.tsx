@@ -356,3 +356,55 @@ describe('LinkPlayers, the host is always themselves', () => {
     expect(screen.getByText('דוד')).toBeInTheDocument()
   })
 })
+
+describe('LinkPlayers, registered accounts beyond the host', () => {
+  const noa = { contactId: 'c-noa', name: 'נועה', claimedByUid: 'noa-uid', facts: [] }
+  const david = { contactId: 'c-david', name: 'דוד', claimedByUid: null, facts: [] }
+
+  it('never asks about a registered guest whose account already owns a contact', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [noa, david], loading: false })
+
+    const { container } = render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('noa-uid', 'שם אחר')]} contactIds={{}} />,
+    )
+
+    // Nothing to ask: the only member left is David, and nobody present needs a match.
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('offers a claimed contact to an anonymous player when its owner is not in the room', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [noa, david], loading: false })
+    render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('p1', 'Ella')]} contactIds={{}} />,
+    )
+    fireEvent.click(screen.getByText('מישהו כאן שכבר מוכר לקבוצה?'))
+
+    expect(screen.getByText('נועה')).toBeEnabled()
+  })
+
+  it('keeps that contact away from everybody else while its owner is in the room', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [noa, david], loading: false })
+    render(
+      <LinkPlayers
+        sessionId="s1"
+        hostUid="host"
+        groupId="g1"
+        players={[player('noa-uid', 'נועה'), player('p1', 'Ella')]}
+        contactIds={{}}
+      />,
+    )
+    fireEvent.click(screen.getByText('מישהו כאן שכבר מוכר לקבוצה?'))
+
+    expect(screen.queryByText('נועה')).not.toBeInTheDocument()
+    expect(screen.getByText('דוד')).toBeInTheDocument()
+  })
+
+  it('still asks about a registered guest with no claimed contact yet, when their name matches an old one', () => {
+    mockUseGroupMemory.mockReturnValue({ members: [noa, david], loading: false })
+    render(
+      <LinkPlayers sessionId="s1" hostUid="host" groupId="g1" players={[player('new-uid', 'דוד')]} contactIds={{}} />,
+    )
+
+    expect(screen.getByText('זוהה/ה לפי השם כמי שכבר מוכר לקבוצה')).toBeInTheDocument()
+  })
+})
