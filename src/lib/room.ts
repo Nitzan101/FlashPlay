@@ -355,6 +355,23 @@ export async function renamePlayer(
   await updateDoc(doc(firestore, paths.player(sessionId, uid)), { name, emoji })
 }
 
+/**
+ * Comes back after the host started the game without this player (see Lobby's
+ * "start without them"): takes the new name they were asked for and clears
+ * `leftAt`, so they count as present again. Only the player's own row is
+ * touched - the same two writes a rename and a fresh join already make.
+ */
+export async function rejoinRoom(
+  firestore: Firestore,
+  sessionId: string,
+  uid: string,
+  name: string,
+  emoji: string | null,
+): Promise<void> {
+  await renamePlayer(firestore, sessionId, uid, name, emoji)
+  await updateDoc(doc(firestore, paths.player(sessionId, uid)), { leftAt: null })
+}
+
 export async function touchPresence(
   firestore: Firestore,
   sessionId: string,

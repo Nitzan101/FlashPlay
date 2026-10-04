@@ -3,6 +3,7 @@ import BetweenGames from './BetweenGames'
 import Finale from './Finale'
 import Harvest from './Harvest'
 import LoadFailure from './LoadFailure'
+import MarkedLeftNotice from './MarkedLeftNotice'
 import Rounds from './Rounds'
 import SecondGame from './SecondGame'
 import { useGame } from './lib/harvest'
@@ -68,6 +69,21 @@ export default function Gathering({ sessionId, roomCode, uid, onPlayAgain }: Gat
   }
   if (!session) {
     return <p>{t('loading')}</p>
+  }
+
+  // The host started without this player because they had not picked another
+  // name (Lobby, "start without them"): they are out until they do.
+  const me = players.find((player) => player.id === uid)
+  const requestedRename = session.renameRequests?.[uid]
+  if (me?.leftAt && requestedRename && session.phase !== 'finished') {
+    return (
+      <MarkedLeftNotice
+        sessionId={sessionId}
+        uid={uid}
+        emoji={me.emoji ?? null}
+        requestedName={requestedRename}
+      />
+    )
   }
 
   const isActiveHost = session.hostUid === uid

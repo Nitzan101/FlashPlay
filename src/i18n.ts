@@ -60,6 +60,11 @@ export const resources = {
 
       // --- milestone 4: the harvest phase ---
       startGame: 'התחלת המשחק',
+      markedLeftTitle: 'המארח התחיל את המשחק בלי שבחרת שם אחר',
+      markedLeftHint: 'כדי לחזור למשחק, בחר/י שם שונה מהשם הקודם.',
+      markedLeftNameLabel: 'השם החדש שלי',
+      rejoinSameName: 'צריך לבחור שם שונה מהשם הקודם',
+      rejoinButton: 'חזרה למשחק',
       pendingRenameTitle: 'ביקשת מהמשתתפים האלה לבחור שם אחר, והם עוד לא עשו את זה:',
       pendingRenameWait: 'לתת להם עוד זמן',
       pendingRenameWithout: 'להתחיל בלעדיהם',

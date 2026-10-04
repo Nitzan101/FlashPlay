@@ -21,6 +21,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   createRoom,
   joinRoom,
+  leaveRoom,
+  rejoinRoom,
   renamePlayer,
   resolveRoomCode,
   setPlayerEmoji,
@@ -371,5 +373,32 @@ describe('transferHost', () => {
     await transferHost(asHost(), sessionId, GUEST)
 
     await expect(transferHost(asHost(), sessionId, HOST)).rejects.toThrow()
+  })
+})
+
+describe('rejoinRoom', () => {
+  it('brings back a player the host marked as left, under their new name', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('2222'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'דוד')
+    // What the lobby's "start without them" does: the host marks them as left.
+    await leaveRoom(asHost(), sessionId, GUEST)
+
+    await rejoinRoom(asGuest(), sessionId, GUEST, 'דוד ב', null)
+
+    const own = (await getDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`))).data()
+    expect(own?.name).toBe('דוד ב')
+    expect(own?.leftAt).toBeNull()
+  })
+
+  it('refuses to take a name somebody else already holds, and stays marked as left', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('3333'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'דוד')
+    await joinRoom(asOtherGuest(), sessionId, OTHER_GUEST, 'שרה')
+    await leaveRoom(asHost(), sessionId, GUEST)
+
+    await expect(rejoinRoom(asGuest(), sessionId, GUEST, 'שרה', null)).rejects.toThrow()
+
+    const own = (await getDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`))).data()
+    expect(own?.leftAt).not.toBeNull()
   })
 })
