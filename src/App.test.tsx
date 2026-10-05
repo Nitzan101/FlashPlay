@@ -471,6 +471,7 @@ describe('joining by typed code', () => {
     fireEvent.click(screen.getByRole('button', { name: 'הצטרפות עם קוד' }))
 
     const nameField = await screen.findByLabelText('איך קוראים לך?')
+    expect(screen.getByText(/כתבו שם שכולם מכירים/)).toBeInTheDocument()
     fireEvent.change(nameField, { target: { value: 'שרה' } })
     fireEvent.click(screen.getByRole('button', { name: 'הצטרפות' }))
 

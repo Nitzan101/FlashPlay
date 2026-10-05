@@ -36,6 +36,7 @@ import GroupDetails from './GroupDetails'
 import RoomPicker from './RoomPicker'
 import EmojiPicker from './EmojiPicker'
 import { PROFILE_QUESTIONS } from './content/profileQuestions'
+import NameHint from './NameHint'
 import { useAction } from './lib/useAction'
 import { useBackStep } from './lib/useBackStep'
 import { HelpButton, useScreenTour } from './Tutorial'
@@ -633,6 +634,7 @@ export default function App() {
             className="rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
             autoFocus
           />
+          <NameHint />
           {nameError && (
             <p role="alert" className="text-xs text-danger">
               {nameError}
@@ -711,6 +713,7 @@ function ProfileEditor({
         maxLength={40}
         className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-center text-ink placeholder:text-muted"
       />
+      <NameHint />
       <EmojiPicker value={emoji} onChange={setEmoji} label={t('pickEmojiLabel')} />
       <div className="flex w-full items-center gap-2">
         <button

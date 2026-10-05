@@ -2159,3 +2159,14 @@ no recoverable kind and is treated as text. Evidence: a pure test for the
 predicate and an emulator test for the wiring, each mutation-checked (predicate
 forced to false reddens one test; the filter line deleted reddens exactly the
 new emulator test).
+
+**Same day, follow-ups.** `travelStyle` keeps the question "איך הכי כיף לך
+לתכנן טיול" (his call) with the new three-option spectrum. A one-line hint
+(`NameHint`, key `nameHint`) now sits under every field where someone types the
+name the room sees - the guest join form, the lobby's own-name edit and the
+host's profile name - asking for a name everyone recognises rather than an
+unfamiliar nickname, because the games depend on knowing who is who. The
+rejoin field of `MarkedLeftNotice` already carries its own explanatory text and
+was left alone. Each hint is covered by a test that reddens when it is removed
+(join form and lobby edit; the host profile field shares the component but has
+no test of its own).

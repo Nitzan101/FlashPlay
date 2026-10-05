@@ -81,6 +81,16 @@ describe('Lobby', () => {
     expect(editButtons).toHaveLength(1)
   })
 
+  it('reminds the player to use a name the room will recognise while editing it', () => {
+    players = [player('host-uid', { name: 'דוד' })]
+    render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)
+
+    expect(screen.queryByText(/כתבו שם שכולם מכירים/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'עריכת השם/הסמל שלי' }))
+
+    expect(screen.getByText(/כתבו שם שכולם מכירים/)).toBeInTheDocument()
+  })
+
   it('renames the current player through renamePlayer, not any other row', async () => {
     players = [player('host-uid', { name: 'דוד' }), player('guest-uid', { name: 'שרה' })]
     render(<Lobby sessionId="s1" roomCode="1234" uid="host-uid" isHost={true} hostUid="host-uid" />)

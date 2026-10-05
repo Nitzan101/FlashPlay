@@ -610,3 +610,9 @@ game's pool. They suit a different game where identical answers are the point:
 guessing before the real answers show. It needs a new game screen and its own
 scoring; candidate for the next-stage list beside the AI game and the
 pick-two-candidates vote. Not started.
+
+**Mechanic, as he described it (2026-10-05, "a great game"):** the player is shown
+a choice question and the full list of players, and marks the ones they think
+answered a given way. Scoring and which questions qualify are still open. He
+has not said to build it yet; it waits for his go with the other next-stage
+candidates.

@@ -197,10 +197,11 @@ export const PROFILE_QUESTIONS: readonly ProfileQuestion[] = [
   },
   {
     id: 'travelStyle',
-    text: 'איך הכי כיף לך לנהל טיול',
+    text: 'איך הכי כיף לך לתכנן טיול',
     kind: 'single-choice',
     // A spectrum from full control to none, so no two options sit close
     // together (reworded 2026-10-05 after the middle two read as the same).
+    // The question keeps "לתכנן" at his call, though the last option is "no plan".
     options: ['הכול מתוכנן מראש, שעה אחרי שעה', 'כמה נקודות קבועות, והשאר פתוח', 'בלי שום תוכנית, פשוט נוסעים'],
   },
   {

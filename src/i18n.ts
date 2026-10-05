@@ -31,6 +31,7 @@ export const resources = {
       copyFailed: 'אי אפשר להעתיק - אפשר להעתיק את הקישור שמופיע למעלה',
       yourNamePrompt: 'איך קוראים לך?',
       yourNamePlaceholder: 'השם שלך',
+      nameHint: 'כתבו שם שכולם מכירים, לא כינוי שאף אחד לא יזהה - במהלך המשחק צריך לדעת מי זה',
       joinButton: 'הצטרפות',
       joining: 'מצטרפים...',
       joinError: 'אי אפשר להצטרף כרגע.',
