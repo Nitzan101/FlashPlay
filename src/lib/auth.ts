@@ -1,6 +1,7 @@
 import {
   GoogleAuthProvider,
   getRedirectResult,
+  linkWithRedirect,
   onAuthStateChanged,
   signInAnonymously,
   signInWithRedirect,
@@ -21,6 +22,20 @@ const googleProvider = new GoogleAuthProvider()
  */
 export function signInWithGoogle(): Promise<void> {
   return signInWithRedirect(auth, googleProvider)
+}
+
+/**
+ * Upgrades the current anonymous guest to a Google account IN PLACE: the uid
+ * is kept, so the guest's player document and room membership survive the
+ * round trip. Redirect, for the same reason as above. If the Google account
+ * already belongs to another uid the redirect comes back with
+ * `auth/credential-already-in-use` and the guest simply stays anonymous - see
+ * DECISIONS.md, "Guests can sign in to be remembered".
+ */
+export function linkGuestWithGoogle(): Promise<void> {
+  const current = auth.currentUser
+  if (!current || !current.isAnonymous) return Promise.reject(new Error('not-a-guest'))
+  return linkWithRedirect(current, googleProvider)
 }
 
 export function signOutUser(): Promise<void> {
@@ -44,20 +59,36 @@ export interface AuthState {
   loading: boolean
   /** Set if the redirect sign-in itself failed - e.g. account-exists-with-different-credential. */
   redirectError: Error | null
+  /** Bumped when a redirect finished linking a guest to a real account. The
+   *  `User` object is the same instance before and after (its `isAnonymous`
+   *  just flips), so React cannot see the change by itself. Optional so test
+   *  doubles for this hook need not set it. */
+  upgradedAt?: number
 }
 
 export function useAuthUser(): AuthState {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [redirectError, setRedirectError] = useState<Error | null>(null)
+  const [upgradedAt, setUpgradedAt] = useState(0)
 
   useEffect(() => {
     // Surfaces errors from a just-completed redirect sign-in. The signed-in
     // user itself arrives through onAuthStateChanged below regardless of
     // whether this promise has resolved yet.
-    getRedirectResult(auth).catch((error: Error) => {
-      setRedirectError(error)
-    })
+    getRedirectResult(auth)
+      .then(async (result) => {
+        // A completed link (as opposed to a plain sign-in): the same user, now
+        // non-anonymous. Its ID token still carries the anonymous provider
+        // claim until refreshed, and firestore.rules reads that claim.
+        if (result && result.operationType === 'link') {
+          await result.user.getIdToken(true)
+          setUpgradedAt(Date.now())
+        }
+      })
+      .catch((error: Error) => {
+        setRedirectError(error)
+      })
 
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser)
@@ -67,5 +98,5 @@ export function useAuthUser(): AuthState {
     return unsubscribe
   }, [])
 
-  return { user, loading, redirectError }
+  return { user, loading, redirectError, upgradedAt }
 }

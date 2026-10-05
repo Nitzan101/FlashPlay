@@ -586,6 +586,8 @@ that what a host remembers about their guests is *the host's*, and a guest
 reading it - even only their own row - is a different product promise than
 the one currently made. Left alone on purpose until it is decided out loud.
 
+**Decided 2026-10-05 (owner): no.** A guest never sees anything a host recorded about them; the optional guest sign-in changes only what the host sees. See DECISIONS.md, "Guests can sign in to be remembered".
+
 ## Registered guests as stable identities (raised 2026-10-03)
 
 Idea from Nitzan: the same-name / link logic should apply only to unregistered guests. A registered person already saved in a group needs no questions; a registered person not in the group may be a returning unregistered one (link them, and the contact carries their account from then on); an unregistered guest may be linked to a contact that already has an account.

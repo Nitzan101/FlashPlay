@@ -12,6 +12,7 @@ vi.mock('./lib/auth', () => ({
   signInWithGoogle: vi.fn(),
   signOutUser: vi.fn(),
   signInAsGuest: vi.fn(),
+  linkGuestWithGoogle: vi.fn(),
   useAuthUser: vi.fn(),
 }))
 
@@ -32,6 +33,7 @@ const mockCreateRoom = vi.fn()
 const mockJoinRoom = vi.fn()
 const mockResolveRoomCode = vi.fn()
 const mockLeaveRoom = vi.fn()
+const mockMarkPlayerRegistered = vi.fn().mockResolvedValue(false)
 
 // Both App.tsx (the leave-flow's own host/roster check) and Gathering.tsx
 // read this session live now, in place of the one-off, never-updating
@@ -48,6 +50,7 @@ vi.mock('./lib/room', () => ({
   joinRoom: (...args: unknown[]) => mockJoinRoom(...args),
   resolveRoomCode: (...args: unknown[]) => mockResolveRoomCode(...args),
   leaveRoom: (...args: unknown[]) => mockLeaveRoom(...args),
+  markPlayerRegistered: (...args: unknown[]) => mockMarkPlayerRegistered(...args) as unknown,
   setPlayerEmoji: vi.fn().mockResolvedValue(undefined),
   transferHost: (...args: unknown[]) => mockTransferHost(...args) as unknown,
   useRoster: () => mockUseRoster(),
@@ -515,6 +518,116 @@ describe('a guest who left a room', () => {
     expect(screen.getByRole('button', { name: 'התחברות עם Google' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'פתיחת חדר' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'התנתקות' })).not.toBeInTheDocument()
+  })
+})
+
+describe('a guest offered "sign in to be remembered"', () => {
+  const GUEST_BUTTON = 'התחברות עם Google כדי שיזכרו אותי'
+
+  // A guest already inside session-1, resumed from local state like a refresh.
+  function enterRoomAs(user: { uid: string; isAnonymous: boolean }, hostUid = 'someone-else') {
+    window.history.pushState({}, '', '/join/1234')
+    localStorage.setItem(
+      'flashplay.session',
+      JSON.stringify({ sessionId: 'session-1', roomCode: '1234' }),
+    )
+    mockedUseAuthUser.mockReturnValue({
+      user: { ...user, displayName: null, email: null } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockResolveRoomCode.mockResolvedValue('session-1')
+    mockGetDoc.mockResolvedValue({ data: () => ({ hostUid }) })
+    mockUseSession.mockReturnValue({
+      session: { phase: 'lobby', currentGameId: null, hostUid },
+      error: null,
+    })
+  }
+
+  it('sees an optional upgrade button in the lobby, which links the account in place', async () => {
+    enterRoomAs({ uid: 'guest-uid', isAnonymous: true })
+    const { linkGuestWithGoogle } = await import('./lib/auth')
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: GUEST_BUTTON }))
+
+    expect(linkGuestWithGoogle).toHaveBeenCalledTimes(1)
+  })
+
+  it('is not offered to the host, to an already-registered guest, or once the game runs', async () => {
+    enterRoomAs({ uid: 'host-uid', isAnonymous: false }, 'host-uid')
+    const { unmount } = render(<App />)
+    await waitFor(() => expect(screen.getByText('קישור להצטרפות')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: GUEST_BUTTON })).not.toBeInTheDocument()
+    unmount()
+
+    enterRoomAs({ uid: 'account-uid', isAnonymous: false })
+    const second = render(<App />)
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: GUEST_BUTTON })).not.toBeInTheDocument()
+    second.unmount()
+
+    enterRoomAs({ uid: 'guest-uid', isAnonymous: true })
+    mockUseSession.mockReturnValue({
+      session: { phase: 'playing', currentGameId: null, hostUid: 'someone-else' },
+      error: null,
+    })
+    render(<App />)
+    await waitFor(() => expect(mockGetDoc).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: GUEST_BUTTON })).not.toBeInTheDocument()
+  })
+
+  it('is offered on the name screen too, as a plain sign-in, and joining still works without it', async () => {
+    window.history.pushState({}, '', '/join/1234')
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'guest-uid', isAnonymous: true, displayName: null, email: null } as never,
+      loading: false,
+      redirectError: null,
+    })
+    mockResolveRoomCode.mockResolvedValue('session-1')
+    mockJoinRoom.mockResolvedValue(undefined)
+    const { signInWithGoogle } = await import('./lib/auth')
+
+    render(<App />)
+    const nameField = await screen.findByLabelText('איך קוראים לך?')
+    // Ignoring the offer: the ordinary join is untouched.
+    fireEvent.change(nameField, { target: { value: 'שרה' } })
+    fireEvent.click(screen.getByRole('button', { name: 'הצטרפות' }))
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
+    expect(mockJoinRoom).toHaveBeenCalledWith(expect.anything(), 'session-1', 'guest-uid', 'שרה', false)
+    expect(signInWithGoogle).not.toHaveBeenCalled()
+  })
+
+  it('tells the player row about the upgrade once the account is no longer anonymous', async () => {
+    enterRoomAs({ uid: 'guest-uid', isAnonymous: false })
+
+    render(<App />)
+
+    await waitFor(() =>
+      expect(mockMarkPlayerRegistered).toHaveBeenCalledWith(expect.anything(), 'session-1', 'guest-uid'),
+    )
+  })
+
+  it('never writes the registered flag for a guest who is still anonymous', async () => {
+    enterRoomAs({ uid: 'guest-uid', isAnonymous: true })
+
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('קוד החדר: 1234')).toBeInTheDocument())
+
+    expect(mockMarkPlayerRegistered).not.toHaveBeenCalled()
+  })
+
+  it('explains, instead of failing, when the Google account already belongs to another player', () => {
+    mockedUseAuthUser.mockReturnValue({
+      user: { uid: 'guest-uid', isAnonymous: true, displayName: null, email: null } as never,
+      loading: false,
+      redirectError: Object.assign(new Error('x'), { code: 'auth/credential-already-in-use' }),
+    })
+
+    render(<App />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('ממשיכים כאורחים')
+    expect(screen.queryByText('ההתחברות נכשלה. אפשר לנסות שוב.')).not.toBeInTheDocument()
   })
 })
 
