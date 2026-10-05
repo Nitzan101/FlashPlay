@@ -168,6 +168,21 @@ export function composeSecondGameItemText(fact: Pick<FactDoc, 'text' | 'promptId
   return `עובדה שמישהו מכם סיפר עליה: «${fact.text}». מי מכם הכי מתאים לה?`
 }
 
+/**
+ * A fact that answers one of the built-in single- or multi-choice guided
+ * questions ("העונה האהובה עליך: קיץ"). It cannot make a "most likely to"
+ * round: it describes no behaviour, and several people give the same answer,
+ * so the majority is arbitrary. Kept in the store for the host, left out of
+ * this game's pool (decided with Nitzan 2026-10-05). A host's own custom
+ * question has no recoverable kind, so its facts are treated as text.
+ */
+export function isChoiceAnswerFact(fact: Pick<FactDoc, 'promptId'>): boolean {
+  const question = fact.promptId
+    ? PROFILE_QUESTIONS.find((q) => q.id === fact.promptId)
+    : undefined
+  return question !== undefined && question.kind !== 'text'
+}
+
 export interface EligibleFact {
   id: string
   contactId: string
@@ -274,10 +289,11 @@ async function loadSecondGamePool(
   const facts: EligibleFact[] = []
   const contactsWithAnyFact = new Set<string>()
   contactIds.forEach((contactId, i) => {
-    if (factSnaps[i].size > 0) contactsWithAnyFact.add(contactId)
     for (const factDoc of factSnaps[i].docs) {
-      if (usedFactIds.has(factDoc.id)) continue
       const fact = factDoc.data() as FactDoc
+      if (isChoiceAnswerFact(fact)) continue
+      contactsWithAnyFact.add(contactId)
+      if (usedFactIds.has(factDoc.id)) continue
       const composedText = composeSecondGameItemText(fact)
       if (composedText.length > SECOND_GAME_ITEM_TEXT_MAX_LENGTH) continue
       facts.push({

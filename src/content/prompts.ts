@@ -15,10 +15,11 @@
  * DECISIONS.md): `wrong-name` and `small-lie` dropped, `tripped` split into
  * `embarrassing-memory` and `household-obstacle`, `false-scare` merged with
  * the guided question `fear` (now deleted from that bank), and several
- * prompts reworded for a less flat voice. `waved-at-stranger`,
- * `laughed-wrong-moment` and `hid-something` were flagged as weak ("not much
- * of a question") but kept, since the pool would otherwise sit at its
- * `MIN_POOL_SIZE` floor - worth revisiting if a stronger replacement turns up.
+ * prompts reworded for a less flat voice. `waved-at-stranger` and
+ * `laughed-wrong-moment` were dropped on 2026-10-05 as weak ("not much of a
+ * question") and replaced by `enthusiastic-mess`, `wrong-place-or-day`,
+ * `promised-never-again` and `insisted-and-wrong`; `hid-something` was flagged
+ * the same way but he chose to keep it.
  *
  * --- The three rules every prompt here must satisfy (DESIGN.md) ------------
  *
@@ -158,12 +159,6 @@ export const HARVEST_PROMPTS: readonly HarvestPrompt[] = [
     secondGameQuestion: 'מי מכם הכי עלול להירדם שם?',
   },
   {
-    id: 'waved-at-stranger',
-    text: 'הפעם שנופפתם בהתלהבות למישהו ואז הבנתם שאתם לא מכירים אותו',
-    drawer: 'personal',
-    secondGameQuestion: 'מי מכם הכי עלול לנופף ככה למישהו זר?',
-  },
-  {
     id: 'postponing',
     text: 'הדבר שאתם אומרים עליו ״מחר״ כבר שבועות',
     drawer: 'personal',
@@ -188,12 +183,6 @@ export const HARVEST_PROMPTS: readonly HarvestPrompt[] = [
     secondGameQuestion: 'מי מכם הכי עלול לקחת את זה לכל מקום בלי להשתמש?',
   },
   {
-    id: 'laughed-wrong-moment',
-    text: 'פעם שצחקתם בדיוק ברגע שאסור היה לצחוק',
-    drawer: 'personal',
-    secondGameQuestion: 'מי מכם הכי עלול לצחוק דווקא אז?',
-  },
-  {
     id: 'hid-something',
     text: 'משהו שהחבאתם כדי שאף אחד לא ימצא',
     drawer: 'personal',
@@ -212,6 +201,30 @@ export const HARVEST_PROMPTS: readonly HarvestPrompt[] = [
     text: 'משהו בבית שמפיל אתכם או מכה בכם כל פעם מחדש (פינה, סף, שרוך)',
     drawer: 'personal',
     secondGameQuestion: 'מי מכם הכי עלול להיתקל בזה שוב?',
+  },
+  {
+    id: 'enthusiastic-mess',
+    text: 'משהו שעשיתם בהתלהבות גדולה ונגמר בבלגן',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול להתלהב ככה ולסיים בבלגן?',
+  },
+  {
+    id: 'wrong-place-or-day',
+    text: 'הפעם שהגעתם למקום הלא נכון, או ביום הלא נכון',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול להגיע למקום הלא נכון?',
+  },
+  {
+    id: 'promised-never-again',
+    text: 'משהו שהבטחתם לעצמכם לא לעשות שוב, ועשיתם',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול לעשות את זה שוב?',
+  },
+  {
+    id: 'insisted-and-wrong',
+    text: 'הפעם האחרונה שהתעקשתם שאתם צודקים, ובסוף טעיתם',
+    drawer: 'personal',
+    secondGameQuestion: 'מי מכם הכי עלול להתעקש על זה?',
   },
 ] as const
 

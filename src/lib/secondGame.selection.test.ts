@@ -10,6 +10,7 @@ import { PROFILE_QUESTIONS } from '../content/profileQuestions'
 import {
   ambiguousFactIds,
   composeSecondGameItemText,
+  isChoiceAnswerFact,
   selectSecondGameFact,
   type EligibleFact,
 } from './secondGame'
@@ -145,5 +146,24 @@ describe('selectSecondGameFact', () => {
 
     const chosen = selectSecondGameFact(facts, () => 0)
     expect(chosen?.id).toBe('fresh')
+  })
+})
+
+describe('isChoiceAnswerFact', () => {
+  it('flags the answer to a built-in single- or multi-choice question', () => {
+    const single = PROFILE_QUESTIONS.find((q) => q.kind === 'single-choice')!
+    const multi = PROFILE_QUESTIONS.find((q) => q.kind === 'multi-choice')!
+
+    expect(isChoiceAnswerFact({ promptId: single.id })).toBe(true)
+    expect(isChoiceAnswerFact({ promptId: multi.id })).toBe(true)
+  })
+
+  it('does not flag a text-question answer, a harvest answer, a custom question or a manual note', () => {
+    const text = PROFILE_QUESTIONS.find((q) => q.kind === 'text')!
+
+    expect(isChoiceAnswerFact({ promptId: text.id })).toBe(false)
+    expect(isChoiceAnswerFact({ promptId: HARVEST_PROMPTS[0].id })).toBe(false)
+    expect(isChoiceAnswerFact({ promptId: 'a-custom-id' })).toBe(false)
+    expect(isChoiceAnswerFact({ promptId: undefined })).toBe(false)
   })
 })

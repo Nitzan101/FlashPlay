@@ -2132,3 +2132,30 @@ already-split player shows as done rather than offering the button again.
 - **A player the host started without can come back (2026-10-04).** A player marked left while a rename request is on file sees a notice instead of the game (`MarkedLeftNotice`, rendered by `Gathering`): they choose a name different from the one they were asked to change, and `rejoinRoom` renames them and clears `leftAt`. Players who left on their own (no rename request) are untouched. Joining is not re-checked against the round loop, because it is an update of an existing row, not a join.
 - **Registered accounts as stable identities, part 1 (2026-10-04).** `PlayerDoc.registered` is written at join time from the caller's own sign-in (`!user.isAnonymous`); firestore.rules lets only a non-anonymous caller set it and nobody change it. `ensureContacts` now finds a contact by its `claimedByUid` before any name matching (the host's special case became the general rule), keeps that contact's original name, lets a registered player claim a contact of a past anonymous guest they match by name (the union), never wipes a claim when the host links an anonymous player to a claimed contact, and keeps claimed contacts out of name matching for everyone else. No guest sign-in button: anyone already signed in in their browser joins with their account (App.tsx). Part 2 (LinkPlayers: skip questions for a registered player with a claimed contact, offer claimed contacts to anonymous players) is next.
 - **Registered accounts as stable identities, part 2 (2026-10-04).** `LinkPlayers` no longer special-cases the host: any present player whose uid already owns a contact (the host always, a registered guest who came back) is skipped; a contact claimed by someone present is hidden from every other player's list; a contact claimed by someone NOT in the room stays offered to anonymous players (they may be on a phone without their account); name matching ignores claimed contacts, mirroring `ensureContacts`. A registered guest with no claim yet is asked like anyone else, which is how an anonymous past contact is adopted. Not built: an optional "sign in to be remembered" button for guests (Android WebView risk).
+
+## Content pass, 2026-10-05: weak prompts, choice questions and the second game's pool
+
+**Harvest prompts.** `waved-at-stranger` and `laughed-wrong-moment` dropped as
+weak; `hid-something` kept at his call. Four added, each checked against
+`MAX_PROMPT_CHARS` before presenting: `enthusiastic-mess`,
+`wrong-place-or-day`, `promised-never-again`, `insisted-and-wrong`. Pool: 19
+(max 20). The last one carries a mild accusation risk when the person who was
+told they were wrong is at the table; he approved it anyway.
+
+**Guided choice questions.** `phoneHabit` loses the gendered "אני מטפל בו" and
+the cryptic wording; "גם וגם" stays because in a single-choice question it is a
+real third answer, not the meta-option his no-"both/none" rule targets.
+`travelStyle` becomes a spectrum (all planned / a few fixed points / no plan)
+and the question "איך הכי כיף לך לנהל טיול", because the old middle two options
+read as the same.
+
+**Choice answers no longer feed "most likely to".** He observed that a
+three-way choice produces shared answers and no behaviour, so the game cannot
+use it. `isChoiceAnswerFact` (secondGame.ts) filters facts whose promptId is a
+built-in single- or multi-choice question out of the pool, and out of the
+"answered nothing" list, since a person with only choice answers gives the
+game nothing. The facts stay in the store for the host. A custom question has
+no recoverable kind and is treated as text. Evidence: a pure test for the
+predicate and an emulator test for the wiring, each mutation-checked (predicate
+forced to false reddens one test; the filter line deleted reddens exactly the
+new emulator test).

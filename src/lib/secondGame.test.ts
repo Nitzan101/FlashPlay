@@ -114,9 +114,22 @@ const asThird = () =>
 /** Seeds one contact with one fact, bypassing rules - the shape
  *  `users/{HOST}/contacts/{contactId}/facts/{factId}` already covered by the
  *  blanket owner-only rule under `users/{uid}`. */
-async function seedFact(contactId: string, factId: string, text: string, useCount = 0) {
+async function seedFact(
+  contactId: string,
+  factId: string,
+  text: string,
+  useCount = 0,
+  promptId?: string,
+) {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
-    const fact: FactDoc = { text, authorContactId: contactId, useCount, sessionId: '', createdAt: 0 }
+    const fact: FactDoc = {
+      text,
+      authorContactId: contactId,
+      useCount,
+      sessionId: '',
+      createdAt: 0,
+      ...(promptId ? { promptId } : {}),
+    }
     await setDoc(doc(ctx.firestore(), `users/${HOST}/contacts/${contactId}/facts/${factId}`), fact)
   })
 }
@@ -344,6 +357,20 @@ describe('planning the rounds from what the memory holds', () => {
 
     expect(pool.available).toBe(1)
     expect(pool.playersWithoutFacts).toEqual([THIRD])
+  })
+
+  // A choice answer ("העונה האהובה עליך: קיץ") describes no behaviour and many
+  // people give the same one, so it is never a question - and a person who has
+  // only answered choice questions has contributed nothing the game can use.
+  it('leaves choice-question answers out of the pool and out of who has contributed', async () => {
+    await seedFact('contact-a', 'fact-a1', 'העונה האהובה עליך: קיץ', 0, 'season')
+    await seedFact('contact-b', 'fact-b1', 'fact about B')
+    await setContactIds({ [PLAYER]: 'contact-a', [THIRD]: 'contact-b' })
+
+    const pool = await describeSecondGamePool(asHost(), HOST, SESSION, 'game2')
+
+    expect(pool.available).toBe(1)
+    expect(pool.playersWithoutFacts).toEqual([PLAYER])
   })
 
   it('does not count a fact two people recorded identically', async () => {

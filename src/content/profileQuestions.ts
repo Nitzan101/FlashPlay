@@ -185,7 +185,7 @@ export const PROFILE_QUESTIONS: readonly ProfileQuestion[] = [
     id: 'phoneHabit',
     text: 'מה קורה לטלפון שלך יותר',
     kind: 'single-choice',
-    options: ['הסוללה גוססת כל היום', 'נגמר לי המקום בזיכרון', 'גם וגם', 'אני מטפל בו כמו שצריך'],
+    options: ['הסוללה נגמרת מהר', 'אין מקום בזיכרון', 'גם וגם', 'הטלפון שלי מטופל היטב'],
   },
   // `weatherPreference` (the weather you like) replaced 2026-09-24 by the
   // sharper opposite angle below, his call.
@@ -197,9 +197,11 @@ export const PROFILE_QUESTIONS: readonly ProfileQuestion[] = [
   },
   {
     id: 'travelStyle',
-    text: 'איך הכי כיף לתכנן טיול',
+    text: 'איך הכי כיף לך לנהל טיול',
     kind: 'single-choice',
-    options: ['לוח זמנים מדויק', 'לזרום בלי תוכניות', 'תוכנית גסה והשאר בזרימה'],
+    // A spectrum from full control to none, so no two options sit close
+    // together (reworded 2026-10-05 after the middle two read as the same).
+    options: ['הכול מתוכנן מראש, שעה אחרי שעה', 'כמה נקודות קבועות, והשאר פתוח', 'בלי שום תוכנית, פשוט נוסעים'],
   },
   {
     id: 'competitiveness',

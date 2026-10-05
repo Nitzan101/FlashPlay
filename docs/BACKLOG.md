@@ -586,6 +586,13 @@ that what a host remembers about their guests is *the host's*, and a guest
 reading it - even only their own row - is a different product promise than
 the one currently made. Left alone on purpose until it is decided out loud.
 
+**DECIDED 2026-10-05 (Nitzan): no.** A guest may not see what a host recorded
+about them, not even their own row. The private store stays the host's alone.
+Consequence: any "remembered" feature for guests (the optional sign-in button,
+registered identities) may only change what the *host* sees and which contact
+a player maps to; it must never read a contact or fact into a guest's client,
+and no screen may offer a returning player their past answers.
+
 ## Registered guests as stable identities (raised 2026-10-03)
 
 Idea from Nitzan: the same-name / link logic should apply only to unregistered guests. A registered person already saved in a group needs no questions; a registered person not in the group may be a returning unregistered one (link them, and the contact carries their account from then on); an unregistered guest may be linked to a contact that already has an account.
@@ -593,3 +600,13 @@ Idea from Nitzan: the same-name / link logic should apply only to unregistered g
 **Feasible, with one large blocker:** today only the host signs in; guests are anonymous with a fresh uid every gathering, and the app has no guest sign-in at all. Done so far: the host's own contact is claimed by their uid (`ContactDoc.claimedByUid`, `ensureContacts`). To generalise: (1) an optional "sign in to be remembered" for guests; (2) `ensureContacts` matches a registered player by `claimedByUid` before name-matching and skips the prompts for them; (3) a registered player with no claim is offered the link-to-a-past-guest choice in `LinkPlayers`, and linking sets the claim. No rules change expected (everything lives in the host's private store). **Risk:** Google refuses OAuth in embedded WebViews, which is the known Android/WhatsApp problem, so make it optional and test on a real Android phone first.
 
 **Correction, same day:** the entry above overstated the blocker. `handleJoinByCode` and `handleJoin` already join with `user?.uid` when somebody is signed in, and the link path only mints an anonymous guest when `user` is empty (`App.tsx`). So a registered person who is already signed in in that browser joins with their real uid with no new sign-in UI. What is still missing is only a prompt offering guests to sign in. The core of the feature (match a registered player by `claimedByUid`, skip the prompts for them, offer the link to a past anonymous contact otherwise, and set the claim on linking) needs no guest sign-in at all; the Android/WebView risk applies only to adding that optional button.
+
+## A guessing game built on choice answers (raised 2026-10-05)
+
+The built-in single- and multi-choice guided questions are poor material for
+"most likely to" (shared answers, no behaviour), so they were removed from that
+game's pool. They suit a different game where identical answers are the point:
+"how many of us are night owls?", or "who here picked winter?", with players
+guessing before the real answers show. It needs a new game screen and its own
+scoring; candidate for the next-stage list beside the AI game and the
+pick-two-candidates vote. Not started.
