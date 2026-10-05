@@ -2170,3 +2170,13 @@ rejoin field of `MarkedLeftNotice` already carries its own explanatory text and
 was left alone. Each hint is covered by a test that reddens when it is removed
 (join form and lobby edit; the host profile field shares the component but has
 no test of its own).
+
+## "Who answered what" planned, 2026-10-05
+
+Raised by Nitzan after he noted that choice answers make poor "most likely to"
+material. His framing: the lobby wait gathers a lot of information, and the
+game should use it; live questions are only for gaps and warm-up. Chosen
+between games rather than in place of "most likely to". Scoring is per player
+classified correctly, not hits minus wrong marks (the alternative I
+recommended, which stops marking everyone from winning): his call. Full plan
+in DESIGN.md, "Who answered what". Nothing built; he asked for planning only.

@@ -616,3 +616,6 @@ a choice question and the full list of players, and marks the ones they think
 answered a given way. Scoring and which questions qualify are still open. He
 has not said to build it yet; it waits for his go with the other next-stage
 candidates.
+
+**Update 2026-10-05:** planned, see DESIGN.md "Who answered what" - sources,
+scoring and placement decided; three questions open before building.

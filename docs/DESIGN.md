@@ -467,6 +467,50 @@ A first-ever gathering still plays almost identically to the original design in
 practice (its only available facts are what the first game just wrote), but a
 returning group now genuinely benefits from what earlier gatherings left behind.
 
+### Who answered what (planned 2026-10-05, not built)
+
+A round shows one choice question and one of its options ("who answered
+'חיית לילה'?") and the full list of players; each player marks the ones they
+think chose it. Identical answers are the point, not a flaw, which is why this
+is the game the choice-kind guided questions are good for (they were removed
+from "most likely to" for the opposite reason). It passes the threshold test:
+the content is what these people answered minutes ago.
+
+**Decided with Nitzan, 2026-10-05:**
+- **Sources: both.** What people filled in during the lobby wait is the main
+  material - that wait is where the evening gathers its information. Questions
+  asked live in the round exist to fill gaps (too few lobby answers) and to
+  warm up.
+- **Scoring: one point per player classified correctly** - marked and chose, or
+  not marked and did not. Consequence he accepted: marking nobody scores the
+  share who did not choose it.
+- **Place in the evening:** offered at the choice between games after the first
+  game, next to "most likely to".
+
+**Shape (a plan, not a settled design):**
+- A round is (question, option). The guesser never marks themselves, and a
+  player without a device is not a candidate (no private screen to answer on).
+- Every player's client copies its own answer for the round into a round-private
+  document, owner-readable only until the reveal. A lobby answer is copied
+  without asking again; anyone who has not answered gets a short, skippable
+  window to answer live; a skip means not a candidate that round. This is what
+  keeps the host from seeing answers early - the host's read access to lobby
+  answers is never used by this game.
+- New game type, a guess document holding a list of player ids instead of the
+  single player id `VoteDoc` holds today, and a pure scoring function, all
+  reusing the existing round loop, the resumable reveal and the cumulative
+  scoreboard.
+
+**Open before building:** (1) how the app prefers questions most players
+already answered in the lobby without anyone reading content - likely a public
+per-player list of answered question ids, existence only, which also needs a
+look against the "guests may not see what a host recorded" decision; (2) the
+option is picked at random when the round opens, so an option nobody chose is
+possible, most often on multi-choice questions with many options - if a real
+evening shows too many dead rounds, the options need choosing after the
+answers close; (3) whether the round count and the live window feel right,
+which only a real evening or a paper run with three questions can settle.
+
 ### Scoring
 
 **Cumulative across the gathering**, not separate per game. This is what turns
