@@ -17,6 +17,14 @@ vi.mock('./lib/secondGame', () => ({
   endGathering: (...args: unknown[]) => mockEndGathering(...args),
 }))
 
+const mockStartWhoAnswered = vi.fn()
+const mockDescribeAnswerPool = vi.fn()
+
+vi.mock('./lib/whoAnsweredWhat', () => ({
+  startWhoAnsweredWhat: (...args: unknown[]) => mockStartWhoAnswered(...args),
+  describeWhoAnsweredWhatPool: (...args: unknown[]) => mockDescribeAnswerPool(...args),
+}))
+
 const mockWriteFactsForGame = vi.fn()
 const mockWriteRemainingFacts = vi.fn()
 const mockEnsureContacts = vi.fn()
@@ -41,14 +49,16 @@ vi.mock('./lib/memory', () => ({
 }))
 
 const players = [
-  { id: 'a', name: 'Alice' },
-  { id: 'b', name: 'Bob' },
-  { id: 'c', name: 'Carol' },
+  { id: 'a', name: 'Alice', hasDevice: true, leftAt: null },
+  { id: 'b', name: 'Bob', hasDevice: true, leftAt: null },
+  { id: 'c', name: 'Carol', hasDevice: true, leftAt: null },
 ]
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockStartSecondGame.mockResolvedValue('game2')
+  mockStartWhoAnswered.mockResolvedValue('game2')
+  mockDescribeAnswerPool.mockResolvedValue({ availableQuestions: 4 })
   mockEndGathering.mockResolvedValue(undefined)
   mockWriteFactsForGame.mockResolvedValue(2)
   mockWriteRemainingFacts.mockResolvedValue(5)
@@ -104,7 +114,7 @@ describe('BetweenGames', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('למשחק השני'))
+    fireEvent.click(screen.getByText('מי הכי סביר?'))
 
     await waitFor(() => expect(mockEnsureContacts).toHaveBeenCalledTimes(1))
     expect(mockEnsureContacts.mock.calls[0][4]).toBe('g1')
@@ -126,7 +136,7 @@ describe('BetweenGames', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('למשחק השני'))
+    fireEvent.click(screen.getByText('מי הכי סביר?'))
     await waitFor(() => expect(mockStartSecondGame).toHaveBeenCalledTimes(1))
     // The new game's order follows the one that just finished.
     expect(mockStartSecondGame.mock.calls[0][2]).toBe(1)
@@ -149,12 +159,97 @@ describe('BetweenGames', () => {
       />,
     )
 
-    expect(screen.queryByText('למשחק השני')).not.toBeInTheDocument()
+    expect(screen.queryByText('מי הכי סביר?')).not.toBeInTheDocument()
 
     // The second game is the last one: no "are you sure" in the way.
     expect(screen.queryByText('לסיים את הערב?')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('סיום הערב'))
     await waitFor(() => expect(mockEndGathering).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('BetweenGames, choosing "who answered what"', () => {
+  const base = {
+    sessionId: 's1',
+    hostUid: 'host',
+    uid: 'host',
+    gameId: 'game1',
+    groupId: null,
+    finishedType: 'who-said-that' as const,
+    finishedOrder: 0,
+    players,
+    scores: {},
+    isHost: true,
+  }
+
+  it('offers it next to "most likely to", with how many questions are available', async () => {
+    render(<BetweenGames {...base} />)
+
+    expect(screen.getByText('מי הכי סביר?')).toBeInTheDocument()
+    expect(screen.getByText('מי ענה מה?')).toBeInTheDocument()
+    expect(await screen.findByText('שאלות זמינות ל"מי ענה מה?": 4')).toBeInTheDocument()
+    // Only a count of questions is ever asked for - never what anyone answered.
+    expect(mockDescribeAnswerPool).toHaveBeenCalledWith(expect.anything(), 's1', players)
+  })
+
+  it('writes the finished game’s facts, then starts it as the next game', async () => {
+    render(<BetweenGames {...base} />)
+    await screen.findByText('שאלות זמינות ל"מי ענה מה?": 4')
+
+    fireEvent.click(screen.getByText('מי ענה מה?'))
+
+    await waitFor(() => expect(mockStartWhoAnswered).toHaveBeenCalledTimes(1))
+    expect(mockEnsureContacts).toHaveBeenCalledTimes(1)
+    expect(mockStartWhoAnswered.mock.calls[0][2]).toBe(1)
+    expect(mockStartSecondGame).not.toHaveBeenCalled()
+  })
+
+  // A greyed button with no reason reads as broken, so the reason is written.
+  it('disables it with a plain explanation when no question has enough answers', async () => {
+    mockDescribeAnswerPool.mockResolvedValue({ availableQuestions: 0 })
+    render(<BetweenGames {...base} />)
+
+    expect(await screen.findByText(/צריך לפחות 3 שחקנים שענו בלובי/)).toBeInTheDocument()
+    expect(screen.getByText('מי ענה מה?').closest('button')).toBeDisabled()
+    expect(screen.getByText('מי הכי סביר?').closest('button')).not.toBeDisabled()
+  })
+
+  it('stays disabled while the check is still running, and when it fails', async () => {
+    mockDescribeAnswerPool.mockReturnValue(new Promise(() => {}))
+    const pending = render(<BetweenGames {...base} />)
+    expect(screen.getByText('מי ענה מה?').closest('button')).toBeDisabled()
+    pending.unmount()
+
+    mockDescribeAnswerPool.mockRejectedValue({ code: 'permission-denied' })
+    render(<BetweenGames {...base} />)
+    expect(await screen.findByText(/לא הצלחנו לבדוק/)).toBeInTheDocument()
+    expect(screen.getByText('מי ענה מה?').closest('button')).toBeDisabled()
+  })
+
+  it('does not count anything for a player who is not running the room, nor after the second game', () => {
+    const guest = render(<BetweenGames {...base} isHost={false} />)
+    expect(screen.queryByText('מי ענה מה?')).not.toBeInTheDocument()
+    guest.unmount()
+
+    render(<BetweenGames {...base} finishedType="who-answered-what" finishedOrder={1} />)
+    expect(screen.queryByText('מי ענה מה?')).not.toBeInTheDocument()
+    expect(screen.getByText('סיום הערב')).toBeInTheDocument()
+    expect(mockDescribeAnswerPool).not.toHaveBeenCalled()
+  })
+
+  // Only who is PRESENT matters to the count, not the heartbeat that makes
+  // every roster snapshot a new array: re-reading every player's answers on
+  // each heartbeat would be hundreds of reads for nothing.
+  it('does not re-read the answers when only a heartbeat changed', async () => {
+    const view = render(<BetweenGames {...base} />)
+    await screen.findByText('שאלות זמינות ל"מי ענה מה?": 4')
+    view.rerender(<BetweenGames {...base} players={players.map((p) => ({ ...p }))} />)
+    expect(mockDescribeAnswerPool).toHaveBeenCalledTimes(1)
+
+    view.rerender(
+      <BetweenGames {...base} players={[...players, { id: 'd', name: 'Dan', hasDevice: true, leftAt: null }]} />,
+    )
+    await waitFor(() => expect(mockDescribeAnswerPool).toHaveBeenCalledTimes(2))
   })
 })
 
@@ -210,7 +305,7 @@ describe('the evening leaves something behind', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('למשחק השני'))
+    fireEvent.click(screen.getByText('מי הכי סביר?'))
 
     await waitFor(() => expect(mockStartSecondGame).toHaveBeenCalled())
     // Contacts first: without them there is nobody to attribute a fact to,
@@ -243,7 +338,7 @@ describe('the evening leaves something behind', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('למשחק השני'))
+    fireEvent.click(screen.getByText('מי הכי סביר?'))
 
     await waitFor(() => expect(mockStartSecondGame).toHaveBeenCalledTimes(1))
   })

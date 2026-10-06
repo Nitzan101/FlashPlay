@@ -442,7 +442,7 @@ export interface PlayerNameDoc {
   uid: string
 }
 
-export type GameType = 'who-said-that' | 'most-likely-to'
+export type GameType = 'who-said-that' | 'most-likely-to' | 'who-answered-what'
 export type GamePhase = 'harvesting' | 'rounds' | 'done'
 
 export interface GameDoc {
@@ -521,6 +521,14 @@ export interface ItemDoc {
    * store is that nobody in the room can be told who it was really about.
    */
   sourceFactId?: string
+  /**
+   * "Who answered what" only: the option this round asks about. `promptId` is
+   * the built-in guided question's id and `text` repeats the option, so the
+   * item is the round's public material and nothing else - who chose it lives
+   * in `RoundAnswerDoc`, hidden until the reveal. Like a memory-sourced item
+   * it is created by the host already revealed and has no `ItemAuthorDoc`.
+   */
+  option?: string
 }
 
 /**
@@ -697,6 +705,14 @@ export const POINTS_FOR_CORRECT_GUESS = 2
 export const POINTS_FOR_MAJORITY_VOTE = 1
 
 /**
+ * "Who answered what": one point for every other player the guesser
+ * classified correctly - marked and that player chose the option, or not
+ * marked and they did not (decided with Nitzan, 2026-10-05). Consequence he
+ * accepted: marking nobody scores the share who did not choose it.
+ */
+export const POINTS_FOR_CORRECT_CLASSIFICATION = 1
+
+/**
  * **Reveal order matters, and getting it backwards is exploitable.**
  *
  * Close the round first (`rounds/{roundId}.phase = 'revealed'`), and only then
@@ -735,6 +751,67 @@ export interface VoteDoc {
   votedForPlayerId: string
   castAt: number
 }
+
+// --- "Who answered what" -----------------------------------------------------
+//
+// A round of this game is one built-in choice question plus one of its options.
+// Everyone marks the players they think chose that option; one point per OTHER
+// player classified correctly (marked and chose it, or not marked and did not).
+//
+// Phases are the existing RoundPhase ones, with these meanings for this game:
+// `preview` is the ANSWERING window (everyone sees the question; a player who
+// did not answer it in the lobby may answer now or skip), `voting` is the
+// guessing, `revealed` shows the truth. The three collections below hang off
+// the round and exist because the truth must stay unreadable until the reveal
+// for EVERY phone, the host's included - see DECISIONS.md, "Who answered what,
+// built".
+
+/**
+ * One player's own answer for one round - PRIVATE until the round is revealed
+ * (only its owner can read it before; every player can after). Document id is
+ * the player's uid, so one answer per player per round structurally.
+ *
+ * Holds the one bit the round needs, not the full answer: whether this player
+ * chose the round's option. A live answer is deliberately NOT also written to
+ * `profileAnswers`: the host can read those at any time, so a live answer
+ * saved there would be visible to the host before the reveal.
+ */
+export interface RoundAnswerDoc {
+  chose: boolean
+  answeredAt: number
+}
+
+/**
+ * PUBLIC. Says "this player took part in this round" (`answered: true`) or
+ * "this player skipped it" (`false`), with no content - the candidate list is
+ * the set of players whose marker says true, and the host's counter reads the
+ * same documents. Written only after the matching `RoundAnswerDoc` exists (the
+ * rules check it), and only while the round is in `preview`, which freezes the
+ * candidate list the moment guessing opens.
+ */
+export interface RoundParticipantDoc {
+  answered: boolean
+  at: number
+}
+
+/**
+ * One player's guess for one round: the players they think chose the option.
+ * Separate from `VoteDoc`, which holds exactly one player id and is checked by
+ * rules written around that shape (self-vote, a real target). PRIVATE until
+ * the round is revealed; the guesser is never in their own list.
+ */
+export interface RoundGuessDoc {
+  markedPlayerIds: string[]
+  castAt: number
+}
+
+/** The most players one guess may name - far above MAX gathering size, a bound
+ *  so a guess document cannot be made arbitrarily large. */
+export const GUESS_MAX_MARKED = 50
+
+/** Lobby answerers a built-in choice question needs before a round may be
+ *  built from it - with fewer there is nothing to split. */
+export const MIN_LOBBY_ANSWERERS = 3
 
 // --- Collection paths -------------------------------------------------------
 //
@@ -809,4 +886,18 @@ export const paths = {
     `sessions/${sessionId}/rounds/${roundId}/votes`,
   vote: (sessionId: string, roundId: string, playerId: string) =>
     `sessions/${sessionId}/rounds/${roundId}/votes/${playerId}`,
+
+  // "Who answered what" - see RoundAnswerDoc, RoundParticipantDoc, RoundGuessDoc.
+  roundAnswers: (sessionId: string, roundId: string) =>
+    `sessions/${sessionId}/rounds/${roundId}/answers`,
+  roundAnswer: (sessionId: string, roundId: string, playerId: string) =>
+    `sessions/${sessionId}/rounds/${roundId}/answers/${playerId}`,
+  roundParticipants: (sessionId: string, roundId: string) =>
+    `sessions/${sessionId}/rounds/${roundId}/participants`,
+  roundParticipant: (sessionId: string, roundId: string, playerId: string) =>
+    `sessions/${sessionId}/rounds/${roundId}/participants/${playerId}`,
+  roundGuesses: (sessionId: string, roundId: string) =>
+    `sessions/${sessionId}/rounds/${roundId}/guesses`,
+  roundGuess: (sessionId: string, roundId: string, playerId: string) =>
+    `sessions/${sessionId}/rounds/${roundId}/guesses/${playerId}`,
 } as const

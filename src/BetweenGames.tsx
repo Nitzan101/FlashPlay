@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import HostButton from './HostButton'
 import Scoreboard from './Scoreboard'
 import { db } from './lib/firebase'
 import { ensureContacts, writeFactsForGame, writeProfileFacts } from './lib/memory'
 import { errorCode } from './lib/room'
+import { MIN_LOBBY_ANSWERERS, type GameType } from './lib/model'
 import { endGathering, startSecondGame } from './lib/secondGame'
+import {
+  describeWhoAnsweredWhatPool,
+  startWhoAnsweredWhat,
+  type AnswerGamePool,
+  type RosterPlayer,
+} from './lib/whoAnsweredWhat'
 import { useAction } from './lib/useAction'
 
 interface BetweenGamesProps {
@@ -31,9 +38,9 @@ interface BetweenGamesProps {
    *  froze the saved group at its first evening. */
   groupId: string | null
   /** The game that just ended - what comes next depends on which one it was. */
-  finishedType: 'who-said-that' | 'most-likely-to'
+  finishedType: GameType
   finishedOrder: number
-  players: { id: string; name: string }[]
+  players: (RosterPlayer & { name: string })[]
   scores: Record<string, number>
   isHost: boolean
 }
@@ -63,6 +70,40 @@ export default function BetweenGames({
   const collectedAsFallback = useRef(false)
 
   const nextIsSecondGame = finishedType === 'who-said-that'
+
+  // Whether "who answered what" can be played: needs a question that enough
+  // players answered in the lobby. Only the host's client may count them (the
+  // rules give nobody else that read), and only a COUNT of questions comes
+  // back - what anyone answered is never shown here. `null` while checking.
+  const [answerPool, setAnswerPool] = useState<AnswerGamePool | null>(null)
+  const [answerPoolFailed, setAnswerPoolFailed] = useState(false)
+  const checkingAnswerPool = isHost && nextIsSecondGame
+  const playersRef = useRef(players)
+  useEffect(() => {
+    playersRef.current = players
+  })
+  const presentKey = players
+    .filter((player) => player.hasDevice && !player.leftAt)
+    .map((player) => player.id)
+    .join(',')
+  useEffect(() => {
+    if (!checkingAnswerPool) return
+    let cancelled = false
+    void describeWhoAnsweredWhatPool(db, sessionId, playersRef.current)
+      .then((pool) => {
+        if (!cancelled) setAnswerPool(pool)
+      })
+      .catch((caught: unknown) => {
+        console.error('[FlashPlay] checking the answer game failed:', errorCode(caught), caught)
+        if (!cancelled) setAnswerPoolFailed(true)
+      })
+    return () => {
+      cancelled = true
+    }
+    // `players` is a new array on every roster snapshot (every heartbeat); only
+    // who is present matters, which `presentKey` captures.
+  }, [checkingAnswerPool, sessionId, presentKey])
+  const answerGameAvailable = (answerPool?.availableQuestions ?? 0) > 0
   const best = Math.max(0, ...players.map((player) => scores[player.id] ?? 0))
   const leaders = players.filter((player) => best > 0 && (scores[player.id] ?? 0) === best)
 
@@ -147,23 +188,51 @@ export default function BetweenGames({
       {isHost ? (
         <div className="flex flex-col items-center gap-2">
           {nextIsSecondGame ? (
-            <HostButton
-              busy={busy}
-              busyLabel={t('startingSecondGame')}
-              onClick={() =>
-                void run(async () => {
-                  // Best-effort and idempotent: a fact is keyed by its item,
-                  // so whatever this misses is written again when the evening
-                  // ends. It must not block the next game - the room is
-                  // waiting on this tap.
-                  await keepThisGame()
-                  await startSecondGame(db, sessionId, finishedOrder + 1)
-                })
-              }
-              primary
-            >
-              {t('startSecondGame')}
-            </HostButton>
+            <>
+              <p className="text-sm text-muted">{t('chooseNextGame')}</p>
+              <HostButton
+                busy={busy}
+                busyLabel={t('startingSecondGame')}
+                onClick={() =>
+                  void run(async () => {
+                    // Best-effort and idempotent: a fact is keyed by its item,
+                    // so whatever this misses is written again when the evening
+                    // ends. It must not block the next game - the room is
+                    // waiting on this tap.
+                    await keepThisGame()
+                    await startSecondGame(db, sessionId, finishedOrder + 1)
+                  })
+                }
+                primary
+              >
+                {t('startSecondGame')}
+              </HostButton>
+              {/* Disabled, with the reason written out, while the lobby answers
+                  cannot make a round - a greyed button with no explanation
+                  reads as broken. */}
+              <HostButton
+                busy={busy || !answerGameAvailable}
+                busyLabel={busy ? t('startingSecondGame') : undefined}
+                onClick={() =>
+                  void run(async () => {
+                    await keepThisGame()
+                    await startWhoAnsweredWhat(db, sessionId, finishedOrder + 1)
+                  })
+                }
+                primary
+              >
+                {t('startWhoAnswered')}
+              </HostButton>
+              <p className="text-center text-xs text-muted">
+                {answerPoolFailed
+                  ? t('whoAnsweredPoolError')
+                  : answerPool === null
+                    ? t('whoAnsweredPoolChecking')
+                    : answerGameAvailable
+                      ? t('whoAnsweredPool', { count: answerPool.availableQuestions })
+                      : t('whoAnsweredUnavailable', { min: MIN_LOBBY_ANSWERERS })}
+              </p>
+            </>
           ) : (
             // No "are you sure": the second game is the last one, and this
             // screen's only way forward is the finale.
