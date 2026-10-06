@@ -15,6 +15,7 @@ import {
   findChoiceQuestion,
   getMyGuess,
   isActivePlayer,
+  loadAnswerStats,
   openNextAnswerRound,
   readLobbyChoice,
   revealAnswerRound,
@@ -24,6 +25,7 @@ import {
   useParticipants,
   useRevealedAnswers,
   useRevealedGuesses,
+  type QuestionAnswerStats,
 } from './lib/whoAnsweredWhat'
 
 /** The fewest players who must have answered before guessing can open: with
@@ -95,6 +97,7 @@ export default function WhoAnsweredWhat({
 
   const host = useAction()
   const [exhausted, setExhausted] = useState(false)
+  const statsRef = useRef<QuestionAnswerStats[] | null>(null)
 
   const nameOf = (playerId: string) =>
     players.find((p) => p.id === playerId)?.name ?? t('unknownPlayer')
@@ -138,7 +141,18 @@ export default function WhoAnsweredWhat({
   }
 
   async function openNext() {
-    const roundId = await openNextAnswerRound(db, sessionId, gameId, players)
+    // Read the lobby answers once per game: nothing can change them now.
+    statsRef.current ??= await loadAnswerStats(db, sessionId, players)
+    const roundId = await openNextAnswerRound(
+      db,
+      sessionId,
+      gameId,
+      players,
+      undefined,
+      undefined,
+      undefined,
+      statsRef.current,
+    )
     if (roundId === null) setExhausted(true)
   }
 

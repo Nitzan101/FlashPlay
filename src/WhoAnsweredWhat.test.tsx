@@ -51,6 +51,7 @@ const mockCastGuess = vi.fn()
 const mockGetMyGuess = vi.fn()
 const mockReveal = vi.fn()
 const mockOpenNext = vi.fn()
+const mockLoadStats = vi.fn()
 
 vi.mock('./lib/whoAnsweredWhat', async () => {
   const actual = await vi.importActual<typeof import('./lib/whoAnsweredWhat')>('./lib/whoAnsweredWhat')
@@ -72,6 +73,7 @@ vi.mock('./lib/whoAnsweredWhat', async () => {
     getMyGuess: (...args: unknown[]) => mockGetMyGuess(...args),
     revealAnswerRound: (...args: unknown[]) => mockReveal(...args),
     openNextAnswerRound: (...args: unknown[]) => mockOpenNext(...args),
+    loadAnswerStats: (...args: unknown[]) => mockLoadStats(...args),
   }
 })
 
@@ -126,6 +128,7 @@ beforeEach(() => {
   mockReveal.mockResolvedValue({ chose: {}, guesses: {}, awarded: {} })
   mockOpenVoting.mockResolvedValue(undefined)
   mockOpenNext.mockResolvedValue('r1')
+  mockLoadStats.mockResolvedValue([{ questionId: 'season', answerers: 3, choosers: {} }])
 })
 
 describe('WhoAnsweredWhat - the answering window', () => {
@@ -455,6 +458,18 @@ describe('WhoAnsweredWhat - the run of the game', () => {
     // The roster is passed so the host's client counts the right people.
     expect(mockOpenNext.mock.calls[0][3]).toBe(roster)
     expect((await screen.findAllByText('אין עוד שאלות זמינות מהלובי')).length).toBeGreaterThan(0)
+  })
+
+  // Lobby answers cannot change once the game runs, so they are read once.
+  it('reads the lobby answers once for the whole game, not for every round', async () => {
+    mockRounds.mockReturnValue({ rounds: [round('skipped')], loading: false, error: null })
+    renderGame(HOST, true)
+    fireEvent.click(screen.getByText('לסבב הבא'))
+    await waitFor(() => expect(mockOpenNext).toHaveBeenCalledTimes(1))
+    fireEvent.click(await screen.findByText('לסבב הבא'))
+    await waitFor(() => expect(mockOpenNext).toHaveBeenCalledTimes(2))
+    expect(mockLoadStats).toHaveBeenCalledTimes(1)
+    expect(mockOpenNext.mock.calls[1][7]).toBe(mockOpenNext.mock.calls[0][7])
   })
 
   it('makes a guest wait for the host before the first round', () => {

@@ -59,10 +59,13 @@ describe('how to play', () => {
     localStorage.removeItem(HOW_TO_PLAY_KEY)
     renderApp()
 
-    for (let i = 0; i < 6; i++) fireEvent.click(screen.getByRole('button', { name: 'הבא' }))
+    for (let i = 0; i < 7; i++) fireEvent.click(screen.getByRole('button', { name: 'הבא' }))
     expect(dialogTitle()).toBe('בסוף הערב')
     fireEvent.click(screen.getByRole('button', { name: 'הקודם' }))
     expect(dialogTitle()).toBe('המארח מנהל את הקצב')
+    fireEvent.click(screen.getByRole('button', { name: 'הקודם' }))
+    expect(dialogTitle()).toBe('משחק נוסף: מי ענה מה?')
+    fireEvent.click(screen.getByRole('button', { name: 'הבא' }))
     fireEvent.click(screen.getByRole('button', { name: 'הבא' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'יאללה, משחקים' }))

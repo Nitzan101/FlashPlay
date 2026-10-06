@@ -473,6 +473,9 @@ describe('a participation marker', () => {
 
   it('must be exactly a boolean and a time', async () => {
     await assertFails(setDoc(doc(asPlayer(), markerPath(PLAYER)), { answered: 'no', at: 1 }))
+    // With an answer behind it, a non-boolean "answered" must still be refused.
+    await setDoc(doc(asPlayer(), answerPath(PLAYER)), answerDoc(true))
+    await assertFails(setDoc(doc(asPlayer(), markerPath(PLAYER)), { answered: 'yes', at: 1 }))
     await assertFails(setDoc(doc(asPlayer(), markerPath(PLAYER)), { ...markerDoc(false), chose: true }))
   })
 })
@@ -505,6 +508,8 @@ describe('a guess', () => {
     await assertFails(setDoc(doc(asPlayer(), guessPath(PLAYER)), guessDoc(many)))
     await assertSucceeds(setDoc(doc(asPlayer(), guessPath(PLAYER)), guessDoc(many.slice(0, 50))))
     await assertFails(setDoc(doc(asPlayer(), guessPath(PLAYER)), { markedPlayerIds: THIRD, castAt: 1 }))
+    // A map is not a list (its size is small and no uid is a key, so only the type check refuses it).
+    await assertFails(setDoc(doc(asPlayer(), guessPath(PLAYER)), { markedPlayerIds: { x: 1 }, castAt: 1 }))
     await assertFails(setDoc(doc(asPlayer(), guessPath(PLAYER)), { ...guessDoc([THIRD]), extra: 1 }))
   })
 

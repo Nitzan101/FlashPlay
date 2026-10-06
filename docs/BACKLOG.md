@@ -619,3 +619,10 @@ candidates.
 
 **Update 2026-10-05:** planned, see DESIGN.md "Who answered what" - sources,
 scoring and placement decided; three questions open before building.
+
+**Update 2026-10-06:** built, see DECISIONS.md "Who answered what, built". Left
+for later: a live answer is not remembered as a fact; custom questions are not
+used; players without a phone take no part (the host cannot answer or guess for
+them); scoring can dominate the cumulative total - to be settled after a real
+evening; the share of lopsided rounds (one in five) and the round count need a
+real evening too.

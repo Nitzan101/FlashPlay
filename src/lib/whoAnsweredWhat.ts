@@ -361,6 +361,10 @@ export async function openNextAnswerRound(
   nextId: (order: number) => string = (order) => `${gameId}-r${order}`,
   random: () => number = Math.random,
   nextItemId: () => string = () => crypto.randomUUID(),
+  /** The lobby counts, when the caller already has them. Lobby answers cannot
+   *  change once the game has started, so the screen reads them once instead
+   *  of re-reading every player's answers (hundreds of reads) every round. */
+  cachedStats?: readonly QuestionAnswerStats[],
 ): Promise<string | null> {
   const [roundsSnap, itemsSnap] = await Promise.all([
     step('read-rounds', () =>
@@ -379,7 +383,7 @@ export async function openNextAnswerRound(
     itemsSnap.docs.filter((d) => spentItemIds.has(d.id)).map((d) => (d.data() as ItemDoc).promptId),
   )
 
-  const stats = await loadAnswerStats(firestore, sessionId, players)
+  const stats = cachedStats ?? (await loadAnswerStats(firestore, sessionId, players))
   const pick = selectWhoAnsweredWhatRound(stats, used, random)
   if (!pick) return null
 
