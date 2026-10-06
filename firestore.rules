@@ -346,11 +346,21 @@ service cloud.firestore {
         // `registered` says this uid is a real account. Only a non-anonymous
         // caller may set it, and nobody may change it afterwards: the host's
         // identity matching trusts it.
+        //
+        // One deliberate exception on update: a guest who upgrades their
+        // anonymous account in place (linkWithRedirect keeps the uid) may
+        // flip their OWN flag false -> true, and only while their token is
+        // non-anonymous. Nothing else about the flag becomes writable: not
+        // true -> false, not by the host, not for another uid, not by a token
+        // that is still anonymous. Mutation-checked: see room.test.ts,
+        // "PlayerDoc.registered".
         allow create: if isSignedIn() && playerId == request.auth.uid
           && !inRoundLoop(sessionId)
           && (request.resource.data.get('registered', false) == false || isRegistered());
-        allow update: if (isUser(playerId) || isHost(sessionId))
-          && request.resource.data.get('registered', false) == resource.data.get('registered', false);
+        allow update: if ((isUser(playerId) || isHost(sessionId))
+            && request.resource.data.get('registered', false) == resource.data.get('registered', false))
+          || (isUser(playerId) && isRegistered()
+            && request.resource.data.get('registered', false) == true);
         allow delete: if isUser(playerId) || isHost(sessionId);
 
         // --- one player's guided-question answers - milestone 8 ---

@@ -283,6 +283,26 @@ export async function joinRoom(
   await setDoc(doc(firestore, paths.player(sessionId, uid)), player)
 }
 
+/**
+ * Marks this player's own row as a registered account, after a guest upgraded
+ * their anonymous sign-in in place (the uid, and so this row, survive). A
+ * no-op if there is no row or it is already marked, so it is safe to call on
+ * every load of a registered account that is inside a room. The caller's
+ * token must already say "not anonymous" (refresh it first), or the rules
+ * refuse the write - see the `players` update rule. Returns whether it wrote.
+ */
+export async function markPlayerRegistered(
+  firestore: Firestore,
+  sessionId: string,
+  uid: string,
+): Promise<boolean> {
+  const ref = doc(firestore, paths.player(sessionId, uid))
+  const snap = await getDoc(ref)
+  if (!snap.exists() || (snap.data() as PlayerDoc).registered === true) return false
+  await updateDoc(ref, { registered: true })
+  return true
+}
+
 /** Records that this player chose to leave, so the roster can say so instead
  *  of looking stale - see `leftAt` on `PlayerDoc`. Best-effort by design: the
  *  caller forgets the room locally regardless of whether this write lands, the

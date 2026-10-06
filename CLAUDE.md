@@ -233,6 +233,13 @@ can reach.
   the only thing that notices (a missing anchor otherwise just drops a stop).
   `src/test/setup.ts` marks everything seen before each test so no other
   suite gets an overlay; the tutorial's own tests clear the keys.
+- `src/RememberMe.tsx` / `src/lib/embeddedBrowser.ts` - the optional "sign in to
+  be remembered" offer for an anonymous guest (lobby: upgrades the account in
+  place via `linkGuestWithGoogle`; name screen: plain sign-in), or a "open in a
+  browser" note inside an embedded browser. A guest never sees what the host
+  recorded - owner decision 2026-10-05, DECISIONS.md. `markPlayerRegistered`
+  (room.ts, called from App.tsx) is what tells the player row about the upgrade;
+  the `players` update rule has one carve-out for it.
 - `src/lib/useAction.ts` — one host tap: busy, the error with its code, and the
   "still trying" notice a write that never settles needs.
 - `src/HostButton.tsx`, `src/Scoreboard.tsx`, `src/LoadFailure.tsx` — the

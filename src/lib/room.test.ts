@@ -22,6 +22,7 @@ import {
   createRoom,
   joinRoom,
   leaveRoom,
+  markPlayerRegistered,
   rejoinRoom,
   renamePlayer,
   resolveRoomCode,
@@ -421,5 +422,52 @@ describe('PlayerDoc.registered', () => {
     await assertFails(
       updateDoc(doc(asGuest(), `sessions/${sessionId}/players/${GUEST}`), { registered: true }),
     )
+  })
+
+  // The in-place upgrade: linkWithRedirect keeps the uid, so the same uid
+  // shows up later with a non-anonymous token. These pin the one carve-out
+  // in the `players` update rule.
+  const asUpgradedGuest = () =>
+    testEnv.authenticatedContext(GUEST, { firebase: { sign_in_provider: 'google.com' } }).firestore() as unknown as Firestore
+  const playerPath = (sessionId: string, uid: string) => `sessions/${sessionId}/players/${uid}`
+
+  it('lets a guest who upgraded in place flip their own flag on, via markPlayerRegistered', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('6666'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'אורח')
+
+    await expect(markPlayerRegistered(asUpgradedGuest(), sessionId, GUEST)).resolves.toBe(true)
+
+    const row = (await getDoc(doc(asUpgradedGuest(), playerPath(sessionId, GUEST)))).data()
+    expect(row?.registered).toBe(true)
+    // Idempotent: a second call finds it already marked and writes nothing.
+    await expect(markPlayerRegistered(asUpgradedGuest(), sessionId, GUEST)).resolves.toBe(false)
+  })
+
+  it('refuses the flip while the token is still anonymous, to anyone else, and by the host', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('7777'))
+    await joinRoom(asGuest(), sessionId, GUEST, 'אורח')
+    await joinRoom(asOtherHost(), sessionId, OTHER_HOST, 'אחר', true)
+
+    // Same uid, token still says anonymous (refresh not done yet).
+    await assertFails(updateDoc(doc(asGuest(), playerPath(sessionId, GUEST)), { registered: true }))
+    // A different registered account cannot mark someone else's row.
+    await assertFails(updateDoc(doc(asOtherHost(), playerPath(sessionId, GUEST)), { registered: true }))
+    // Nor can the host, who may otherwise update any player row.
+    await assertFails(updateDoc(doc(asHost(), playerPath(sessionId, GUEST)), { registered: true }))
+  })
+
+  it('never lets a registered flag be switched back off', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('8888'))
+    await joinRoom(asOtherHost(), sessionId, OTHER_HOST, 'חשבון', true)
+
+    await assertFails(updateDoc(doc(asOtherHost(), playerPath(sessionId, OTHER_HOST)), { registered: false }))
+    await assertFails(updateDoc(doc(asHost(), playerPath(sessionId, OTHER_HOST)), { registered: false }))
+  })
+
+  it('markPlayerRegistered leaves a host (already marked) alone', async () => {
+    const { sessionId } = await createRoom(asHost(), HOST, codeSequence('9999'))
+    await joinRoom(asHost(), sessionId, HOST, 'מארח', true)
+
+    await expect(markPlayerRegistered(asHost(), sessionId, HOST)).resolves.toBe(false)
   })
 })
