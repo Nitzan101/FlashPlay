@@ -2277,3 +2277,31 @@ Wrinkles worked out before coding:
 - **Embedded browsers.** Google refuses OAuth in an Android WebView, so `isEmbeddedWebView` (embeddedBrowser.ts) checks the user agent for the `wv` token and for named in-app browsers, and `RememberMe` then shows "open the link in a browser" instead of a button. iOS is deliberately not flagged: redirect sign-in was confirmed in WhatsApp on iOS. The heuristic is unverified on a real Android WhatsApp; a false positive costs an optional button, a false negative costs a Google error page, and the game is untouched either way.
 
 Not built: any guest-facing view of recorded data (decided against, above); showing the offer after the lobby; a "you are remembered" indicator.
+
+## "Who answered what": the independent review's three findings, fixed 2026-10-07
+
+An independent review of the branch (before its merge) found three
+correctness issues; all fixed, each mutation-checked (the change reverted turns
+exactly the named tests red).
+
+- **A lobby answerer can miss the answering window.** Markers freeze when
+  guessing opens, so a phone asleep or backgrounded during the window drops out
+  of the candidates and a round picked as a split can end up lopsided or with
+  too few candidates. The pick cannot know this in advance, so the host screen
+  now names the players who have not decided yet (their marker is public and
+  holds no content) and says they will not be in the round; the host decides
+  whether to wait. Opening guessing is still allowed, as before.
+- **The counts outlived the room.** The host read the lobby answers once and
+  cached the COUNTS for the whole game, so a player who left after round one
+  still shaped later picks. Now the ANSWERS are cached and the counts are
+  recomputed each round for whoever is present (`statsFromAnswers`).
+- **The candidate list followed the live roster.** A player who answered and
+  then left vanished from a guesser's pending list and from the reveal, so the
+  scored list could differ from the one guessed on. Candidates are now the
+  players whose marker says they answered and who hold a phone, with no
+  `leftAt` filter; the roster no longer changes the list once markers freeze.
+  Someone who left before answering has no marker and is out anyway.
+
+Not changed, deliberately: the `chose` bit stays self-reported (a player
+with devtools can write any value; it is a party game), and the public markers
+still show who took part in each round.

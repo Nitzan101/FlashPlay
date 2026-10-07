@@ -51,7 +51,7 @@ const mockCastGuess = vi.fn()
 const mockGetMyGuess = vi.fn()
 const mockReveal = vi.fn()
 const mockOpenNext = vi.fn()
-const mockLoadStats = vi.fn()
+const mockLoadAnswers = vi.fn()
 
 vi.mock('./lib/whoAnsweredWhat', async () => {
   const actual = await vi.importActual<typeof import('./lib/whoAnsweredWhat')>('./lib/whoAnsweredWhat')
@@ -73,7 +73,7 @@ vi.mock('./lib/whoAnsweredWhat', async () => {
     getMyGuess: (...args: unknown[]) => mockGetMyGuess(...args),
     revealAnswerRound: (...args: unknown[]) => mockReveal(...args),
     openNextAnswerRound: (...args: unknown[]) => mockOpenNext(...args),
-    loadAnswerStats: (...args: unknown[]) => mockLoadStats(...args),
+    loadLobbyAnswers: (...args: unknown[]) => mockLoadAnswers(...args),
   }
 })
 
@@ -128,7 +128,7 @@ beforeEach(() => {
   mockReveal.mockResolvedValue({ chose: {}, guesses: {}, awarded: {} })
   mockOpenVoting.mockResolvedValue(undefined)
   mockOpenNext.mockResolvedValue('r1')
-  mockLoadStats.mockResolvedValue([{ questionId: 'season', answerers: 3, choosers: {} }])
+  mockLoadAnswers.mockResolvedValue({})
 })
 
 describe('WhoAnsweredWhat - the answering window', () => {
@@ -256,16 +256,16 @@ describe('WhoAnsweredWhat - the host while players answer', () => {
     await waitFor(() => expect(mockOpenVoting).toHaveBeenCalledWith(expect.anything(), 's1', 'r0'))
   })
 
-  it('does not count a player who answered and then left, or who has no phone', () => {
+  it('still counts a player who answered and then left, but not one with no phone', () => {
     roster = roster.map((p) => (p.id === ANA ? { ...p, leftAt: 5 } : p))
     mockParticipants.mockReturnValue({
       participants: { [ANA]: marker(true), [NO_DEVICE]: marker(true), [GAL]: marker(true) },
       error: null,
     })
     renderGame(HOST, true)
-    // Only Gal remains a candidate.
-    expect(screen.getByText(/ענו 1,/)).toBeInTheDocument()
-    expect(screen.getByText('פתיחת הניחושים').closest('button')).toBeDisabled()
+    // Ana (left after answering) and Gal are candidates; Grandpa has no phone.
+    expect(screen.getByText(/ענו 2,/)).toBeInTheDocument()
+    expect(screen.getByText('פתיחת הניחושים').closest('button')).not.toBeDisabled()
   })
 
   it('can skip the round', async () => {
@@ -423,10 +423,20 @@ describe('WhoAnsweredWhat - the reveal', () => {
     expect(screen.getByText('כל המשתתפים בחרו בזה')).toBeInTheDocument()
   })
 
-  it('lists only candidates the roster still counts', () => {
+  it('keeps listing a candidate who left after answering, so the reveal matches what was guessed on', () => {
     roster = roster.map((p) => (p.id === GAL ? { ...p, leftAt: 3 } : p))
     renderGame()
-    expect(screen.getByText('בחרו: Ana')).toBeInTheDocument()
+    // Gal left after answering and still chose the option: still listed.
+    expect(screen.getByText('בחרו: Ana, Gal')).toBeInTheDocument()
+    expect(screen.getByText('לא בחרו: Ben')).toBeInTheDocument()
+  })
+
+  it('names the players who have not decided yet, so the host can wait for them', () => {
+    mockRounds.mockReturnValue({ rounds: [round('preview')], loading: false, error: null })
+    mockParticipants.mockReturnValue({ participants: { [ANA]: marker(true), [BEN]: marker(false) }, error: null })
+    renderGame(HOST, true)
+    expect(screen.getByText(/עוד לא החליטו: .*Gal/)).toBeInTheDocument()
+    expect(screen.queryByText(/עוד לא החליטו: .*Ana/)).not.toBeInTheDocument()
   })
 
   it('offers the host a way to finish an unscored reveal, and the next round once it is scored', async () => {
@@ -468,7 +478,7 @@ describe('WhoAnsweredWhat - the run of the game', () => {
     await waitFor(() => expect(mockOpenNext).toHaveBeenCalledTimes(1))
     fireEvent.click(await screen.findByText('לסבב הבא'))
     await waitFor(() => expect(mockOpenNext).toHaveBeenCalledTimes(2))
-    expect(mockLoadStats).toHaveBeenCalledTimes(1)
+    expect(mockLoadAnswers).toHaveBeenCalledTimes(1)
     expect(mockOpenNext.mock.calls[1][7]).toBe(mockOpenNext.mock.calls[0][7])
   })
 

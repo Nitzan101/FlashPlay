@@ -216,16 +216,22 @@ export function selectWhoAnsweredWhatRound(
 // --- Candidates and scoring (pure) -------------------------------------------
 
 /**
- * Who a round is about: players whose public marker says they answered, who
- * hold a phone and have not left. The one definition used by every screen and
- * by the host's scoring, so the list a guesser sees is the list that is scored.
+ * Who a round is about: players whose public marker says they answered and who
+ * hold a phone. The one definition used by every screen and by the host's
+ * scoring, so the list a guesser sees is the list that is scored.
+ *
+ * Deliberately NOT filtered by `leftAt`: the list must not change after the
+ * markers freeze (when guessing opens). A player who answered and then left is
+ * still a candidate for that round - dropping them live would remove them from
+ * a guesser's pending list and silently change what the reveal scores. Someone
+ * who left before answering has no marker and is out anyway.
  */
 export function candidateIds(
   participants: Record<string, Pick<RoundParticipantDoc, 'answered'>>,
   players: readonly RosterPlayer[],
 ): string[] {
   return players
-    .filter((player) => isActivePlayer(player) && participants[player.id]?.answered === true)
+    .filter((player) => player.hasDevice && participants[player.id]?.answered === true)
     .map((player) => player.id)
 }
 
@@ -268,16 +274,21 @@ export function scoreWhoAnsweredWhat(
 
 // --- The host: pool, opening the game and its rounds -------------------------
 
+/** Player id -> question id -> that player's stored lobby answer. */
+export type LobbyAnswers = Record<string, Record<string, string | string[]>>
+
 /**
  * Host only (the rules give nobody else this read): every active player's
- * lobby answer to every choice question, counted. The counts leave this
- * function only as `QuestionAnswerStats`, which no screen renders.
+ * lobby answer to every choice question. Lobby answers cannot change once the
+ * game runs, so the screen reads them once and keeps them - but the COUNTS are
+ * recomputed from them every round (`statsFromAnswers`), because who is in the
+ * room does change.
  */
-export async function loadAnswerStats(
+export async function loadLobbyAnswers(
   firestore: Firestore,
   sessionId: string,
   players: readonly RosterPlayer[],
-): Promise<QuestionAnswerStats[]> {
+): Promise<LobbyAnswers> {
   const active = players.filter(isActivePlayer)
   const reads = active.flatMap((player) =>
     CHOICE_QUESTIONS.map(async (question) => {
@@ -291,13 +302,38 @@ export async function loadAnswerStats(
       }
     }),
   )
-  const answers: Record<string, Record<string, string | string[]>> = {}
+  const answers: LobbyAnswers = {}
   for (const read of await Promise.all(reads)) {
     if (read.answer === undefined) continue
     answers[read.playerId] ??= {}
     answers[read.playerId][read.questionId] = read.answer
   }
-  return computeAnswerStats(answers)
+  return answers
+}
+
+/** The counts for the players who are in the room right now: a player who
+ *  answered in the lobby and has since left is not counted, so a round is not
+ *  picked as a split that only existed because of someone who is gone. The
+ *  counts leave this module only as `QuestionAnswerStats`, which no screen
+ *  renders. */
+export function statsFromAnswers(
+  answers: LobbyAnswers,
+  players: readonly RosterPlayer[],
+): QuestionAnswerStats[] {
+  const present = new Set(players.filter(isActivePlayer).map((player) => player.id))
+  const here: LobbyAnswers = {}
+  for (const [playerId, byQuestion] of Object.entries(answers)) {
+    if (present.has(playerId)) here[playerId] = byQuestion
+  }
+  return computeAnswerStats(here)
+}
+
+export async function loadAnswerStats(
+  firestore: Firestore,
+  sessionId: string,
+  players: readonly RosterPlayer[],
+): Promise<QuestionAnswerStats[]> {
+  return statsFromAnswers(await loadLobbyAnswers(firestore, sessionId, players), players)
 }
 
 export interface AnswerGamePool {
@@ -361,10 +397,11 @@ export async function openNextAnswerRound(
   nextId: (order: number) => string = (order) => `${gameId}-r${order}`,
   random: () => number = Math.random,
   nextItemId: () => string = () => crypto.randomUUID(),
-  /** The lobby counts, when the caller already has them. Lobby answers cannot
-   *  change once the game has started, so the screen reads them once instead
-   *  of re-reading every player's answers (hundreds of reads) every round. */
-  cachedStats?: readonly QuestionAnswerStats[],
+  /** The lobby answers, when the caller already has them. They cannot change
+   *  once the game has started, so the screen reads them once instead of
+   *  re-reading every player's answers (hundreds of reads) every round; the
+   *  counts are still recomputed here for whoever is present now. */
+  cachedAnswers?: LobbyAnswers,
 ): Promise<string | null> {
   const [roundsSnap, itemsSnap] = await Promise.all([
     step('read-rounds', () =>
@@ -383,7 +420,10 @@ export async function openNextAnswerRound(
     itemsSnap.docs.filter((d) => spentItemIds.has(d.id)).map((d) => (d.data() as ItemDoc).promptId),
   )
 
-  const stats = cachedStats ?? (await loadAnswerStats(firestore, sessionId, players))
+  const stats = statsFromAnswers(
+    cachedAnswers ?? (await loadLobbyAnswers(firestore, sessionId, players)),
+    players,
+  )
   const pick = selectWhoAnsweredWhatRound(stats, used, random)
   if (!pick) return null
 

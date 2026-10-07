@@ -11,6 +11,7 @@ import {
   LOPSIDED_ROUND_PROBABILITY,
   answerValues,
   candidateIds,
+  statsFromAnswers,
   classificationsCorrect,
   computeAnswerStats,
   eligibleQuestions,
@@ -214,15 +215,20 @@ describe('candidateIds', () => {
     ).toEqual(['a'])
   })
 
-  it('leaves out a player without a device and a player who has left, marker or not', () => {
-    const participants = { a: { answered: true }, b: { answered: true }, c: { answered: true } }
-    expect(
-      candidateIds(participants, [
-        player('a'),
-        player('b', { hasDevice: false }),
-        player('c', { leftAt: 123 }),
-      ]),
-    ).toEqual(['a'])
+  it('leaves out a player without a device, marker or not', () => {
+    const participants = { a: { answered: true }, b: { answered: true } }
+    expect(candidateIds(participants, [player('a'), player('b', { hasDevice: false })])).toEqual(['a'])
+  })
+
+  // The list must not change after the markers freeze, or the guess screen and
+  // the reveal would disagree about who was asked about.
+  it('keeps a player who answered and then left, so the list never shrinks mid-round', () => {
+    const participants = { a: { answered: true }, c: { answered: true } }
+    expect(candidateIds(participants, [player('a'), player('c', { leftAt: 123 })])).toEqual(['a', 'c'])
+  })
+
+  it('has no candidate for someone who left before answering', () => {
+    expect(candidateIds({}, [player('c', { leftAt: 123 })])).toEqual([])
   })
 
   it('ignores a marker for somebody who is not in the roster', () => {
@@ -274,5 +280,34 @@ describe('scoring - one point per OTHER player classified correctly', () => {
   it('reports correct out of total, excluding the guesser', () => {
     expect(classificationsCorrect('a', ['c'], chose)).toEqual({ correct: 3, total: 3 })
     expect(classificationsCorrect('outsider', ['a'], chose)).toEqual({ correct: 3, total: 4 })
+  })
+})
+
+describe('statsFromAnswers', () => {
+  const answers = {
+    a: { season: 'קיץ' },
+    b: { season: 'קיץ' },
+    c: { season: 'חורף' },
+    d: { season: 'חורף' },
+  }
+  const roster = (extra: Record<string, Partial<{ hasDevice: boolean; leftAt: number | null }>> = {}) =>
+    ['a', 'b', 'c', 'd'].map((id) => ({ id, hasDevice: true, leftAt: null, ...(extra[id] ?? {}) }))
+  const season = (stats: ReturnType<typeof statsFromAnswers>) => stats.find((q) => q.questionId === 'season')!
+
+  it('counts everyone who is present', () => {
+    expect(season(statsFromAnswers(answers, roster())).answerers).toBe(4)
+  })
+
+  // The answers are read once for the whole game; the counts must follow the
+  // room, or a round is picked as a split that only existed because of someone
+  // who has since gone.
+  it('stops counting a player who has left since the answers were read', () => {
+    const stats = season(statsFromAnswers(answers, roster({ c: { leftAt: 5 } })))
+    expect(stats.answerers).toBe(3)
+    expect(stats.choosers['חורף']).toBe(1)
+  })
+
+  it('does not count a player without a phone', () => {
+    expect(season(statsFromAnswers(answers, roster({ d: { hasDevice: false } }))).answerers).toBe(3)
   })
 })

@@ -171,6 +171,7 @@ export const resources = {
       answerGameAnswerError: 'אי אפשר לשמור את התשובה כרגע.',
       answerGameWatching: 'בסבב הזה אפשר רק לצפות',
       answerGameProgress: 'ענו {{answered}}, דילגו {{skipped}}, עוד לא החליטו {{waiting}}',
+      answerGameWaitingFor: 'עוד לא החליטו: {{names}}. מי שלא יענה לא יהיה בסבב הזה',
       answerGameTooFewCandidates: 'צריך לפחות {{min}} משתתפים שענו כדי לפתוח ניחושים',
       answerGameOpenGuessing: 'פתיחת הניחושים',
       answerGameSkipRound: 'דילוג על השאלה',

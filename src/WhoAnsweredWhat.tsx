@@ -15,7 +15,7 @@ import {
   findChoiceQuestion,
   getMyGuess,
   isActivePlayer,
-  loadAnswerStats,
+  loadLobbyAnswers,
   openNextAnswerRound,
   readLobbyChoice,
   revealAnswerRound,
@@ -25,7 +25,7 @@ import {
   useParticipants,
   useRevealedAnswers,
   useRevealedGuesses,
-  type QuestionAnswerStats,
+  type LobbyAnswers,
 } from './lib/whoAnsweredWhat'
 
 /** The fewest players who must have answered before guessing can open: with
@@ -97,7 +97,7 @@ export default function WhoAnsweredWhat({
 
   const host = useAction()
   const [exhausted, setExhausted] = useState(false)
-  const statsRef = useRef<QuestionAnswerStats[] | null>(null)
+  const lobbyAnswersRef = useRef<LobbyAnswers | null>(null)
 
   const nameOf = (playerId: string) =>
     players.find((p) => p.id === playerId)?.name ?? t('unknownPlayer')
@@ -107,7 +107,8 @@ export default function WhoAnsweredWhat({
   const candidates = candidateIds(participants, players)
   const activePlayers = players.filter(isActivePlayer)
   const skippedCount = activePlayers.filter((p) => participants[p.id]?.answered === false).length
-  const waitingCount = activePlayers.length - candidates.length - skippedCount
+  const waitingNames = activePlayers.filter((p) => participants[p.id] === undefined).map((p) => p.name)
+  const waitingCount = waitingNames.length
 
   // --- the reveal ---
   const revealedCandidates = candidateIds(participants, players).filter((id) => id in revealedChose)
@@ -142,7 +143,7 @@ export default function WhoAnsweredWhat({
 
   async function openNext() {
     // Read the lobby answers once per game: nothing can change them now.
-    statsRef.current ??= await loadAnswerStats(db, sessionId, players)
+    lobbyAnswersRef.current ??= await loadLobbyAnswers(db, sessionId, players)
     const roundId = await openNextAnswerRound(
       db,
       sessionId,
@@ -151,7 +152,7 @@ export default function WhoAnsweredWhat({
       undefined,
       undefined,
       undefined,
-      statsRef.current,
+      lobbyAnswersRef.current,
     )
     if (roundId === null) setExhausted(true)
   }
@@ -278,6 +279,11 @@ export default function WhoAnsweredWhat({
                   waiting: Math.max(0, waitingCount),
                 })}
               </p>
+              {waitingNames.length > 0 && (
+                <p className="text-center text-xs text-muted">
+                  {t('answerGameWaitingFor', { names: waitingNames.join(', ') })}
+                </p>
+              )}
               {candidates.length < MIN_CANDIDATES_TO_GUESS && (
                 <p className="text-center text-xs text-muted">
                   {t('answerGameTooFewCandidates', { min: MIN_CANDIDATES_TO_GUESS })}

@@ -292,6 +292,28 @@ describe('openNextAnswerRound', () => {
     expect((await getDoc(doc(asHost(), `sessions/${SESSION}/itemAuthors/item-x`))).exists()).toBe(false)
   })
 
+  // The lobby answers are read once per game and cached, but the room changes:
+  // the counts must follow who is present when each round is built.
+  it('counts cached lobby answers only for the players who are present now', async () => {
+    const cached = {
+      [HOST]: { season: 'קיץ' },
+      [PLAYER]: { season: 'קיץ' },
+      [THIRD]: { season: 'חורף' },
+    }
+    // Everyone but HOST has left since the answers were read: one answerer is
+    // below the minimum, so nothing is left to ask even though the cache holds
+    // three answers.
+    const roster = ROSTER.map((p) => (p.id === HOST ? p : { ...p, leftAt: 5 }))
+    expect(
+      await openNextAnswerRound(asHost(), SESSION, GAME, roster, () => ROUND, split(0), () => 'item-x', cached),
+    ).toBeNull()
+
+    // With everyone present the same cache supplies a round.
+    expect(
+      await openNextAnswerRound(asHost(), SESSION, GAME, ROSTER, () => ROUND, split(0), () => 'item-y', cached),
+    ).toBe(ROUND)
+  })
+
   it('writes the planned round count once, from how many questions the lobby can supply', async () => {
     await openNextAnswerRound(asHost(), SESSION, GAME, ROSTER, () => ROUND, split(0), () => 'item-x')
     const game = (await getDoc(doc(asHost(), `sessions/${SESSION}/games/${GAME}`))).data() as GameDoc
@@ -584,7 +606,7 @@ describe('a round, end to end', () => {
     await assertSucceeds(getDoc(doc(asThird(), guessPath(PLAYER))))
   })
 
-  it('keeps a player who holds no phone, or has left, out of the candidates even with a marker', async () => {
+  it('keeps a player who holds no phone out of the candidates even with a marker, and keeps one who answered and then left in', async () => {
     await answerTheRound()
     // Markers and answers written for two players the roster says are not in
     // the game - what a stale marker from before someone left looks like.
@@ -600,9 +622,10 @@ describe('a round, end to end', () => {
     const roster = [...ROSTER.map((p) => (p.id === PLAYER ? { ...p, leftAt: 9 } : p)), { id: NO_DEVICE, hasDevice: false, leftAt: null }]
     const summary = await revealAnswerRound(asHost(), SESSION, ROUND, roster)
 
-    // Candidates: HOST (chose) and THIRD (did not); not PLAYER (left), not NO_DEVICE.
-    expect(summary.chose).toEqual({ [HOST]: true, [THIRD]: false })
-    // FOURTH marked nobody: HOST wrong, THIRD right.
+    // Candidates: HOST and PLAYER (both chose; PLAYER answered and then left,
+    // which must not remove them mid-round) and THIRD (did not); not NO_DEVICE.
+    expect(summary.chose).toEqual({ [HOST]: true, [PLAYER]: true, [THIRD]: false })
+    // FOURTH marked nobody: HOST wrong, PLAYER wrong, THIRD right.
     expect(summary.awarded).toEqual({ [FOURTH]: 1 })
   })
 
