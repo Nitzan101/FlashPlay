@@ -458,6 +458,10 @@ export async function writeFactsForGame(
   let kept = 0
   for (const itemDoc of itemsSnap.docs) {
     const item = itemDoc.data() as ItemDoc
+    // A "who answered what" item is only the round's public material (a
+    // guided question's id and one option), never someone's answer - it has no
+    // author and nothing to keep.
+    if (item.option !== undefined) continue
     const prompt = prompts.find((p) => p.id === item.promptId)
     if (!prompt) {
       // A prompt that has left the pool since the gathering ran. The item's

@@ -183,6 +183,50 @@ export function scoreRound(
 }
 
 /**
+ * The resumable reveal sequence, shared by every game: close the round, open
+ * the item, read whatever this game hides until now, record what the round
+ * paid, recompute the totals - in the order `ROUND_REVEAL_ORDER` documents and
+ * for the reasons it gives, each step skipped when it has already happened.
+ * What differs between games is only what step three reads and how it turns
+ * into points, so that is the one thing passed in (`read`); the delicate
+ * ordering exists exactly once.
+ */
+export async function revealWith<T>(
+  firestore: Firestore,
+  sessionId: string,
+  roundId: string,
+  read: (round: RoundDoc) => Promise<{ detail: T; score: () => Record<string, number> }>,
+): Promise<{ detail: T; awarded: Record<string, number> }> {
+  const roundRef = doc(firestore, paths.round(sessionId, roundId))
+  const round = (
+    await step('read-round', () => getDoc(roundRef))
+  ).data() as RoundDoc
+  const { itemId } = round
+
+  if (round.phase !== 'revealed') {
+    await step('close-voting', () => updateDoc(roundRef, { phase: 'revealed' }))
+  }
+
+  // Already true for a memory-sourced or answer-game item (created revealed),
+  // in which case this step simply does nothing.
+  const itemRef = doc(firestore, paths.item(sessionId, itemId))
+  const item = (await step('read-item', () => getDoc(itemRef))).data() as ItemDoc
+  if (!item.revealed) {
+    await step('reveal-item', () => updateDoc(itemRef, { revealed: true }))
+  }
+
+  const { detail, score } = await read(round)
+
+  const awarded = round.awarded ?? score()
+  if (!round.awarded) {
+    await step('record-awards', () => updateDoc(roundRef, { awarded }))
+  }
+  await step('write-scores', () => recomputeScores(firestore, sessionId, roundId, awarded))
+
+  return { detail, awarded }
+}
+
+/**
  * Host: reveal the round and score it, in the order `ROUND_REVEAL_ORDER`
  * documents and for the reasons it gives - closing the round before opening
  * the author is a security boundary, not a preference.
@@ -201,46 +245,27 @@ export async function revealRound(
    *  above, which is the delicate part. */
   scorer: (votes: Record<string, string>, authorPlayerId: string) => Record<string, number> = scoreRound,
 ): Promise<RoundSummary> {
-  const roundRef = doc(firestore, paths.round(sessionId, roundId))
-  const round = (
-    await step('read-round', () => getDoc(roundRef))
-  ).data() as RoundDoc
-  const { itemId } = round
+  const { detail, awarded } = await revealWith(firestore, sessionId, roundId, async (round) => {
+    const [votesSnap, authorSnap] = await Promise.all([
+      step('read-votes', () => getDocs(collection(firestore, paths.votes(sessionId, roundId)))),
+      step('read-author', () => getDoc(doc(firestore, paths.itemAuthor(sessionId, round.itemId)))),
+    ])
 
-  if (round.phase !== 'revealed') {
-    await step('close-voting', () => updateDoc(roundRef, { phase: 'revealed' }))
-  }
+    // Missing only if a claim was never written - impossible through
+    // submitHarvestItem, but this runs after the round has already been closed,
+    // so throwing here would strand exactly the state the resume path exists to
+    // recover. The second game's scorer ignores the author anyway.
+    const authorPlayerId = authorSnap.exists()
+      ? (authorSnap.data() as ItemAuthorDoc).authorPlayerId
+      : ''
+    const votes: Record<string, string> = {}
+    for (const vote of votesSnap.docs) {
+      votes[vote.id] = (vote.data() as VoteDoc).votedForPlayerId
+    }
+    return { detail: { authorPlayerId, votes }, score: () => scorer(votes, authorPlayerId) }
+  })
 
-  const itemRef = doc(firestore, paths.item(sessionId, itemId))
-  const item = (await step('read-item', () => getDoc(itemRef))).data() as ItemDoc
-  if (!item.revealed) {
-    await step('reveal-item', () => updateDoc(itemRef, { revealed: true }))
-  }
-
-  const [votesSnap, authorSnap] = await Promise.all([
-    step('read-votes', () => getDocs(collection(firestore, paths.votes(sessionId, roundId)))),
-    step('read-author', () => getDoc(doc(firestore, paths.itemAuthor(sessionId, itemId)))),
-  ])
-
-  // Missing only if a claim was never written - impossible through
-  // submitHarvestItem, but this runs after the round has already been closed,
-  // so throwing here would strand exactly the state the resume path exists to
-  // recover. The second game's scorer ignores the author anyway.
-  const authorPlayerId = authorSnap.exists()
-    ? (authorSnap.data() as ItemAuthorDoc).authorPlayerId
-    : ''
-  const votes: Record<string, string> = {}
-  for (const vote of votesSnap.docs) {
-    votes[vote.id] = (vote.data() as VoteDoc).votedForPlayerId
-  }
-
-  const awarded = round.awarded ?? scorer(votes, authorPlayerId)
-  if (!round.awarded) {
-    await step('record-awards', () => updateDoc(roundRef, { awarded }))
-  }
-  await step('write-scores', () => recomputeScores(firestore, sessionId, roundId, awarded))
-
-  return { authorPlayerId, votes, awarded }
+  return { ...detail, awarded }
 }
 
 /** The gathering's totals are the sum of what every round paid out. Summed

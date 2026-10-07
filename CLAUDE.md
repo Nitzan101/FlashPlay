@@ -41,7 +41,7 @@ All verified by execution on 2026-09-04.
   runs the rules suite against it (`firestore-rules.test.ts`, `room.test.ts`,
   `harvest.test.ts`, `rounds.test.ts`, `secondGame.test.ts`,
   `memory.test.ts`, `evening.test.ts`, `profile.test.ts`,
-  `profileQuestions.test.ts`). Needs Java
+  `profileQuestions.test.ts`, `whoAnsweredWhat.test.ts`). Needs Java
   (present: OpenJDK 21). Excluded from `npm
   test` so the everyday loop stays fast and emulator-free. **Also needs
   `.env.local` to exist**, even though these files never touch the real
@@ -246,6 +246,15 @@ file afterwards.
   the only thing that notices (a missing anchor otherwise just drops a stop).
   `src/test/setup.ts` marks everything seen before each test so no other
   suite gets an overlay; the tutorial's own tests clear the keys.
+- `src/lib/whoAnsweredWhat.ts` / `src/WhoAnsweredWhat.tsx` - the third game,
+  "who answered what" (built 2026-10-06; DESIGN.md and DECISIONS.md, "Who
+  answered what"): the selection policy (`selectWhoAnsweredWhatRound`),
+  `candidateIds`, `scoreWhoAnsweredWhat`, the host's `openNextAnswerRound`,
+  each player's `submitRoundAnswer`/`castGuess`, `revealAnswerRound` (built on
+  `revealWith` in rounds.ts) and the screen, where `preview` is the answering
+  window and `voting` the guessing. Its round answers and guesses are unreadable
+  to every phone, the host's included, until the reveal.
+
 - `src/RememberMe.tsx` / `src/lib/embeddedBrowser.ts` - the optional "sign in to
   be remembered" offer for an anonymous guest (lobby: upgrades the account in
   place via `linkGuestWithGoogle`; name screen: plain sign-in), or a "open in a

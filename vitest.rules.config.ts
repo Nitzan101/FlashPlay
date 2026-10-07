@@ -18,6 +18,7 @@ export default defineConfig({
       'src/lib/evening.test.ts',
       'src/lib/profile.test.ts',
       'src/lib/profileQuestions.test.ts',
+      'src/lib/whoAnsweredWhat.test.ts',
     ],
     // The emulator is a shared resource; parallel files would race on it.
     fileParallelism: false,

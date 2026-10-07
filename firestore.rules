@@ -178,6 +178,21 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/sessions/$(sessionId)/players/$(request.resource.data.votedForPlayerId));
     }
 
+    // --- "who answered what" helpers ----------------------------------------
+    //
+    // The three per-round collections of that game (answers, participants,
+    // guesses) must only ever exist in a round of that game, and must only be
+    // written while the round is in the one phase each belongs to: `preview`
+    // is the answering window, `voting` is the guessing (see RoundAnswerDoc in
+    // src/lib/model.ts).
+    function isAnswerGameRound(sessionId, roundId) {
+      return game(sessionId, round(sessionId, roundId).gameId).type == 'who-answered-what';
+    }
+
+    function roundIsIn(sessionId, roundId, phase) {
+      return round(sessionId, roundId).phase == phase;
+    }
+
     // --- the host's private store -------------------------------------------
     //
     // Contacts, groups and the accumulated facts belong to the user who owns
@@ -449,6 +464,13 @@ service cloud.firestore {
               request.resource.data.type == 'most-likely-to'
               && request.resource.data.phase == 'rounds'
               && request.resource.data.promptIds.size() == 0
+            ) || (
+              // "Who answered what": built from the guided questions players
+              // answered in the lobby, so like "most likely to" it has no
+              // harvest and no prompts of its own.
+              request.resource.data.type == 'who-answered-what'
+              && request.resource.data.phase == 'rounds'
+              && request.resource.data.promptIds.size() == 0
             )
           );
         // Mutation-checked on 2026-09-14: dropping the type clause turned
@@ -565,7 +587,7 @@ service cloud.firestore {
           // longer than a harvest item's own bound, since this is a composed
           // sentence (a wrapper plus the quoted fact), not a bare answer.
           && request.resource.data.text.size() <= 500
-          && game(sessionId, request.resource.data.gameId).type == 'most-likely-to'
+          && game(sessionId, request.resource.data.gameId).type in ['most-likely-to', 'who-answered-what']
           && game(sessionId, request.resource.data.gameId).phase == 'rounds';
 
         // Only the `revealed` flag may change on this write - an independent
@@ -745,6 +767,72 @@ service cloud.firestore {
             && !authorExposed(sessionId, roundId)
             && validVote(sessionId, roundId, playerId);
           allow delete: if isHost(sessionId);
+        }
+
+        // --- "who answered what": the round's hidden truth and the guesses ---
+        //
+        // The truth of a round (who chose the option) must be unreadable to
+        // EVERY phone until the reveal, the host's included - the same shape as
+        // `votes` above: writes by the owner only, reads only once the round's
+        // own phase is `revealed`. These rules check the ROUND's phase, and the
+        // client gates its reads on that same document, so there is no
+        // two-documents race of the kind the author read once had (see
+        // CLAUDE.md, Known pitfalls).
+
+        // One bit per player: did they choose the round's option. Private
+        // until the reveal (list and get for everyone then); its owner can
+        // read it back at any time, which is how a reloaded phone knows it
+        // already answered. Writable only while the round is still in the
+        // answering window - after guessing opens nobody can add or change a
+        // truth - and only in a round of this game.
+        match /answers/{playerId} {
+          allow read: if isPlayer(sessionId) && roundRevealed(sessionId, roundId);
+          allow get: if isUser(playerId) && isPlayer(sessionId);
+          allow create, update: if isUser(playerId) && isPlayer(sessionId)
+            && isAnswerGameRound(sessionId, roundId)
+            && roundIsIn(sessionId, roundId, 'preview')
+            && request.resource.data.keys().hasOnly(['chose', 'answeredAt'])
+            && request.resource.data.chose is bool
+            && request.resource.data.answeredAt is number;
+          allow delete: if false;
+        }
+
+        // The public marker: "took part" or "skipped", no content. Candidates
+        // are the players whose marker says `answered`. A `true` marker needs
+        // the caller's own answer document to exist already (the client writes
+        // the answer first), so the candidate list can never name someone with
+        // no truth behind it. Frozen like the answers once guessing opens.
+        match /participants/{playerId} {
+          allow read: if isPlayer(sessionId);
+          allow create, update: if isUser(playerId) && isPlayer(sessionId)
+            && isAnswerGameRound(sessionId, roundId)
+            && roundIsIn(sessionId, roundId, 'preview')
+            && request.resource.data.keys().hasOnly(['answered', 'at'])
+            && request.resource.data.answered is bool
+            && request.resource.data.at is number
+            && (request.resource.data.answered == false
+                || exists(/databases/$(database)/documents/sessions/$(sessionId)/rounds/$(roundId)/answers/$(playerId)));
+          allow delete: if false;
+        }
+
+        // A guess: the players this one thinks chose the option. Private until
+        // the reveal like votes. Only while guessing is open (`voting`), only
+        // in this game, and never naming yourself - the guesser is not scored
+        // about themselves. Naming a uid that is not a candidate is harmless
+        // (the scorer only counts candidates), so membership is not checked:
+        // a rule cannot loop over a list.
+        match /guesses/{playerId} {
+          allow read: if isPlayer(sessionId) && roundRevealed(sessionId, roundId);
+          allow get: if isUser(playerId) && isPlayer(sessionId);
+          allow create, update: if isUser(playerId) && isPlayer(sessionId)
+            && isAnswerGameRound(sessionId, roundId)
+            && roundIsIn(sessionId, roundId, 'voting')
+            && request.resource.data.keys().hasOnly(['markedPlayerIds', 'castAt'])
+            && request.resource.data.markedPlayerIds is list
+            && request.resource.data.markedPlayerIds.size() <= 50
+            && !(request.auth.uid in request.resource.data.markedPlayerIds)
+            && request.resource.data.castAt is number;
+          allow delete: if false;
         }
       }
     }

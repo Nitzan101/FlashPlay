@@ -6,6 +6,7 @@ import LoadFailure from './LoadFailure'
 import MarkedLeftNotice from './MarkedLeftNotice'
 import Rounds from './Rounds'
 import SecondGame from './SecondGame'
+import WhoAnsweredWhat from './WhoAnsweredWhat'
 import { useGame } from './lib/harvest'
 import { usePresenceHeartbeat, useRoster, useSession } from './lib/room'
 import Lobby from './Lobby'
@@ -146,6 +147,18 @@ export default function Gathering({ sessionId, roomCode, uid, onPlayAgain }: Gat
   }
 
   if (game.phase === 'rounds') {
+    if (game.type === 'who-answered-what') {
+      return (
+        <WhoAnsweredWhat
+          sessionId={sessionId}
+          gameId={game.id}
+          plannedRounds={game.plannedRounds}
+          uid={uid}
+          isHost={isActiveHost}
+          scores={session.scores ?? {}}
+        />
+      )
+    }
     return game.type === 'most-likely-to' ? (
       <SecondGame
         sessionId={sessionId}

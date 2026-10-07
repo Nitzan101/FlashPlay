@@ -5,7 +5,7 @@ import { EMOJI_PALETTE } from './lib/model'
 
 const DEMO_PROMPT = HARVEST_PROMPTS.find((prompt) => prompt.id === 'fridge') ?? HARVEST_PROMPTS[0]
 
-const CARDS = ['welcome', 'join', 'answer', 'whoSaid', 'mostLikely', 'host', 'end'] as const
+const CARDS = ['welcome', 'join', 'answer', 'whoSaid', 'mostLikely', 'whoAnswered', 'host', 'end'] as const
 type CardId = (typeof CARDS)[number]
 
 /**
@@ -220,6 +220,23 @@ function Demo({ card }: { card: CardId }) {
           ))}
         </div>
         <p className="m-0 text-xs text-accent-3">{t('majorityScoringReminder')}</p>
+      </>
+    )
+  }
+  if (card === 'whoAnswered') {
+    return (
+      <>
+        <p className="m-0 text-center font-display text-sm font-semibold">
+          {t('answerGameWhoChose', { option: t('howToPlay.demo.option') })}
+        </p>
+        <div className="grid w-full grid-cols-2 gap-1.5">
+          {names.map((name, i) => (
+            <span key={name} className={i === 0 || i === 2 ? tileOn : tile}>
+              {name}
+            </span>
+          ))}
+        </div>
+        <p className="m-0 text-xs text-accent-3">{t('answerGameScoringReminder')}</p>
       </>
     )
   }

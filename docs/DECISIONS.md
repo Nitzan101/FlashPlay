@@ -2181,6 +2181,85 @@ classified correctly, not hits minus wrong marks (the alternative I
 recommended, which stops marking everyone from winning): his call. Full plan
 in DESIGN.md, "Who answered what". Nothing built; he asked for planning only.
 
+## "Who answered what", built, 2026-10-06
+
+The game planned on 2026-10-05 is built as a third game type, offered at the
+choice between games after the first game next to "most likely to". The
+owner's decisions (sources, scoring, placement) are unchanged; what follows is
+what had to be decided to build it.
+
+- **The round loop is reused, with the phases given this game's meanings.**
+  `preview` is the answering window (everyone sees the question, never the
+  option), `voting` is the guessing, `revealed` the truth. No rounds rule
+  changed: phase is already monotonic and host-written, and the answering
+  window needs exactly "open, then frozen".
+- **A round's public material is an already-revealed item holding the option**
+  (`ItemDoc.option`, `promptId` = the guided question's id), created by the host
+  as in "most likely to" (the host `items` clause now accepts both types). The
+  alternative, new fields on the round, would have meant loosening the round
+  create/update shape rules for nothing.
+- **Truth integrity: three new per-round collections, all keyed by uid.**
+  `answers/{uid}` holds one bit (`chose`), owner-readable only until the round
+  is revealed (the host included - that is the point); `participants/{uid}`
+  is a public marker, "answered" or "skipped", with no content, and a `true`
+  marker requires the caller's own answer to exist; `guesses/{uid}` holds the
+  list of marked ids. All three are only writable in a round of this game and
+  only in their own phase (answers and markers in `preview`, guesses in
+  `voting`), so the candidate list is frozen when guessing opens. The rules
+  check the ROUND's phase and the client gates its reads on the same document,
+  so the two-documents race of the author read does not apply.
+- **Guesses are not `VoteDoc`s.** `validVote` and the vote rules are written
+  around exactly one target id (a real player, self-vote switched by game
+  type). A list would have meant loosening that function for the two older
+  games to serve a third. Cost: the votes collection still accepts a junk vote
+  in this game's rounds; nothing reads it.
+- **A live answer is never also saved as a lobby answer.** `profileAnswers`
+  is readable by the host at any time, so a live answer written there would
+  show the host the truth before the reveal. A consequence the owner may want
+  to revisit: live answers are not remembered for the group.
+- **What the host can still see.** The host's technical read access to lobby
+  answers (decided fine on 2026-09-27) is used to count them; the counts are
+  never rendered - the screens show only how many questions are available. A
+  host with devtools can still read lobby answers as before; they cannot read
+  live answers or anyone's round answer or guess before the reveal.
+- **Selection** (`selectWhoAnsweredWhatRound`, pure, rng injected like
+  `selectSecondGameFact`): a question needs 3 lobby answerers and is never
+  asked twice in a gathering (a skipped round still spends its question; an
+  orphan item left by a host who died between the two writes does not). About
+  one round in five (`LOPSIDED_ROUND_PROBABILITY`) may be lopsided - everyone
+  or nobody chose the option - the rest are real splits, drawn question first
+  (uniformly) and option second. **My addition: split options are weighted by
+  how even they are (`min(choosers, others)`)**, so 12 against 13 is far likelier
+  than 1 against 24; the brief only required at least one on each side. The
+  lobby counts are read once per game (answers cannot change after it
+  starts), not every round. Only built-in questions are used: a custom
+  question's kind and options are not part of the shipped bank.
+- **Candidates**: a player whose marker says "answered", who holds a phone and
+  has not left, evaluated by one function (`candidateIds`) used by every screen
+  and by the host's scoring. A player who skips, or whose phone was asleep for
+  the whole window, is not a candidate but still guesses.
+- **Scoring**: one point per other candidate classified correctly, pure and
+  unit-tested including the nobody-chose case. **Consequence to confirm:** with
+  eight candidates a perfect round pays 7, against 2 for a correct "who said
+  that" guess and 1 in "most likely to", so this game can dominate the
+  cumulative scoreboard if it is played for many rounds.
+- **The reveal sequence exists once.** `revealRound` is now a thin wrapper over
+  `revealWith` (close the round, open the item, read what this game hides,
+  record awards, recompute totals - each step skipped if already done); this
+  game passes only what to read and how to score it.
+- **Between games**: two buttons, and the old "למשחק השני" became "מי הכי סביר?"
+  now that it names one of two games. The new one is disabled, with the reason
+  written out, while the host's count finds no question with 3 lobby answerers
+  (and while checking, and if the check fails). Only a count of questions
+  reaches the screen.
+- **Memory**: this game keeps nothing. `writeFactsForGame` skips its items
+  (they are round material, not anyone's answer).
+- **Known and accepted:** a guess naming a non-candidate id is harmless but not
+  refused (a rule cannot loop a list); a player who marks people and never taps
+  send scores nothing; a phone asleep when the round opens is not a candidate
+  that round; players without a phone take no part; in multi-choice questions
+  the lopsided draw is mostly "nobody chose it".
+
 ## Guests can sign in to be remembered (2026-10-05)
 
 The optional button the part-2 entry listed as not built. A guest who ignores it plays exactly as before; nothing blocks on it.
@@ -2198,3 +2277,31 @@ Wrinkles worked out before coding:
 - **Embedded browsers.** Google refuses OAuth in an Android WebView, so `isEmbeddedWebView` (embeddedBrowser.ts) checks the user agent for the `wv` token and for named in-app browsers, and `RememberMe` then shows "open the link in a browser" instead of a button. iOS is deliberately not flagged: redirect sign-in was confirmed in WhatsApp on iOS. The heuristic is unverified on a real Android WhatsApp; a false positive costs an optional button, a false negative costs a Google error page, and the game is untouched either way.
 
 Not built: any guest-facing view of recorded data (decided against, above); showing the offer after the lobby; a "you are remembered" indicator.
+
+## "Who answered what": the independent review's three findings, fixed 2026-10-07
+
+An independent review of the branch (before its merge) found three
+correctness issues; all fixed, each mutation-checked (the change reverted turns
+exactly the named tests red).
+
+- **A lobby answerer can miss the answering window.** Markers freeze when
+  guessing opens, so a phone asleep or backgrounded during the window drops out
+  of the candidates and a round picked as a split can end up lopsided or with
+  too few candidates. The pick cannot know this in advance, so the host screen
+  now names the players who have not decided yet (their marker is public and
+  holds no content) and says they will not be in the round; the host decides
+  whether to wait. Opening guessing is still allowed, as before.
+- **The counts outlived the room.** The host read the lobby answers once and
+  cached the COUNTS for the whole game, so a player who left after round one
+  still shaped later picks. Now the ANSWERS are cached and the counts are
+  recomputed each round for whoever is present (`statsFromAnswers`).
+- **The candidate list followed the live roster.** A player who answered and
+  then left vanished from a guesser's pending list and from the reveal, so the
+  scored list could differ from the one guessed on. Candidates are now the
+  players whose marker says they answered and who hold a phone, with no
+  `leftAt` filter; the roster no longer changes the list once markers freeze.
+  Someone who left before answering has no marker and is out anyway.
+
+Not changed, deliberately: the `chose` bit stays self-reported (a player
+with devtools can write any value; it is a party game), and the public markers
+still show who took part in each round.

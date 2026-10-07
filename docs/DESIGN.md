@@ -467,7 +467,7 @@ A first-ever gathering still plays almost identically to the original design in
 practice (its only available facts are what the first game just wrote), but a
 returning group now genuinely benefits from what earlier gatherings left behind.
 
-### Who answered what (planned 2026-10-05, not built)
+### Who answered what (planned 2026-10-05, built 2026-10-06)
 
 A round shows one choice question and one of its options ("who answered
 'חיית לילה'?") and the full list of players; each player marks the ones they
@@ -487,29 +487,36 @@ the content is what these people answered minutes ago.
 - **Place in the evening:** offered at the choice between games after the first
   game, next to "most likely to".
 
-**Shape (a plan, not a settled design):**
-- A round is (question, option). The guesser never marks themselves, and a
-  player without a device is not a candidate (no private screen to answer on).
-- Every player's client copies its own answer for the round into a round-private
-  document, owner-readable only until the reveal. A lobby answer is copied
-  without asking again; anyone who has not answered gets a short, skippable
-  window to answer live; a skip means not a candidate that round. This is what
-  keeps the host from seeing answers early - the host's read access to lobby
-  answers is never used by this game.
-- New game type, a guess document holding a list of player ids instead of the
-  single player id `VoteDoc` holds today, and a pure scoring function, all
-  reusing the existing round loop, the resumable reveal and the cumulative
-  scoreboard.
+**Shape, as built (2026-10-06; the reasoning is in DECISIONS.md, "Who answered
+what, built"):**
+- A round is (built-in single- or multi-choice question, one of its options).
+  It reuses the round loop with the existing phases given this game's meanings:
+  `preview` is the **answering window** (everyone sees the question, never the
+  option), `voting` is the **guessing**, `revealed` shows the truth. A round's
+  public material is an already-revealed item holding the option.
+- The host's client counts the lobby answers privately and picks a
+  (question, option) with a real split in most rounds, about one round in five
+  lopsided (see `selectWhoAnsweredWhatRound`). The counts are never rendered; a
+  screen shows only how many questions are available.
+- Every phone writes its own answer for the round - a single bit, "chose the
+  option" - into a document only that player can read until the reveal, then a
+  public marker that says "answered" or "skipped" and nothing else. A lobby
+  answer is copied automatically; a player with none answers live or skips (a
+  live answer is never saved as a lobby answer, because the host can read
+  those). Candidates are the players whose marker says "answered", who hold a
+  phone and have not left, frozen when guessing opens.
+- A guess is a list of player ids per guesser, in its own collection, never
+  naming the guesser, private until the reveal. Scoring is one point per other
+  candidate classified correctly, a pure function. Scores stay cumulative.
+- Offered at the choice between games after the first game, disabled with an
+  explanation when no question has three lobby answerers.
 
-**Open before building:** (1) how the app prefers questions most players
-already answered in the lobby without anyone reading content - likely a public
-per-player list of answered question ids, existence only, which also needs a
-look against the "guests may not see what a host recorded" decision; (2) the
-option is picked at random when the round opens, so an option nobody chose is
-possible, most often on multi-choice questions with many options - if a real
-evening shows too many dead rounds, the options need choosing after the
-answers close; (3) whether the round count and the live window feel right,
-which only a real evening or a paper run with three questions can settle.
+**What was open, and where it stands:** (1) preferring questions most players
+answered in the lobby is done from the host's own private count - no public
+per-player list of answered questions was needed. (2) An option nobody chose is
+a "lopsided" draw, taken about one round in five; a real evening decides
+whether that is the right share. (3) Round count and the live window still need
+a real evening.
 
 ### Scoring
 
