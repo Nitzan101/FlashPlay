@@ -285,7 +285,7 @@ describe('revealRound', () => {
     expect(author.data()?.authorPlayerId).toBe(PLAYER)
   })
 
-  it('scores two points for a correct guess, and nothing for the author', async () => {
+  it('scores eight points for a correct guess, and nothing for the author', async () => {
     // PLAYER wrote the item. HOST guesses right; THIRD guesses wrong; the
     // author's own vote is cast (so as not to give themselves away) and
     // scored in neither direction. Nor is a wrong guess - the author no
@@ -297,9 +297,9 @@ describe('revealRound', () => {
     const summary = await revealRound(asHost(), SESSION, 'round1')
 
     expect(summary.authorPlayerId).toBe(PLAYER)
-    expect(summary.awarded).toEqual({ [HOST]: 2 })
+    expect(summary.awarded).toEqual({ [HOST]: 8 })
     const session = (await getDoc(doc(asHost(), `sessions/${SESSION}`))).data() as SessionDoc
-    expect(session.scores).toEqual({ [HOST]: 2 })
+    expect(session.scores).toEqual({ [HOST]: 8 })
   })
 
   // Cumulative across the gathering (DESIGN), and derived rather than
@@ -315,7 +315,7 @@ describe('revealRound', () => {
     await revealRound(asHost(), SESSION, second!)
 
     const session = (await getDoc(doc(asHost(), `sessions/${SESSION}`))).data() as SessionDoc
-    expect(session.scores[HOST]).toBe(4)
+    expect(session.scores[HOST]).toBe(16)
   })
 
   it('refuses a non-host', async () => {
@@ -344,7 +344,7 @@ describe('revealRound', () => {
     await revealRound(asHost(), SESSION, 'round1')
 
     const session = (await getDoc(doc(asHost(), `sessions/${SESSION}`))).data() as SessionDoc
-    expect(session.scores).toEqual({ [HOST]: 2 })
+    expect(session.scores).toEqual({ [HOST]: 8 })
   })
 
   it('records what the round paid, once and only once', async () => {
@@ -352,7 +352,7 @@ describe('revealRound', () => {
     await revealRound(asHost(), SESSION, 'round1')
 
     const round = (await getDoc(doc(asHost(), `sessions/${SESSION}/rounds/round1`))).data() as RoundDoc
-    expect(round.awarded).toEqual({ [HOST]: 2 })
+    expect(round.awarded).toEqual({ [HOST]: 8 })
 
     await assertFails(
       updateDoc(doc(asHost(), `sessions/${SESSION}/rounds/round1`), { awarded: { [HOST]: 99 } }),

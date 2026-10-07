@@ -303,14 +303,14 @@ describe('a "most likely to" round, end to end', () => {
 
     // Two votes for THIRD, one for HOST: the two who read the room are paid,
     // and there is no "correct" answer to pay anyone else for.
-    expect(summary.awarded).toEqual({ [HOST]: 1, [PLAYER]: 1 })
+    expect(summary.awarded).toEqual({ [HOST]: 4, [PLAYER]: 4 })
     const session = (await getDoc(doc(asHost(), `sessions/${SESSION}`))).data() as SessionDoc
-    expect(session.scores).toEqual({ [HOST]: 1, [PLAYER]: 1 })
+    expect(session.scores).toEqual({ [HOST]: 4, [PLAYER]: 4 })
   })
 
   it('adds the second game’s points to what the first game already paid', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      // A first-game round that paid HOST two points, exactly as revealRound
+      // A first-game round that paid HOST eight points, exactly as revealRound
       // would have recorded it.
       await setDoc(doc(ctx.firestore(), `sessions/${SESSION}/rounds/g1r0`), {
         gameId: FIRST_GAME,
@@ -318,7 +318,7 @@ describe('a "most likely to" round, end to end', () => {
         phase: 'revealed',
         order: 0,
         startedAt: 0,
-        awarded: { [HOST]: 2 },
+        awarded: { [HOST]: 8 },
       })
     })
     await castVote(asHost(), SESSION, 'g2r0', HOST, THIRD)
@@ -326,7 +326,7 @@ describe('a "most likely to" round, end to end', () => {
     await revealRound(asHost(), SESSION, 'g2r0', scoreMajority)
 
     const session = (await getDoc(doc(asHost(), `sessions/${SESSION}`))).data() as SessionDoc
-    expect(session.scores[HOST]).toBe(3)
+    expect(session.scores[HOST]).toBe(12)
   })
 })
 

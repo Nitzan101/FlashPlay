@@ -120,7 +120,7 @@ describe('SecondGame', () => {
     renderSecondGame(false)
 
     expect(screen.getByRole('button', { name: 'Third' })).toBeInTheDocument()
-    expect(screen.getByText('אין תשובה נכונה - נקודה למי שהצביע עם הרוב')).toBeInTheDocument()
+    expect(screen.getByText('אין תשובה נכונה - 4 נקודות למי שהצביע עם הרוב')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Player' }))
     await waitFor(() => expect(mockCastVote).toHaveBeenCalledTimes(1))
@@ -139,9 +139,9 @@ describe('SecondGame', () => {
     renderSecondGame(false)
 
     expect(screen.getByText('Player - משפט אחד להגנה')).toBeInTheDocument()
-    expect(screen.getByText('Host +1')).toBeInTheDocument()
-    expect(screen.getByText('Third +1')).toBeInTheDocument()
-    expect(screen.queryByText('Player +1')).not.toBeInTheDocument()
+    expect(screen.getByText('Host +4')).toBeInTheDocument()
+    expect(screen.getByText('Third +4')).toBeInTheDocument()
+    expect(screen.queryByText('Player +4')).not.toBeInTheDocument()
   })
 
   // A vote where every name ties is a room that did not converge on anyone.
@@ -168,7 +168,7 @@ describe('SecondGame', () => {
     expect(screen.getByText('Host בחר/ה בPlayer')).toBeInTheDocument()
     expect(screen.queryByText(/חשב\/ה שזה/)).not.toBeInTheDocument()
     // And the scoring rule is repeated on the screen where the points appear.
-    expect(screen.getByText('נקודה לכל מי שהצביע עם הרוב')).toBeInTheDocument()
+    expect(screen.getByText('4 נקודות לכל מי שהצביע עם הרוב')).toBeInTheDocument()
   })
 
   it('waits rather than claiming the material has run out', () => {

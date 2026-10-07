@@ -14,8 +14,8 @@ const B = 'b'
 const C = 'c'
 
 describe('scoreRound - "who said that"', () => {
-  it('pays two for a correct guess', () => {
-    expect(scoreRound({ [A]: AUTHOR }, AUTHOR)).toEqual({ [A]: 2 })
+  it('pays eight for a correct guess', () => {
+    expect(scoreRound({ [A]: AUTHOR }, AUTHOR)).toEqual({ [A]: 8 })
   })
 
   // Removed 2026-09-27: the author used to earn a point per fooled voter.
@@ -39,20 +39,20 @@ describe('scoreRound - "who said that"', () => {
 
   it('pays only the correct guessers, ignoring the fooled ones', () => {
     expect(scoreRound({ [A]: AUTHOR, [B]: C, [AUTHOR]: A }, AUTHOR)).toEqual({
-      [A]: 2,
+      [A]: 8,
     })
   })
 })
 
 describe('scoreMajority - "most likely to"', () => {
   it('pays everyone who voted with the majority', () => {
-    expect(scoreMajority({ [A]: C, [B]: C, [AUTHOR]: A })).toEqual({ [A]: 1, [B]: 1 })
+    expect(scoreMajority({ [A]: C, [B]: C, [AUTHOR]: A })).toEqual({ [A]: 4, [B]: 4 })
   })
 
   // A three-way split is the round the room disagreed about most, which is
   // the last one that should score nobody.
   it('treats a tie as a majority for everyone in it', () => {
-    expect(scoreMajority({ [A]: B, [B]: C })).toEqual({ [A]: 1, [B]: 1 })
+    expect(scoreMajority({ [A]: B, [B]: C })).toEqual({ [A]: 4, [B]: 4 })
   })
 
   it('pays nothing when nobody voted', () => {

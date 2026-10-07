@@ -169,7 +169,7 @@ describe('Rounds', () => {
     renderRounds(false)
 
     expect(
-      await screen.findByText('ניחוש נכון שווה 2 נקודות'),
+      await screen.findByText('ניחוש נכון שווה 8 נקודות'),
     ).toBeInTheDocument()
   })
 
@@ -184,7 +184,7 @@ describe('Rounds', () => {
     renderRounds(true, { [HOST]: 2 })
 
     expect(
-      screen.getByText('2 נקודות לכל ניחוש נכון'),
+      screen.getByText('8 נקודות לכל ניחוש נכון'),
     ).toBeInTheDocument()
   })
 
