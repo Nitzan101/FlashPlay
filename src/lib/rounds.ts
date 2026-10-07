@@ -382,30 +382,30 @@ export function useItems(sessionId: string | null, gameId: string | null): Items
   return state
 }
 
-const VOTES_RETRIES = 4
-const VOTES_RETRY_MS = 500
+const REVEAL_RETRIES = 4
+const REVEAL_RETRY_MS = 500
 
-export interface VotesState {
-  /** Voter id -> who they voted for. Empty until the round is revealed: the
-   *  rules refuse this collection before then, which is the whole point of it
-   *  (a live tally would turn the round into a poll everyone follows). */
-  votes: Record<string, string>
-  error: string | null
-}
-
-/** Live votes for a revealed round. Pass `enabled: false` before the reveal -
- *  subscribing early is not a leak (the rules refuse it) but it produces a
- *  permission error on every player's console for the whole round. */
-export function useVotes(
-  sessionId: string | null,
-  roundId: string | null,
+/** A collection the rules open only once the round is `revealed`, listened to
+ *  live, as document id -> `pick(data)`. Pass `enabled: false` before the
+ *  reveal - subscribing early is not a leak (the rules refuse it) but it
+ *  produces a permission error on every player's console for the whole round.
+ *  `pick` must be a stable (module-level) function, or every render
+ *  re-subscribes. Shared by the votes here and by the third game's answers and
+ *  guesses. */
+export function useRevealedCollection<T>(
+  path: string | null,
   enabled: boolean,
-): VotesState {
-  const [state, setState] = useState<VotesState>({ votes: {}, error: null })
+  pick: (data: unknown) => T,
+  label: string,
+): { data: Record<string, T>; error: string | null } {
+  const [state, setState] = useState<{ data: Record<string, T>; error: string | null }>({
+    data: {},
+    error: null,
+  })
 
   useEffect(() => {
-    if (!sessionId || !roundId || !enabled) {
-      setState({ votes: {}, error: null })
+    if (!path || !enabled) {
+      setState({ data: {}, error: null })
       return
     }
     // The host sees the round's `revealed` phase from its own pending write
@@ -418,19 +418,19 @@ export function useVotes(
     let retry: ReturnType<typeof setTimeout> | undefined
     const subscribe = () => {
       unsubscribe = onSnapshot(
-        collection(db, paths.votes(sessionId, roundId)),
+        collection(db, path),
         (snap) => {
-          const votes: Record<string, string> = {}
-          for (const d of snap.docs) votes[d.id] = (d.data() as VoteDoc).votedForPlayerId
-          setState({ votes, error: null })
+          const data: Record<string, T> = {}
+          for (const d of snap.docs) data[d.id] = pick(d.data())
+          setState({ data, error: null })
         },
         (error) => {
-          if (errorCode(error) === 'permission-denied' && attempt < VOTES_RETRIES) {
+          if (errorCode(error) === 'permission-denied' && attempt < REVEAL_RETRIES) {
             attempt += 1
-            retry = setTimeout(subscribe, VOTES_RETRY_MS * attempt)
+            retry = setTimeout(subscribe, REVEAL_RETRY_MS * attempt)
             return
           }
-          console.error('[FlashPlay] votes listener failed:', errorCode(error), error)
+          console.error(`[FlashPlay] ${label} listener failed:`, errorCode(error), error)
           setState((prev) => ({ ...prev, error: errorCode(error) }))
         },
       )
@@ -440,9 +440,34 @@ export function useVotes(
       clearTimeout(retry)
       unsubscribe()
     }
-  }, [sessionId, roundId, enabled])
+  }, [path, enabled, pick, label])
 
   return state
+}
+
+export interface VotesState {
+  /** Voter id -> who they voted for. Empty until the round is revealed: the
+   *  rules refuse this collection before then, which is the whole point of it
+   *  (a live tally would turn the round into a poll everyone follows). */
+  votes: Record<string, string>
+  error: string | null
+}
+
+const pickVote = (data: unknown) => (data as VoteDoc).votedForPlayerId
+
+/** Live votes for a revealed round. */
+export function useVotes(
+  sessionId: string | null,
+  roundId: string | null,
+  enabled: boolean,
+): VotesState {
+  const { data, error } = useRevealedCollection(
+    sessionId && roundId ? paths.votes(sessionId, roundId) : null,
+    enabled,
+    pickVote,
+    'votes',
+  )
+  return { votes: data, error }
 }
 
 /** Who wrote the item, once the round has revealed it. Before that this reads

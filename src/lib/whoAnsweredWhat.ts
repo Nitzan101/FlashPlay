@@ -61,7 +61,7 @@ import {
   type RoundGuessDoc,
   type RoundParticipantDoc,
 } from './model'
-import { revealWith } from './rounds'
+import { revealWith, useRevealedCollection } from './rounds'
 import { errorCode, step } from './room'
 
 /**
@@ -648,63 +648,6 @@ export function useParticipants(
   return state
 }
 
-const REVEAL_RETRIES = 4
-const REVEAL_RETRY_MS = 500
-
-/** A collection the rules open only once the round is `revealed`, listened to
- *  live. Pass `enabled: false` before the reveal. The host sees its own
- *  pending `revealed` write before the server has committed it, so the first
- *  subscription can be refused; the refusal is retried a few times before it
- *  is shown (the same handling as `useVotes`). */
-function useRevealedCollection<T>(
-  path: string | null,
-  enabled: boolean,
-  pick: (data: unknown) => T,
-): { data: Record<string, T>; error: string | null } {
-  const [state, setState] = useState<{ data: Record<string, T>; error: string | null }>({
-    data: {},
-    error: null,
-  })
-
-  useEffect(() => {
-    if (!path || !enabled) {
-      setState({ data: {}, error: null })
-      return
-    }
-    let attempt = 0
-    let unsubscribe = () => {}
-    let retry: ReturnType<typeof setTimeout> | undefined
-    const subscribe = () => {
-      unsubscribe = onSnapshot(
-        collection(db, path),
-        (snap) => {
-          const data: Record<string, T> = {}
-          for (const d of snap.docs) data[d.id] = pick(d.data())
-          setState({ data, error: null })
-        },
-        (error) => {
-          if (errorCode(error) === 'permission-denied' && attempt < REVEAL_RETRIES) {
-            attempt += 1
-            retry = setTimeout(subscribe, REVEAL_RETRY_MS * attempt)
-            return
-          }
-          console.error('[FlashPlay] revealed collection listener failed:', errorCode(error), error)
-          setState((prev) => ({ ...prev, error: errorCode(error) }))
-        },
-      )
-    }
-    subscribe()
-    return () => {
-      clearTimeout(retry)
-      unsubscribe()
-    }
-    // `pick` is a module-level function at every call site, so it never
-    // re-subscribes.
-  }, [path, enabled, pick])
-
-  return state
-}
-
 const pickChose = (data: unknown) => (data as RoundAnswerDoc).chose
 const pickMarked = (data: unknown) => (data as RoundGuessDoc).markedPlayerIds
 
@@ -718,6 +661,7 @@ export function useRevealedAnswers(
     sessionId && roundId ? paths.roundAnswers(sessionId, roundId) : null,
     enabled,
     pickChose,
+    'revealed answers',
   )
   return { chose: data, error }
 }
@@ -732,6 +676,7 @@ export function useRevealedGuesses(
     sessionId && roundId ? paths.roundGuesses(sessionId, roundId) : null,
     enabled,
     pickMarked,
+    'revealed guesses',
   )
   return { guesses: data, error }
 }
