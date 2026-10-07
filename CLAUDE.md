@@ -99,6 +99,19 @@ files afterwards; nothing here belongs in the repo. Used 2026-09-17 to verify
 `RoomPicker`/`GroupDetails`/`EmojiPicker`, none of which a signed-out session
 can reach.
 
+**Two refinements, 2026-10-06 and 07.** To capture many screens at once, add a
+scratch vitest setup file whose `afterEach` writes `document.body.innerHTML` to a
+folder (import `@testing-library/react` first in that file, so its cleanup is
+registered before yours and yours runs first), run the existing screen tests
+with it, then wrap the dumps in a page with the built CSS and screenshot with
+headless Edge. **Tours need a real layout** (jsdom measures zero): in a scratch
+Vite entry, inject a dumped screen's HTML into the page and render the real
+`Tour` over it; the anchors are found by `data-tour`, so it works unchanged.
+Patch `window.matchMedia` to report reduced motion so the scroll is instant,
+and read the spotlight from its inline `style`, not `getBoundingClientRect` -
+its CSS transition does not advance in the Browser pane. Delete every scratch
+file afterwards.
+
 ## Structure
 - `src/main.tsx` — entry; mounts App, imports i18n and Tailwind.
 - `src/i18n.ts` — i18next setup. Hebrew is the only shipped locale.
