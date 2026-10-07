@@ -2,6 +2,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Gathering from './Gathering'
+import RememberMe from './RememberMe'
 import { signInAsGuest, signInWithGoogle, signOutUser, useAuthUser } from './lib/auth'
 import { db } from './lib/firebase'
 import { paths } from './lib/model'
@@ -10,6 +11,7 @@ import {
   errorCode,
   joinRoom,
   leaveRoom,
+  markPlayerRegistered,
   resolveRoomCode,
   setPlayerEmoji,
   transferHost,
@@ -145,7 +147,7 @@ const LOADING_TIMEOUT_MS = 8_000
 
 export default function App() {
   const { t } = useTranslation()
-  const { user, loading: authLoading, redirectError } = useAuthUser()
+  const { user, loading: authLoading, redirectError, upgradedAt } = useAuthUser()
   // Anonymous users get nothing here - the store this reads is per registered
   // account, and a guest's uid is a new one every gathering anyway (see
   // matchName in memory.ts).
@@ -197,6 +199,26 @@ export default function App() {
     const timer = setTimeout(() => setLoadingIsSlow(true), LOADING_TIMEOUT_MS)
     return () => clearTimeout(timer)
   }, [screen.kind])
+
+  // A guest who upgraded their anonymous account in place (RememberMe) keeps
+  // their uid and their player document, but the document still says they are
+  // anonymous. Tell it, once the token is non-anonymous. Runs for every
+  // registered account inside a room and is a no-op when already marked, so a
+  // host (always marked at join) costs one read. Best-effort: failing leaves
+  // the player recognised by name only, exactly as before.
+  const isRegisteredAccount = Boolean(user && !user.isAnonymous)
+  const registerSessionId = screen.kind === 'in-room' ? screen.sessionId : null
+  const registerUid = screen.kind === 'in-room' ? screen.uid : null
+  useEffect(() => {
+    if (!isRegisteredAccount || !registerSessionId || !registerUid) return
+    void (async () => {
+      try {
+        await markPlayerRegistered(db, registerSessionId, registerUid)
+      } catch (error) {
+        console.error('[FlashPlay] marking the player as registered failed:', error)
+      }
+    })()
+  }, [isRegisteredAccount, registerSessionId, registerUid, upgradedAt])
 
   const joinCode = useMemo(() => readJoinCodeFromUrl(), [])
   const shareId = useMemo(() => readShareIdFromUrl(), [])
@@ -402,7 +424,12 @@ export default function App() {
 
       {redirectError && (
         <p role="alert" className="text-danger">
-          {t('signInError')}
+          {/* Linking a guest to a Google account that already belongs to
+              another uid is expected, not a fault: the guest stays anonymous
+              and keeps playing. */}
+          {(redirectError as { code?: string }).code === 'auth/credential-already-in-use'
+            ? t('rememberAlreadyLinked')
+            : t('signInError')}
         </p>
       )}
 
@@ -648,6 +675,10 @@ export default function App() {
           >
             {busy ? t('joining') : t('joinButton')}
           </button>
+          {/* Optional, and only for someone still anonymous. Before joining,
+              a plain sign-in is used, not a link: it is the path that works
+              for a Google account an earlier guest uid already owns. */}
+          {user?.isAnonymous && <RememberMe mode="signin" />}
         </form>
       )}
 
@@ -659,6 +690,12 @@ export default function App() {
             uid={screen.uid}
             onPlayAgain={handleCreateRoom}
           />
+          {/* Optional offer for an anonymous guest waiting in the lobby. The
+              host has no use for it (always registered) and nobody is nagged
+              once the game is running. */}
+          {user?.isAnonymous && liveSession?.phase === 'lobby' && (
+            <RememberMe mode="link" />
+          )}
           {/* Deliberately quiet, and deliberately not a bare underlined link:
               leaving is a real action that deserves a real control, but it
               must never compete with the host's game buttons for attention.

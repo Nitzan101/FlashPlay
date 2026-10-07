@@ -57,6 +57,11 @@ export const resources = {
       codeNotFound: 'הקוד שהקלדת לא נמצא. אפשר לבדוק שוב עם מי שמארח.',
       codeExpired: 'הקוד הזה כבר לא בתוקף. אפשר לבקש קוד חדש מהמארח.',
       nameTaken: 'השם הזה כבר תפוס בחדר הזה - אפשר לנסות שם אחר.',
+      rememberHint: 'רוצים שהמארח יזהה אתכם בפעם הבאה? אפשר להתחבר עם Google. זה לא חובה, והמשחק זהה גם בלי זה.',
+      rememberButton: 'התחברות עם Google כדי שיזכרו אותי',
+      rememberOpenInBrowser: 'פתחו את הקישור בדפדפן כדי להתחבר',
+      rememberFailed: 'ההתחברות נכשלה. אפשר להמשיך לשחק בלי זה.',
+      rememberAlreadyLinked: 'החשבון הזה כבר משויך לשחקן קודם, אז ממשיכים כאורחים. בפעם הבאה אפשר להתחבר עוד לפני ההצטרפות לחדר.',
       needMorePlayers: 'צריך לפחות {{count}} משתתפים כדי להתחיל',
 
       // --- milestone 4: the harvest phase ---
@@ -110,8 +115,8 @@ export const resources = {
       // neither, even though it is the one with an actual scoring rule to
       // explain. Asked for directly: "הניקוד הוא לפי מי שהצביע... שזה יותר
       // ברור ונעים לראות."
-      firstGameScoringHint: 'ניחוש נכון שווה 2 נקודות',
-      firstGameScoringReminder: '2 נקודות לכל ניחוש נכון',
+      firstGameScoringHint: 'ניחוש נכון שווה 8 נקודות',
+      firstGameScoringReminder: '8 נקודות לכל ניחוש נכון',
       revealRound: 'חשיפה',
       revealingRound: 'חושפים...',
       authorWas: 'זה נכתב על ידי {{name}}',
@@ -133,14 +138,14 @@ export const resources = {
       scoreboardTitle: 'ניקוד',
       // --- milestone 6: "most likely to", the ending ---
       secondGameTitle: 'המשחק השני',
-      majorityScoringHint: 'אין תשובה נכונה - נקודה למי שהצביע עם הרוב',
+      majorityScoringHint: 'אין תשובה נכונה - 4 נקודות למי שהצביע עם הרוב',
       // The second game's own reveal wording. Reusing the first game's
       // ("חשב/ה שזה") would say there was a right answer, which is exactly
       // what this game does not have.
       votedForSecondGameLine: '{{voter}} בחר/ה ב{{target}}',
       mostVotedIs: 'הכי הרבה קולות: {{names}}',
       defenceInvitation: '{{names}} - משפט אחד להגנה',
-      majorityScoringReminder: 'נקודה לכל מי שהצביע עם הרוב',
+      majorityScoringReminder: '4 נקודות לכל מי שהצביע עם הרוב',
       loadingRound: 'רגע...',
       leaderIs: '{{names}} מוביל/ה!',
       leadersAre: '{{names}} מובילים!',
@@ -424,11 +429,11 @@ export const resources = {
         },
         whoSaid: {
           title: 'משחק ראשון: מי אמר את זה?',
-          body: 'תשובה אחת עולה על המסך, וכולם מנחשים מי כתב אותה. גם הכותב מצביע, על מישהו אחר, כדי לא לחשוף את עצמו. ניחוש נכון שווה 2 נקודות.',
+          body: 'תשובה אחת עולה על המסך, וכולם מנחשים מי כתב אותה. גם הכותב מצביע, על מישהו אחר, כדי לא לחשוף את עצמו. ניחוש נכון שווה 8 נקודות.',
         },
         mostLikely: {
           title: 'משחק שני: מי הכי סביר?',
-          body: 'עובדה מהזיכרון של הקבוצה חוזרת כשאלה על כולם, בלי לגלות ממי היא. אין תשובה נכונה, מותר להצביע גם לעצמך, ונקודה הולכת לכל מי שהצביע עם הרוב. מי שקיבל הכי הרבה קולות מקבל משפט אחד להגנה.',
+          body: 'עובדה מהזיכרון של הקבוצה חוזרת כשאלה על כולם, בלי לגלות ממי היא. אין תשובה נכונה, מותר להצביע גם לעצמך, ו-4 נקודות הולכות לכל מי שהצביע עם הרוב. מי שקיבל הכי הרבה קולות מקבל משפט אחד להגנה.',
         },
         whoAnswered: {
           title: 'משחק נוסף: מי ענה מה?',

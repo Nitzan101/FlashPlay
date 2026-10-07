@@ -691,7 +691,10 @@ export const MIN_PLAYERS_TO_START = 2
  * 2026-09-27, Nitzan's call: it rewarded writing an answer that does not fit
  * you, which works against harvest answers being real facts about the person.
  */
-export const POINTS_FOR_CORRECT_GUESS = 2
+// Raised from 2 to 8 on 2026-10-06 (and the majority vote below from 1 to 4), his call,
+// so "who answered what" - up to one point per other player per round - does not
+// dominate the cumulative scoreboard.
+export const POINTS_FOR_CORRECT_GUESS = 8
 
 /**
  * "Most likely to" has no correct answer, so DESIGN scores reading the room:
@@ -702,7 +705,7 @@ export const POINTS_FOR_CORRECT_GUESS = 2
  * vote, declaring nobody right would make the most interesting rounds - the
  * ones the room genuinely disagrees about - the only unscored ones.
  */
-export const POINTS_FOR_MAJORITY_VOTE = 1
+export const POINTS_FOR_MAJORITY_VOTE = 4
 
 /**
  * "Who answered what": one point for every other player the guesser

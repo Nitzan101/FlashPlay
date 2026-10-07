@@ -187,7 +187,7 @@ describe('a whole evening', () => {
     await castVote(yossi, sessionId, secondRound!, YOSSI, YOSSI)
 
     const secondSummary = await revealRound(host, sessionId, secondRound!, scoreMajority)
-    expect(secondSummary.awarded).toEqual({ [HOST]: 1, [DANA]: 1, [YOSSI]: 1 })
+    expect(secondSummary.awarded).toEqual({ [HOST]: 4, [DANA]: 4, [YOSSI]: 4 })
 
     // --- the end ----------------------------------------------------------
     await finishGame(host, sessionId, secondGameId)

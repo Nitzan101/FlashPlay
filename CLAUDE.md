@@ -241,6 +241,14 @@ can reach.
   `revealWith` in rounds.ts) and the screen, where `preview` is the answering
   window and `voting` the guessing. Its round answers and guesses are unreadable
   to every phone, the host's included, until the reveal.
+
+- `src/RememberMe.tsx` / `src/lib/embeddedBrowser.ts` - the optional "sign in to
+  be remembered" offer for an anonymous guest (lobby: upgrades the account in
+  place via `linkGuestWithGoogle`; name screen: plain sign-in), or a "open in a
+  browser" note inside an embedded browser. A guest never sees what the host
+  recorded - owner decision 2026-10-05, DECISIONS.md. `markPlayerRegistered`
+  (room.ts, called from App.tsx) is what tells the player row about the upgrade;
+  the `players` update rule has one carve-out for it.
 - `src/lib/useAction.ts` — one host tap: busy, the error with its code, and the
   "still trying" notice a write that never settles needs.
 - `src/HostButton.tsx`, `src/Scoreboard.tsx`, `src/LoadFailure.tsx` — the
