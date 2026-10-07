@@ -1995,8 +1995,10 @@ milestone 7 ("nothing reads a fact yet"). Scope was narrowed deliberately
 across several rounds of questions before any code was written:
 
 - **Free/no-AI only, for now.** An AI-based game (the headline, imposter with
-  a harvested secret) is real and wanted, but costs money and needs a
-  provider decision - parked, not built. Ideas that need it are filed in
+  a harvested secret) is real and wanted, but needs a provider decision
+  (the "costs money" claim here was too categorical - corrected 2026-10-07,
+  see "AI: free-only, and nothing that needs a credit card" below) - parked,
+  not built. Ideas that need it are filed in
   BACKLOG rather than attempted half-way.
 - **The immediate fix only, not a wizard or multi-game infrastructure.**
   Asked directly whether to design now for several future memory-based
@@ -2305,3 +2307,34 @@ exactly the named tests red).
 Not changed, deliberately: the `chose` bit stays self-reported (a player
 with devtools can write any value; it is a party game), and the public markers
 still show who took part in each round.
+
+## AI: free-only, and nothing that needs a credit card, 2026-10-07
+
+Nitzan asked whether the earlier "AI costs money" line was true, since some
+providers are free. Checked against the providers' own pages on 2026-10-07
+(figures marked "secondary" came from third-party summaries, not the provider).
+
+**Decision (Nitzan): anything that requires a credit card is ruled out for now.
+No AI feature is built.** Revisit only if he changes that rule.
+
+What the check found, and why it settles the question:
+
+- **Free tiers exist, but are limited.** Gemini (Flash models) has a free tier;
+  OpenRouter `:free` models are limited to 20 requests/minute and 50/day under
+  $10 of purchased credit; Hugging Face gives free users $0.10 of credit a
+  month, then pay-as-you-go; Groq and Mistral free-tier numbers are secondary.
+- **The free Gemini tier uses content to improve Google's products** (the
+  pricing page's own wording: "Content used to improve our products"; paid tier:
+  "not used"). Mistral's free plan is reported (secondary) to require opting in
+  to training. For Groq and OpenRouter nothing was found either way. Sending the
+  group's personal facts to such a tier contradicts DESIGN.md's rule that a leak
+  of the group's memory is a severe failure.
+- **The key cannot live in the browser** (this app has no server), so a call
+  needs a function, and Firebase's docs say deploying Cloud Functions requires
+  the Blaze plan - a card on file. That alone makes a server-side AI feature
+  incompatible with "no credit card".
+
+Not ruled out, because it needs no key held by us: an AI step with no personal
+content, or one where the host brings their own free key. Neither was designed
+or tested; browser-side calls and a host-supplied key were not checked. Not
+checked at all: Hebrew quality of any model, Blaze's real cost, self-hosting.
